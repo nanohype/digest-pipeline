@@ -1,0 +1,69 @@
+{{- if .Values.web.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "dispatch.fullname" . }}-web
+  labels:
+    {{- include "dispatch.labels" . | nindent 4 }}
+    dispatch.io/service: web
+spec:
+  replicas: {{ .Values.web.replicaCount }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      {{- include "dispatch.selectorLabels" (dict "Values" .Values "Release" .Release "Chart" .Chart "service" "web") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "dispatch.labels" . | nindent 8 }}
+        dispatch.io/service: web
+      annotations:
+        checksum/external-secret: {{ printf "%s-%s" .Values.externalSecret.workosSecret .Values.externalSecret.refreshInterval | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "dispatch.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: web
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}-{{ .Values.web.imageTagSuffix }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.web.port }}
+              protocol: TCP
+          env:
+            {{- include "dispatch.env" (dict "Values" .Values "service" "web") | nindent 12 }}
+            - name: OTEL_SERVICE_NAME
+              value: dispatch-web
+            - name: PORT
+              value: {{ .Values.web.port | quote }}
+            # Next.js needs to know the API base URL it should proxy to.
+            # Same chart release, so resolve via the api Service DNS name.
+            - name: DISPATCH_API_URL
+              value: "http://{{ include "dispatch.fullname" . }}-api:{{ .Values.api.port }}"
+          envFrom:
+            - secretRef:
+                name: {{ include "dispatch.fullname" . }}-secrets
+          livenessProbe:
+            {{- toYaml .Values.probes.web.liveness | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.probes.web.readiness | nindent 12 }}
+          resources:
+            {{- toYaml .Values.web.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: nextjs-cache
+              mountPath: /app/.next/cache
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: nextjs-cache
+          emptyDir: {}
+{{- end }}

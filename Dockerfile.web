@@ -1,0 +1,53 @@
+# syntax=docker/dockerfile:1.9
+
+# Build context is the dispatch/ directory (matches the CDK asset
+# reference `ecs.ContainerImage.fromAsset('../', { file: 'Dockerfile.web' })`).
+
+# ─── deps ───
+FROM node:24-alpine AS deps
+WORKDIR /app
+COPY web/package.json web/package-lock.json* ./
+# `npm install` over `npm ci`: the lockfile is generated on macOS and omits
+# Linux platform-conditional optional deps (sharp, @unrs/resolver-binding-*,
+# @emnapi/*) that Next.js 16 + eslint-config-next pull in at install time.
+# `npm install` resolves them on the Linux build platform; version pinning
+# still comes from the lockfile.
+RUN --mount=type=cache,target=/root/.npm npm install --prefer-offline --no-audit --no-fund
+
+# ─── build ───
+FROM node:24-alpine AS build
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY web/ ./
+# `public/` is optional in Next.js standalone but required by the runtime
+# COPY below. Pre-create it so the runtime layer succeeds even when the
+# repo has no static assets; if any get added under web/public/ later, the
+# COPY web/ above brings them in.
+RUN mkdir -p public
+# AuthKit reads the callback URI from `NEXT_PUBLIC_WORKOS_REDIRECT_URI` (NOT
+# `WORKOS_REDIRECT_URI` — see authkit-nextjs/dist/esm/env-variables.js). The
+# `NEXT_PUBLIC_` prefix is required because Next.js inlines values with that
+# prefix into bundles at build time. The URL is a public OAuth callback, not
+# a secret — safe to bake. CDK passes this from the deploy-time `domainName`.
+ARG NEXT_PUBLIC_WORKOS_REDIRECT_URI
+ENV NEXT_PUBLIC_WORKOS_REDIRECT_URI=$NEXT_PUBLIC_WORKOS_REDIRECT_URI
+RUN npm run build
+
+# ─── runtime (standalone) ───
+FROM node:24-alpine AS runtime
+WORKDIR /app
+ENV NODE_ENV=production \
+    PORT=3000 \
+    HOSTNAME=0.0.0.0
+
+RUN addgroup -S dispatch && adduser -S dispatch -G dispatch
+
+# Next.js `output: 'standalone'` emits a self-contained server.js plus a
+# pruned node_modules — no need to carry the full workspace.
+COPY --from=build --chown=dispatch:dispatch /app/.next/standalone ./
+COPY --from=build --chown=dispatch:dispatch /app/.next/static ./.next/static
+COPY --from=build --chown=dispatch:dispatch /app/public ./public
+
+EXPOSE 3000
+USER dispatch
+CMD ["node", "server.js"]

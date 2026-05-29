@@ -1,0 +1,220 @@
+# Base values for dispatch (all environments). Per-env deltas in values-{staging,production}.yaml.
+#
+# Three services in one chart:
+#   - pipeline (CronJob, weekly Friday 09:00 UTC) — aggregates → ranks → generates → audits → notifies
+#   - api      (Deployment) — Fastify API for the review UI; JWT-gated, port 3001
+#   - web      (Deployment) — Next.js review app; WorkOS AuthKit, port 3000
+# Ingress routes / → web, /api → api. Pipeline is internal-only (no Service).
+
+image:
+  repository: ghcr.io/nanohype/digest-pipeline
+  # Per-service tag suffix appended to base tag (e.g., :production-pipeline,
+  # :production-api, :production-web). Tag set per-env in values-{env}.yaml.
+  tag: ''
+  pullPolicy: IfNotPresent
+
+serviceAccount:
+  create: true
+  # Free-form additional annotations to merge into the ServiceAccount. The
+  # eks.amazonaws.com/role-arn annotation is generated separately from
+  # aws.platformRoleArn so per-env role swaps don't trample on this map.
+  annotations: {}
+
+aws:
+  # ARN of the IRSA role dispatch's pods assume. Comes from landing-zone's
+  # dispatch-platform component (output: irsa_role_arn). Empty at the chart
+  # level — per-env values plumb in the actual ARN. Empty value omits the
+  # eks.amazonaws.com/role-arn annotation entirely (useful for local
+  # helm-template / kind smoke runs where no real IAM role exists).
+  platformRoleArn: ''
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+# ─── Per-service config ─────────────────────────────────────────────
+
+pipeline:
+  enabled: true
+  # Weekly Friday 09:00 UTC (DST-aware behavior the EventBridge two-rule
+  # pattern provided is approximated by always running in UTC — matches the
+  # in-app PST/PDT split since cluster wall-clock is now the source).
+  schedule: '0 9 * * 5'
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  activeDeadlineSeconds: 1800 # 30-min hard timeout per run
+  imageTagSuffix: pipeline
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+
+api:
+  enabled: true
+  imageTagSuffix: api
+  replicaCount: 1
+  port: 3001
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+web:
+  enabled: true
+  imageTagSuffix: web
+  replicaCount: 1
+  port: 3000
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+probes:
+  api:
+    liveness:
+      httpGet:
+        path: /health
+        port: 3001
+      initialDelaySeconds: 15
+      periodSeconds: 30
+    readiness:
+      httpGet:
+        path: /health
+        port: 3001
+      initialDelaySeconds: 5
+      periodSeconds: 10
+  web:
+    liveness:
+      httpGet:
+        path: /
+        port: 3000
+      initialDelaySeconds: 15
+      periodSeconds: 30
+    readiness:
+      httpGet:
+        path: /
+        port: 3000
+      initialDelaySeconds: 5
+      periodSeconds: 10
+
+ingress:
+  enabled: true
+  className: nginx
+  tls:
+    enabled: true
+    issuer: letsencrypt-prod
+  host: '' # set per-env
+  paths:
+    web: /
+    api: /api
+
+externalSecret:
+  enabled: true
+  secretStore: aws-secrets-manager
+  refreshInterval: 1h
+  # Source secrets in AWS Secrets Manager (composed per-env by the seed scripts).
+  approversSecret: '' # dispatch/<env>/approvers
+  workosSecret: '' # dispatch/<env>/workos-directory
+  dbCredentialsSecret: '' # dispatch/<env>/db-credentials
+  grafanaCloudSecret: '' # dispatch/<env>/grafana-cloud
+
+# Helm hook: applies pending DB migrations BEFORE the new chart version rolls
+# out, against the same Postgres the api/pipeline reach via DATABASE_URL.
+migrate:
+  enabled: true
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+prometheusRule:
+  enabled: true
+  selector:
+    release: kube-prometheus-stack
+
+grafanaDashboard:
+  enabled: true
+
+networkPolicy:
+  enabled: true
+  egress:
+    # DNS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+        - podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+    # HTTPS — Bedrock, S3, Secrets Manager, SES, WorkOS, GitHub, Linear,
+    # Notion, Slack (all external aggregator sources + AWS APIs)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 169.254.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
+    # Postgres (Aurora via landing-zone rag/pipeline component)
+    - to:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+      ports:
+        - protocol: TCP
+          port: 5432
+
+env:
+  # Non-secret config shared by all three services.
+  AWS_REGION: us-east-1
+  BEDROCK_MODEL_ID: anthropic.claude-sonnet-4-6
+  LOG_LEVEL: info
+  NODE_ENV: production
+  # OTel — exports to cluster-level Collector (no per-pod sidecar)
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector.observability.svc.cluster.local:4318
+  OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+  OTEL_TRACES_SAMPLER: always_on
+  OTEL_METRICS_EXPORTER: otlp
+  OTEL_METRIC_EXPORT_INTERVAL: '60000'
+  # OTel resource attrs — agents.tenant/agents.platform required by PLATFORM_TENANT_CONTRACT
+  OTEL_RESOURCE_ATTRIBUTES: 'service.namespace=dispatch,service.version=0.1.0,agents.tenant=protohype,agents.platform=dispatch'
+
+# Per-tenant infra references — populated by per-env values from the
+# landing-zone dispatch-platform component's outputs (terragrunt run-all
+# output -json). Empty at the chart level for local dev.
+tenantInfra:
+  voiceBaselineBucket: ''
+  rawAggregationsBucket: ''
+  slackReviewChannelId: ''
+  approversSecretId: '' # passed via env, fetched at runtime
+  workosDirectorySecretId: ''
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

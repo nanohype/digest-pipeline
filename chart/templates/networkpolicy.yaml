@@ -1,0 +1,41 @@
+{{- if .Values.networkPolicy.enabled }}
+# Ingress: ingress-nginx → api + web only. Pipeline CronJob pods have no
+# inbound; the empty ingress block on their NetworkPolicy is implicit
+# (only the api/web pods carry the dispatch.io/service in {api,web} selector
+# label that matches the rule).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "dispatch.fullname" . }}
+  labels:
+    {{- include "dispatch.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/name: {{ include "dispatch.name" . }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: {{ .Values.api.port }}
+        - protocol: TCP
+          port: {{ .Values.web.port }}
+    # Intra-pod (web → api on the cluster network)
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Release.Name }}
+              app.kubernetes.io/name: {{ include "dispatch.name" . }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.api.port }}
+  egress:
+    {{- toYaml .Values.networkPolicy.egress | nindent 4 }}
+{{- end }}

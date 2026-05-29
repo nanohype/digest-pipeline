@@ -1,0 +1,54 @@
+{{- if .Values.migrate.enabled }}
+# Helm pre-install / pre-upgrade hook: applies pending DB migrations BEFORE
+# the new chart version's pipeline/api/web pods roll out. The api image
+# carries `scripts/migrate.ts` + tsx, so we reuse it as the migration runner.
+# Without this hook, a chart upgrade could cut over to code that references a
+# schema column the migrations haven't created yet.
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "dispatch.fullname" . }}-migrate-{{ .Release.Revision }}
+  labels:
+    {{- include "dispatch.labels" . | nindent 4 }}
+    dispatch.io/service: migrate
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 2
+  activeDeadlineSeconds: 600
+  template:
+    metadata:
+      labels:
+        {{- include "dispatch.labels" . | nindent 8 }}
+        dispatch.io/service: migrate
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "dispatch.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: migrate
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}-{{ .Values.api.imageTagSuffix }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          command: ["npm", "run", "migrate:up"]
+          env:
+            {{- include "dispatch.env" (dict "Values" .Values "service" "migrate") | nindent 12 }}
+            - name: OTEL_SDK_DISABLED
+              value: "true"
+          envFrom:
+            - secretRef:
+                name: {{ include "dispatch.fullname" . }}-secrets
+          resources:
+            {{- toYaml .Values.migrate.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+{{- end }}

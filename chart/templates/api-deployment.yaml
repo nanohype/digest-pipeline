@@ -1,0 +1,61 @@
+{{- if .Values.api.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "dispatch.fullname" . }}-api
+  labels:
+    {{- include "dispatch.labels" . | nindent 4 }}
+    dispatch.io/service: api
+spec:
+  replicas: {{ .Values.api.replicaCount }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      {{- include "dispatch.selectorLabels" (dict "Values" .Values "Release" .Release "Chart" .Chart "service" "api") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "dispatch.labels" . | nindent 8 }}
+        dispatch.io/service: api
+      annotations:
+        checksum/external-secret: {{ printf "%s-%s" .Values.externalSecret.dbCredentialsSecret .Values.externalSecret.refreshInterval | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "dispatch.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: api
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}-{{ .Values.api.imageTagSuffix }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.api.port }}
+              protocol: TCP
+          env:
+            {{- include "dispatch.env" (dict "Values" .Values "service" "api") | nindent 12 }}
+            - name: OTEL_SERVICE_NAME
+              value: dispatch-api
+            - name: PORT
+              value: {{ .Values.api.port | quote }}
+          envFrom:
+            - secretRef:
+                name: {{ include "dispatch.fullname" . }}-secrets
+          livenessProbe:
+            {{- toYaml .Values.probes.api.liveness | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.probes.api.readiness | nindent 12 }}
+          resources:
+            {{- toYaml .Values.api.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+{{- end }}

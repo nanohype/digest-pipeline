@@ -1,0 +1,116 @@
+name: ci
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: build + lint + typecheck + test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - name: Install
+        # `npm install` instead of `npm ci`: the lockfile is generated on
+        # macOS and omits Linux platform-specific optional deps that
+        # vitest/rolldown pull in. `npm install` resolves them on the Linux
+        # runner; version pinning comes from the lockfile regardless.
+        run: npm install --prefer-offline --no-audit --no-fund
+
+      - name: Audit (production deps, high+ severity)
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Format check
+        run: npm run format:check
+
+      - name: Test
+        run: npm test
+
+      - name: Build (emit dist)
+        run: npm run build
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.16.0
+
+      - name: Helm lint chart
+        run: helm lint chart
+
+      - name: Helm template (staging values)
+        run: helm template dispatch chart -f chart/values-staging.yaml > /dev/null
+
+      - name: Helm template (production values)
+        run: helm template dispatch chart -f chart/values-production.yaml > /dev/null
+
+  web:
+    name: web build + lint + typecheck
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install
+        # Same reason as the app install: the lockfile lacks the
+        # Linux platform-conditional binaries (rolldown, lightningcss,
+        # esbuild) that Next.js 16 pulls in on Linux runners.
+        run: npm install --prefer-offline --no-audit --no-fund
+
+      # No ESLint step: eslint-config-next's flat config is incompatible with
+      # ESLint 10 (FlatCompat circular-structure crash), and the React/Next
+      # eslint stack doesn't yet support ESLint 10. The web app is gated by
+      # strict tsc --noEmit + a production next build. Re-add eslint here once
+      # eslint-config-next ships ESLint 10 flat-config support.
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Build (Next.js standalone)
+        run: npm run build
+        env:
+          WORKOS_API_KEY: ci-placeholder
+          WORKOS_CLIENT_ID: ci-placeholder
+          WORKOS_COOKIE_PASSWORD: ci-placeholder-32-char-string-pad!
+          WORKOS_REDIRECT_URI: https://dispatch.internal/callback
+          API_BASE_URL: https://api.dispatch.internal
+          OTEL_SDK_DISABLED: 'true'
+          OTEL_EXPORTER_OTLP_ENDPOINT: http://localhost:4318
+          OTEL_SERVICE_NAME: dispatch-web
+
+  docker:
+    name: docker build (no push)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -f Dockerfile.api -t digest-pipeline-api:ci .
+      - run: docker build -f Dockerfile.pipeline -t digest-pipeline-pipeline:ci .
+      - run: docker build -f Dockerfile.web -t digest-pipeline-web:ci .

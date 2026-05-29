@@ -1,0 +1,157 @@
+{
+  "uid": "dispatch",
+  "title": "Dispatch",
+  "tags": ["protohype", "dispatch"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "1m",
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {
+          "text": "Prometheus",
+          "value": "Prometheus"
+        }
+      },
+      {
+        "name": "environment",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "$datasource"
+        },
+        "query": "label_values(dispatch_run_duration_ms_bucket, deployment_environment)",
+        "current": {
+          "text": "production",
+          "value": "production"
+        }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Pipeline run — outcomes (last 4 weeks)",
+      "type": "stat",
+      "gridPos": {"x": 0, "y": 0, "w": 8, "h": 6},
+      "targets": [
+        {
+          "expr": "sum by (status) (increase(dispatch_run_duration_ms_count{deployment_environment=\"$environment\"}[28d]))",
+          "legendFormat": "{{status}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "short"}}
+    },
+    {
+      "id": 2,
+      "title": "Pipeline run — duration p50 / p95",
+      "type": "timeseries",
+      "gridPos": {"x": 8, "y": 0, "w": 16, "h": 6},
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(dispatch_run_duration_ms_bucket{deployment_environment=\"$environment\"}[28d])))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(dispatch_run_duration_ms_bucket{deployment_environment=\"$environment\"}[28d])))",
+          "legendFormat": "p95",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "ms"}}
+    },
+    {
+      "id": 3,
+      "title": "Sources — items per run",
+      "type": "timeseries",
+      "gridPos": {"x": 0, "y": 6, "w": 12, "h": 8},
+      "targets": [
+        {
+          "expr": "sum by (source) (increase(dispatch_source_items_total{deployment_environment=\"$environment\"}[7d]))",
+          "legendFormat": "{{source}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "short"}}
+    },
+    {
+      "id": 4,
+      "title": "Sources — failures per run",
+      "type": "timeseries",
+      "gridPos": {"x": 12, "y": 6, "w": 12, "h": 8},
+      "targets": [
+        {
+          "expr": "sum by (source) (increase(dispatch_source_failure_total{deployment_environment=\"$environment\"}[7d]))",
+          "legendFormat": "{{source}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "short", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}}}
+    },
+    {
+      "id": 5,
+      "title": "Bedrock — tokens per run",
+      "type": "timeseries",
+      "gridPos": {"x": 0, "y": 14, "w": 12, "h": 8},
+      "targets": [
+        {
+          "expr": "sum by (kind, model) (increase(dispatch_bedrock_tokens_total{deployment_environment=\"$environment\"}[28d]))",
+          "legendFormat": "{{model}} / {{kind}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "short"}}
+    },
+    {
+      "id": 6,
+      "title": "Bedrock — fallbacks (any value >0 is bad)",
+      "type": "stat",
+      "gridPos": {"x": 12, "y": 14, "w": 12, "h": 8},
+      "targets": [
+        {
+          "expr": "sum(increase(dispatch_bedrock_fallback_total{deployment_environment=\"$environment\"}[28d]))",
+          "legendFormat": "fallbacks (28d)",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "short", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}}}
+    },
+    {
+      "id": 7,
+      "title": "Edit rate per run (Levenshtein vs auto-baseline)",
+      "type": "timeseries",
+      "gridPos": {"x": 0, "y": 22, "w": 12, "h": 8},
+      "targets": [
+        {
+          "expr": "sum by (run_id) (dispatch_draft_edit_rate{deployment_environment=\"$environment\"})",
+          "legendFormat": "{{run_id}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "percentunit"}}
+    },
+    {
+      "id": 8,
+      "title": "Email sends per run",
+      "type": "timeseries",
+      "gridPos": {"x": 12, "y": 22, "w": 12, "h": 8},
+      "targets": [
+        {
+          "expr": "sum(increase(dispatch_email_sent_total{deployment_environment=\"$environment\"}[28d]))",
+          "legendFormat": "sends (28d)",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "short"}}
+    }
+  ]
+}

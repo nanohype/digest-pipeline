@@ -1,0 +1,49 @@
+{{- if .Values.pipeline.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "dispatch.fullname" . }}-pipeline
+  labels:
+    {{- include "dispatch.labels" . | nindent 4 }}
+    dispatch.io/service: pipeline
+spec:
+  schedule: {{ .Values.pipeline.schedule | quote }}
+  concurrencyPolicy: {{ .Values.pipeline.concurrencyPolicy }}
+  successfulJobsHistoryLimit: {{ .Values.pipeline.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ .Values.pipeline.failedJobsHistoryLimit }}
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: {{ .Values.pipeline.activeDeadlineSeconds }}
+      backoffLimit: 1
+      template:
+        metadata:
+          labels:
+            {{- include "dispatch.labels" . | nindent 12 }}
+            dispatch.io/service: pipeline
+        spec:
+          restartPolicy: Never
+          serviceAccountName: {{ include "dispatch.serviceAccountName" . }}
+          securityContext:
+            {{- toYaml .Values.podSecurityContext | nindent 12 }}
+          containers:
+            - name: pipeline
+              image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}-{{ .Values.pipeline.imageTagSuffix }}"
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              securityContext:
+                {{- toYaml .Values.containerSecurityContext | nindent 16 }}
+              env:
+                {{- include "dispatch.env" (dict "Values" .Values "service" "pipeline") | nindent 16 }}
+                - name: OTEL_SERVICE_NAME
+                  value: dispatch-pipeline
+              envFrom:
+                - secretRef:
+                    name: {{ include "dispatch.fullname" . }}-secrets
+              resources:
+                {{- toYaml .Values.pipeline.resources | nindent 16 }}
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir: {}
+{{- end }}

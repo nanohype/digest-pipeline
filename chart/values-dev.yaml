@@ -1,0 +1,30 @@
+# Dev delta.
+image:
+  tag: dev
+
+ingress:
+  host: dispatch-dev.example.com
+
+externalSecret:
+  approversSecret: dispatch/dev/approvers
+  workosSecret: dispatch/dev/workos-directory
+  dbCredentialsSecret: dispatch/dev/db-credentials
+  grafanaCloudSecret: dispatch/dev/grafana-cloud
+
+env:
+  OTEL_RESOURCE_ATTRIBUTES: 'service.namespace=dispatch,service.version=0.1.0,deployment.environment=dev,agents.tenant=protohype,agents.platform=dispatch'
+
+aws:
+  # Fill from landing-zone `dispatch-platform` (dev) output: irsa_role_arn.
+  # `tofu -chdir=live/aws/workload-dev/us-west-2/dev/dispatch-platform output -raw irsa_role_arn`
+  platformRoleArn: ''
+
+tenantInfra:
+  # Bucket names match landing-zone dispatch-platform outputs 1:1
+  # (voice_baseline_bucket_name, raw_aggregations_bucket_name). The Slack
+  # channel ID + secret IDs are dispatch-specific config, not infra outputs.
+  voiceBaselineBucket: dispatch-voice-baseline-dev
+  rawAggregationsBucket: dispatch-raw-aggregations-dev
+  slackReviewChannelId: '' # per-env Slack channel; fill once known
+  approversSecretId: dispatch/dev/approvers
+  workosDirectorySecretId: dispatch/dev/workos-directory

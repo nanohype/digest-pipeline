@@ -1,0 +1,111 @@
+version: '3'
+
+vars:
+  REGISTRY: '{{.REGISTRY | default "digest-pipeline"}}'
+  TAG: '{{.TAG | default "dev"}}'
+
+tasks:
+  default:
+    desc: Show available tasks
+    cmds:
+      - task --list
+
+  # === Composite ===
+
+  ci:
+    desc: 'Full local CI: install, lint, typecheck, test, audit, build, web build, helm lint/template, docker build (three images)'
+    cmds:
+      - task: install
+      - task: audit
+      - task: check
+      - task: build
+      - task: web
+      - task: helm:lint
+      - task: helm:template
+      - task: docker:build
+
+  # === Install ===
+
+  install:
+    desc: Install app + web workspace deps
+    cmds:
+      # `npm install` not `npm ci`: the macOS-generated lockfile omits the
+      # Linux platform-specific optional deps (vitest/rolldown, Next.js
+      # rolldown/lightningcss/esbuild); npm install resolves them on whatever
+      # host runs this, pinned by the lockfile.
+      - npm install --prefer-offline --no-audit --no-fund
+      - npm install --prefer-offline --no-audit --no-fund --prefix web
+
+  # === TypeScript (app) ===
+
+  check:
+    desc: 'App gate: lint + typecheck + format:check + test'
+    cmds:
+      - npm run lint
+      - npm run typecheck
+      - npm run format:check
+      - npm test
+
+  test:
+    desc: Run the app test suite
+    cmds:
+      - npm test
+
+  build:
+    desc: Compile the app (tsc — emits dist/)
+    cmds:
+      - npm run build
+
+  audit:
+    desc: Audit production deps (high severity, omit dev)
+    cmds:
+      - npm audit --omit=dev --audit-level=high
+
+  # === Web (Next.js) ===
+
+  web:
+    desc: 'Web gate: typecheck + build (eslint pending eslint-config-next ESLint 10 support)'
+    dir: web
+    cmds:
+      - npx tsc --noEmit
+      - npm run build
+
+  # === Helm ===
+
+  helm:lint:
+    desc: Lint the chart
+    cmds:
+      - npm run chart:lint
+
+  helm:template:
+    desc: Render the chart against staging + production values
+    cmds:
+      - npm run chart:template:staging > /dev/null
+      - npm run chart:template:production > /dev/null
+
+  # === Docker ===
+
+  docker:build:
+    desc: 'Build the three container images (no push)'
+    cmds:
+      - docker build -f Dockerfile.api -t {{.REGISTRY}}-api:{{.TAG}} .
+      - docker build -f Dockerfile.pipeline -t {{.REGISTRY}}-pipeline:{{.TAG}} .
+      - docker build -f Dockerfile.web -t {{.REGISTRY}}-web:{{.TAG}} .
+
+  # === Security ===
+
+  security:scan:
+    desc: 'Run security scanners (gitleaks + trivy config) if available locally'
+    cmds:
+      - |
+        if command -v gitleaks >/dev/null 2>&1; then
+          gitleaks git --config .gitleaks.toml --redact --no-banner .
+        else
+          echo "gitleaks not installed — install via 'brew install gitleaks' to run locally"
+        fi
+      - |
+        if command -v trivy >/dev/null 2>&1; then
+          trivy config . --severity HIGH,CRITICAL --skip-dirs chart --skip-files platform.yaml,gitops/applicationset-entry.yaml --exit-code 1
+        else
+          echo "trivy not installed — install via 'brew install trivy' to run locally"
+        fi

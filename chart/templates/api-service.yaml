@@ -1,0 +1,18 @@
+{{- if .Values.api.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "dispatch.fullname" . }}-api
+  labels:
+    {{- include "dispatch.labels" . | nindent 4 }}
+    dispatch.io/service: api
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.api.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "dispatch.selectorLabels" (dict "Values" .Values "Release" .Release "Chart" .Chart "service" "api") | nindent 4 }}
+{{- end }}

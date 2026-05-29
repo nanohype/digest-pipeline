@@ -1,0 +1,14 @@
+node_modules
+dist
+coverage
+.next
+package-lock.json
+docs
+
+web/node_modules
+web/.next
+web/package-lock.json
+
+chart/templates
+chart/dashboards
+web/next-env.d.ts

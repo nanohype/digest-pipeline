@@ -1,0 +1,43 @@
+{{- if .Values.ingress.enabled -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "dispatch.fullname" . }}
+  labels:
+    {{- include "dispatch.labels" . | nindent 4 }}
+  annotations:
+    {{- if .Values.ingress.tls.enabled }}
+    cert-manager.io/cluster-issuer: {{ .Values.ingress.tls.issuer | quote }}
+    {{- end }}
+    # Strip the /api prefix before forwarding to the api Service. The Fastify
+    # routes don't carry /api in their declarations.
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ .Values.ingress.host | quote }}
+      secretName: {{ include "dispatch.fullname" . }}-tls
+  {{- end }}
+  rules:
+    - host: {{ .Values.ingress.host | quote }}
+      http:
+        paths:
+          # /api/* → api Service (path rewritten to /*)
+          - path: {{ .Values.ingress.paths.api }}(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: {{ include "dispatch.fullname" . }}-api
+                port:
+                  number: {{ .Values.api.port }}
+          # / → web Service
+          - path: {{ .Values.ingress.paths.web }}
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "dispatch.fullname" . }}-web
+                port:
+                  number: {{ .Values.web.port }}
+{{- end }}

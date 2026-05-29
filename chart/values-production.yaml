@@ -1,0 +1,34 @@
+# Production delta.
+image:
+  tag: production
+
+api:
+  replicaCount: 2
+
+web:
+  replicaCount: 2
+
+ingress:
+  host: dispatch.example.com
+
+externalSecret:
+  approversSecret: dispatch/production/approvers
+  workosSecret: dispatch/production/workos-directory
+  dbCredentialsSecret: dispatch/production/db-credentials
+  grafanaCloudSecret: dispatch/production/grafana-cloud
+
+env:
+  OTEL_RESOURCE_ATTRIBUTES: 'service.namespace=dispatch,service.version=0.1.0,deployment.environment=production,agents.tenant=protohype,agents.platform=dispatch'
+
+aws:
+  # Fill from landing-zone `dispatch-platform` (production) output: irsa_role_arn.
+  # `tofu -chdir=live/aws/workload-prod/us-west-2/production/dispatch-platform output -raw irsa_role_arn`
+  platformRoleArn: ''
+
+tenantInfra:
+  # Bucket names match landing-zone dispatch-platform outputs 1:1.
+  voiceBaselineBucket: dispatch-voice-baseline-production
+  rawAggregationsBucket: dispatch-raw-aggregations-production
+  slackReviewChannelId: ''
+  approversSecretId: dispatch/production/approvers
+  workosDirectorySecretId: dispatch/production/workos-directory

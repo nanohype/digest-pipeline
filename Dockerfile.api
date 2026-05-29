@@ -1,0 +1,39 @@
+# syntax=docker/dockerfile:1.9
+
+# ─── build stage ───
+FROM node:24-alpine AS build
+WORKDIR /app
+
+COPY package.json package-lock.json* ./
+# `npm install` over `npm ci`: the lockfile is generated on macOS and omits
+# Linux platform-conditional optional deps (vitest/rolldown bindings) that
+# resolve only on the Linux build platform. Version pinning still comes from
+# the lockfile.
+RUN --mount=type=cache,target=/root/.npm npm install --prefer-offline --no-audit --no-fund
+
+COPY tsconfig.json tsconfig.build.json ./
+COPY src ./src
+RUN npx tsc -p tsconfig.build.json
+
+RUN npm prune --omit=dev
+
+# ─── runtime stage ───
+FROM node:24-alpine AS runtime
+WORKDIR /app
+ENV NODE_ENV=production \
+    PORT=3001
+
+RUN addgroup -S dispatch && adduser -S dispatch -G dispatch
+
+COPY --from=build --chown=dispatch:dispatch /app/node_modules ./node_modules
+COPY --from=build --chown=dispatch:dispatch /app/dist ./dist
+COPY --from=build --chown=dispatch:dispatch /app/package.json ./package.json
+
+EXPOSE 3001
+USER dispatch
+
+# Entry point wiring (repositories, audit writer, SES sender, Slack
+# confirmer) is composed in dist/api/entrypoint.js, added in the data-layer
+# pass. Running this image before that pass lands exits immediately — the
+# image builds cleanly so cdk synth/deploy resolves its asset reference.
+CMD ["node", "--import=./dist/common/otel-bootstrap.js", "--enable-source-maps", "dist/api/entrypoint.js"]

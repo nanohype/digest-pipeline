@@ -1,0 +1,16 @@
+node_modules
+dist
+cdk.out
+.next
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+.git
+.github
+infra/cdk.out
+
+# Operator-filled secret files — should never enter a Docker layer cache
+# even though no Dockerfile COPYs them in. Template (committed) is fine.
+dispatch-secrets.*.json

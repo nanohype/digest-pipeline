@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "dist",
+    "rootDir": "src"
+  },
+  "include": ["src/pipeline/**/*", "src/api/**/*", "src/common/**/*", "src/data/**/*"],
+  "exclude": ["node_modules", "dist", ".next", "cdk.out", "src/web/**/*", "**/*.test.ts", "**/*.test.tsx"]
+}
