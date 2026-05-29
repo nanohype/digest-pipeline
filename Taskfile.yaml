@@ -64,10 +64,11 @@ tasks:
   # === Web (Next.js) ===
 
   web:
-    desc: 'Web gate: typecheck + build (eslint pending eslint-config-next ESLint 10 support)'
+    desc: 'Web gate: typecheck + test + build (eslint pending eslint-config-next ESLint 10 support)'
     dir: web
     cmds:
       - npx tsc --noEmit
+      - npm test
       - npm run build
 
   # === Helm ===

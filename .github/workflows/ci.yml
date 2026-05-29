@@ -66,7 +66,7 @@ jobs:
         run: helm template dispatch chart -f chart/values-production.yaml > /dev/null
 
   web:
-    name: web build + lint + typecheck
+    name: web build + typecheck + test
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -93,6 +93,9 @@ jobs:
       # eslint-config-next ships ESLint 10 flat-config support.
       - name: Typecheck
         run: npx tsc --noEmit
+
+      - name: Test
+        run: npm test
 
       - name: Build (Next.js standalone)
         run: npm run build
