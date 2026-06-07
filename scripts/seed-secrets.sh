@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 #
-# One-shot seeder for a Dispatch environment's Secrets Manager payload.
+# One-shot seeder for a DigestPipeline environment's Secrets Manager payload.
 #
 # Reads a single JSON file (see secrets.template.json for the shape), then for
 # each top-level key writes the value as a JSON string to Secrets Manager at
-# `dispatch/${env}/${key}`. Robust against both states a secret can be in:
+# `digest-pipeline/${env}/${key}`. Robust against both states a secret can be in:
 #   - already exists  → put-secret-value
 #   - not yet created → create-secret
 #
@@ -18,16 +18,16 @@
 #       * grafana-cloud.authHeader   → "Basic " + base64(instanceId:apiToken)
 #
 # Usage:
-#   scripts/seed-secrets.sh --env staging     --file dispatch-secrets.staging.json
-#   scripts/seed-secrets.sh --env production  --file dispatch-secrets.production.json
+#   scripts/seed-secrets.sh --env staging     --file digest-pipeline-secrets.staging.json
+#   scripts/seed-secrets.sh --env production  --file digest-pipeline-secrets.production.json
 #   scripts/seed-secrets.sh --env staging     --file ... --dry-run
 #
-# Defaults: --region us-west-2, --file dispatch-secrets.${env}.json
+# Defaults: --region us-west-2, --file digest-pipeline-secrets.${env}.json
 #
 # Requires: aws CLI (with creds that can put/create secrets), jq, base64, openssl.
 #
-# Note: dispatch/${env}/db-credentials is managed by the landing-zone
-# dispatch-platform rds-aurora module — this seeder does not touch it.
+# Note: digest-pipeline/${env}/db-credentials is managed by the landing-zone
+# digest-pipeline-platform rds-aurora module — this seeder does not touch it.
 
 set -euo pipefail
 
@@ -40,7 +40,7 @@ usage() {
   cat <<EOF
 Usage: $0 --env {staging|production} [--file PATH] [--region REGION] [--dry-run]
 
-Seeds all 9 operator-provisioned Dispatch secrets for the named environment
+Seeds all 9 operator-provisioned DigestPipeline secrets for the named environment
 from a JSON file. See secrets.template.json for the file shape.
 EOF
   exit "${1:-1}"
@@ -59,7 +59,7 @@ done
 
 [[ "$ENVIRONMENT" == "staging" || "$ENVIRONMENT" == "production" ]] \
   || { printf '[seed] --env must be "staging" or "production" (got "%s")\n' "$ENVIRONMENT" >&2; exit 1; }
-[[ -z "$FILE" ]] && FILE="dispatch-secrets.${ENVIRONMENT}.json"
+[[ -z "$FILE" ]] && FILE="digest-pipeline-secrets.${ENVIRONMENT}.json"
 [[ -f "$FILE" ]] || { printf '[seed] file not found: %s\n' "$FILE" >&2; exit 1; }
 command -v jq      >/dev/null || { printf '[seed] jq required\n'      >&2; exit 1; }
 command -v base64  >/dev/null || { printf '[seed] base64 required\n'  >&2; exit 1; }
@@ -69,10 +69,10 @@ log()  { printf '[seed] %s\n' "$*"; }
 die()  { printf '[seed] FAIL: %s\n' "$*" >&2; exit 1; }
 ok()   { printf '[seed] OK  : %s\n' "$*"; }
 
-# The canonical list of secret paths Dispatch expects. Must stay in lockstep
+# The canonical list of secret paths DigestPipeline expects. Must stay in lockstep
 # with `secrets.template.json` keys, the `remoteRef` keys in the chart's
 # `externalsecret.yaml`, and the inventory in `docs/secrets.md`.
-# db-credentials is excluded — the landing-zone dispatch-platform rds-aurora
+# db-credentials is excluded — the landing-zone digest-pipeline-platform rds-aurora
 # module creates and owns it alongside the Aurora cluster.
 REQUIRED_KEYS=(
   "approvers"
@@ -112,7 +112,7 @@ fi
 # ── 2. Auto-derive convenience fields ───────────────────────────────────────
 # Build a working copy so we can mutate the payload without touching the
 # operator's source file. Everything downstream reads from $working.
-working="$(mktemp -t dispatch-seed-working.XXXXXX)"
+working="$(mktemp -t digest-pipeline-seed-working.XXXXXX)"
 trap 'rm -f "$working" "${PAYLOAD_FILE:-}"' EXIT
 cp "$FILE" "$working"
 
@@ -145,7 +145,7 @@ if [[ -z "$auth_header" ]]; then
 fi
 
 # ── 3. Seed loop ────────────────────────────────────────────────────────────
-PAYLOAD_FILE="$(mktemp -t dispatch-seed-payload.XXXXXX)"
+PAYLOAD_FILE="$(mktemp -t digest-pipeline-seed-payload.XXXXXX)"
 
 put_or_create() {
   local id="$1" value_file="$2"
@@ -162,14 +162,14 @@ put_or_create() {
       --region "$REGION" \
       --name "$id" \
       --secret-string "file://$value_file" \
-      --description "Dispatch ${ENVIRONMENT} — seeded by scripts/seed-secrets.sh" \
+      --description "DigestPipeline ${ENVIRONMENT} — seeded by scripts/seed-secrets.sh" \
       --query 'ARN' --output text >/dev/null
     ok "create: $id"
   fi
 }
 
 for k in "${REQUIRED_KEYS[@]}"; do
-  id="dispatch/${ENVIRONMENT}/${k}"
+  id="digest-pipeline/${ENVIRONMENT}/${k}"
   # Every value is a JSON object/array — serialize compactly for the secret string.
   payload="$(jq -c --arg k "$k" '.[$k]' "$working")"
   [[ -n "$payload" && "$payload" != "null" ]] || die "$k has empty value in $FILE"

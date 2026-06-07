@@ -14,7 +14,7 @@ import { bedrockTokens, type BedrockTokenKind } from '../../common/metrics.js';
 import type { VoiceBaselineService } from '../services/voice-baseline.js';
 import type { RankedSection, PipelineConfig } from '../types.js';
 
-const tracer = getTracer('dispatch.generator');
+const tracer = getTracer('digest-pipeline.generator');
 
 const MAX_ITEMS_PER_SECTION = 5;
 const SECTION_DISPLAY_NAMES: Record<string, string> = {

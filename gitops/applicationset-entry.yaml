@@ -1,10 +1,10 @@
-# Dispatch ApplicationSet entry — register into nanohype/eks-gitops at
+# DigestPipeline ApplicationSet entry — register into nanohype/eks-gitops at
 # applicationsets/apps-tenants.yaml. Matrix generator: clusters × this list.
 
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
-  name: tenant-dispatch
+  name: tenant-digest-pipeline
   namespace: argocd
 spec:
   generators:
@@ -16,12 +16,12 @@ spec:
                   argocd.argoproj.io/secret-type: cluster
           - list:
               elements:
-                - name: dispatch
+                - name: digest-pipeline
                   path: chart
                   syncWave: '100'
   template:
     metadata:
-      name: 'dispatch-{{ index .metadata.labels "environment" }}'
+      name: 'digest-pipeline-{{ index .metadata.labels "environment" }}'
       annotations:
         argocd.argoproj.io/sync-wave: '{{`{{syncWave}}`}}'
     spec:

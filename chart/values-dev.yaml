@@ -3,28 +3,28 @@ image:
   tag: dev
 
 ingress:
-  host: dispatch-dev.example.com
+  host: digest-pipeline-dev.example.com
 
 externalSecret:
-  approversSecret: dispatch/dev/approvers
-  workosSecret: dispatch/dev/workos-directory
-  dbCredentialsSecret: dispatch/dev/db-credentials
-  grafanaCloudSecret: dispatch/dev/grafana-cloud
+  approversSecret: digest-pipeline/dev/approvers
+  workosSecret: digest-pipeline/dev/workos-directory
+  dbCredentialsSecret: digest-pipeline/dev/db-credentials
+  grafanaCloudSecret: digest-pipeline/dev/grafana-cloud
 
 env:
-  OTEL_RESOURCE_ATTRIBUTES: 'service.namespace=dispatch,service.version=0.1.0,deployment.environment=dev,agents.tenant=protohype,agents.platform=dispatch'
+  OTEL_RESOURCE_ATTRIBUTES: 'service.namespace=digest-pipeline,service.version=0.1.0,deployment.environment=dev,agents.tenant=protohype,agents.platform=digest-pipeline'
 
 aws:
-  # Fill from landing-zone `dispatch-platform` (dev) output: irsa_role_arn.
-  # `tofu -chdir=live/aws/workload-dev/us-west-2/dev/dispatch-platform output -raw irsa_role_arn`
+  # Fill from landing-zone `digest-pipeline-platform` (dev) output: irsa_role_arn.
+  # `tofu -chdir=live/aws/workload-dev/us-west-2/dev/digest-pipeline-platform output -raw irsa_role_arn`
   platformRoleArn: ''
 
 tenantInfra:
-  # Bucket names match landing-zone dispatch-platform outputs 1:1
+  # Bucket names match landing-zone digest-pipeline-platform outputs 1:1
   # (voice_baseline_bucket_name, raw_aggregations_bucket_name). The Slack
-  # channel ID + secret IDs are dispatch-specific config, not infra outputs.
-  voiceBaselineBucket: dispatch-voice-baseline-dev
-  rawAggregationsBucket: dispatch-raw-aggregations-dev
+  # channel ID + secret IDs are digest-pipeline-specific config, not infra outputs.
+  voiceBaselineBucket: digest-pipeline-voice-baseline-dev
+  rawAggregationsBucket: digest-pipeline-raw-aggregations-dev
   slackReviewChannelId: '' # per-env Slack channel; fill once known
-  approversSecretId: dispatch/dev/approvers
-  workosDirectorySecretId: dispatch/dev/workos-directory
+  approversSecretId: digest-pipeline/dev/approvers
+  workosDirectorySecretId: digest-pipeline/dev/workos-directory

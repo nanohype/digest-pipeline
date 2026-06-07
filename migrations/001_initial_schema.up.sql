@@ -1,4 +1,4 @@
--- Initial schema for dispatch.
+-- Initial schema for digest-pipeline.
 --
 -- drafts holds every weekly newsletter: one row per pipeline run.
 -- audit_events is an append-only log; every write (generation, edit,

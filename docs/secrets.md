@@ -1,8 +1,8 @@
 # Secrets seeding
 
-Dispatch keeps credentials in **AWS Secrets Manager** — one secret per integration, with separate rotation cadences. This doc covers what each is, how to seed it, how to rotate, and how to verify.
+DigestPipeline keeps credentials in **AWS Secrets Manager** — one secret per integration, with separate rotation cadences. This doc covers what each is, how to seed it, how to rotate, and how to verify.
 
-> Two environments, two parallel secret trees. Staging lives under `dispatch/staging/*`, production under `dispatch/production/*`. The commands below show staging; swap `staging` for `production` to seed the other environment.
+> Two environments, two parallel secret trees. Staging lives under `digest-pipeline/staging/*`, production under `digest-pipeline/production/*`. The commands below show staging; swap `staging` for `production` to seed the other environment.
 
 ## The secrets (per environment)
 
@@ -10,7 +10,7 @@ Every secret below is operator-provisioned with `aws secretsmanager create-secre
 
 ECS refuses to start the pipeline / api / web tasks until the task execution role can resolve every `ecs.Secret.fromSecretsManager(...)` reference, so every row below must exist at `cdk deploy` time.
 
-| Secret name (`dispatch/{env}/…`) | Used by | What it is |
+| Secret name (`digest-pipeline/{env}/…`) | Used by | What it is |
 |---|---|---|
 | `approvers` | api | JSON — `{ cosUserId, backupApproverIds[] }`. The allow-list POST `/drafts/:id/approve` checks against. Rotatable without redeploy. |
 | `workos-directory` | pipeline | JSON — `{ apiKey, directoryId }`. WorkOS Directory Sync read-only key for responder resolution. |
@@ -20,7 +20,7 @@ ECS refuses to start the pipeline / api / web tasks until the task execution rol
 | `notion` | pipeline | JSON — `{ apiKey, databaseId }`. Notion internal-integration token + the all-hands database ID. |
 | `web-config` | web | JSON — `{ workosApiKey, workosClientId, cookiePassword, redirectUri }`. WorkOS AuthKit for the review UI. `cookiePassword` must be ≥32 chars. |
 | `runtime-config` | pipeline + api | JSON — `{ slackReviewChannelId, sesFromAddress, newsletterRecipients }`. Non-credential operational config kept alongside secrets because ECS's `Secret.fromSecretsManager(..., 'field')` lets us project individual JSON fields into env vars. |
-| `db-credentials` | **CDK-managed** | JSON — `{ username, password, host, port, dbname, engine }`. Created by the `DispatchDb` construct (`secretsmanager.Secret(...)` with `generateSecretString`); Aurora rotates `password` on the built-in schedule. Pipeline + api resolve it via `DATABASE_SECRET_ID` in `src/pipeline/entrypoint.ts:87-97`. |
+| `db-credentials` | **CDK-managed** | JSON — `{ username, password, host, port, dbname, engine }`. Created by the `DigestPipelineDb` construct (`secretsmanager.Secret(...)` with `generateSecretString`); Aurora rotates `password` on the built-in schedule. Pipeline + api resolve it via `DATABASE_SECRET_ID` in `src/pipeline/entrypoint.ts:87-97`. |
 | `grafana-cloud` | ADOT collector sidecar | JSON — `{ instanceId, apiToken, otlpEndpoint, authHeader }`. The operator pre-computes `authHeader = "Basic " + base64("instanceId:apiToken")` once; the collector injects it into the OTLP exporter's `Authorization` header. |
 
 > **Different external accounts per environment.** Staging and production should have their own Slack workspace (or at minimum their own bot user + review channel), Linear workspace, Notion database, WorkOS directory, and Grafana Cloud stack. Don't share credentials across envs — a leaked staging token would otherwise unlock production.
@@ -31,20 +31,20 @@ The `approvers` secret expects **User Management user IDs** (`user_01…`) — t
 
 > **Directory Sync IDs are a different identifier space.** If you look up your directory user in the WorkOS dashboard and copy something like `directory_user_01KPA9…`, that is **not** what goes in `approvers`. Stripping the `directory_` prefix yields a syntactically valid-looking User Management ID, but it points at nothing — don't do it.
 
-A User Management record is created the first time someone signs in via AuthKit. Until then, the person doesn't have a `user_01…`, even if they're in Directory Sync. The cleanest way to provision yourself without deploying dispatch first:
+A User Management record is created the first time someone signs in via AuthKit. Until then, the person doesn't have a `user_01…`, even if they're in Directory Sync. The cleanest way to provision yourself without deploying digest-pipeline first:
 
 1. WorkOS dashboard → **Authentication → Features → Hosted UI**.
 2. In the Hosted UI component, click the hosted AuthKit URL — it opens a new tab (`https://<slug>.authkit.app` or equivalent).
 3. Sign in with your corporate SSO. WorkOS provisions (and links, if an SSO connection is in place) the User Management record against your existing email, so no duplicate account is created.
 4. WorkOS dashboard → **User Management → Users** — you now appear in the list with a `user_01…` ID. That's the value for `approvers.cosUserId` (or an entry in `backupApproverIds`).
 
-Repeat once per approver. Dispatch caches the `approvers` secret for 5 minutes (`src/common/secrets.ts:21`), so adding or removing an approver is live within 5 min of `npm run seed:{env}` — no redeploy, no task rollover.
+Repeat once per approver. DigestPipeline caches the `approvers` secret for 5 minutes (`src/common/secrets.ts:21`), so adding or removing an approver is live within 5 min of `npm run seed:{env}` — no redeploy, no task rollover.
 
 **If Hosted UI doesn't appear** in that nav, no authentication method is enabled yet for this WorkOS project. Go to **User Management → Authentication → Methods** and turn on at least one (email+password, Google OAuth, or an SSO connection). AuthKit can't provision users without one.
 
-## The `dispatch/{env}/grafana-cloud` secret (JSON payload)
+## The `digest-pipeline/{env}/grafana-cloud` secret (JSON payload)
 
-The ADOT collector sidecar reads the Grafana Cloud OTLP credentials from this one secret and injects them into the collector's `basicauth/grafana` extension via `env:` variables wired in `infra/lib/dispatch-stack.ts`:
+The ADOT collector sidecar reads the Grafana Cloud OTLP credentials from this one secret and injects them into the collector's `basicauth/grafana` extension via `env:` variables wired in `infra/lib/digest-pipeline-stack.ts`:
 
 ```yaml
 exporters:
@@ -75,7 +75,7 @@ AUTH_HEADER="Basic $(printf '%s:%s' "$OTLP_INSTANCE_ID" "$OTLP_API_TOKEN" | base
 
 aws secretsmanager create-secret \
   --region us-west-2 \
-  --name dispatch/staging/grafana-cloud \
+  --name digest-pipeline/staging/grafana-cloud \
   --description 'Grafana Cloud (staging): OTLP endpoint + pre-computed basic-auth header.' \
   --secret-string "{
     \"instanceId\":   \"$OTLP_INSTANCE_ID\",
@@ -85,21 +85,21 @@ aws secretsmanager create-secret \
   }"
 ```
 
-> **Logs do not go through this secret.** Dispatch ships logs directly from stdout via the ECS awslogs driver to CloudWatch. The collector sidecar only handles traces + metrics. There is no `lokiEndpoint` or `lokiUsername` field in `dispatch/{env}/grafana-cloud` — if you see one, it's a leftover from an earlier iteration and can be removed. See [`troubleshooting.md`](troubleshooting.md) § "Logs not in Grafana" for the Grafana-side wiring.
+> **Logs do not go through this secret.** DigestPipeline ships logs directly from stdout via the ECS awslogs driver to CloudWatch. The collector sidecar only handles traces + metrics. There is no `lokiEndpoint` or `lokiUsername` field in `digest-pipeline/{env}/grafana-cloud` — if you see one, it's a leftover from an earlier iteration and can be removed. See [`troubleshooting.md`](troubleshooting.md) § "Logs not in Grafana" for the Grafana-side wiring.
 
 ## Seed all secrets in one shot (recommended)
 
 Copy the committed template, fill in the real values, and run the seeder:
 
 ```bash
-cd dispatch
-cp secrets.template.json dispatch-secrets.staging.json
-# Edit dispatch-secrets.staging.json in your preferred $EDITOR.
+cd digest-pipeline
+cp secrets.template.json digest-pipeline-secrets.staging.json
+# Edit digest-pipeline-secrets.staging.json in your preferred $EDITOR.
 #   - Replace every "REPLACE_ME" with the real value.
 #   - You can leave web-config.cookiePassword empty — the seeder generates one.
 #   - You can leave grafana-cloud.authHeader empty — the seeder computes it
 #     from instanceId + apiToken.
-#   - The file is gitignored (`dispatch-secrets.*.json`).
+#   - The file is gitignored (`digest-pipeline-secrets.*.json`).
 
 npm run seed:staging:dry     # validates shape, lists keys, no AWS calls
 npm run seed:staging         # creates or updates every required secret
@@ -114,20 +114,20 @@ Safety rails in the seeder (`scripts/seed-secrets.sh`):
 - Auto-generates `web-config.cookiePassword` if empty (openssl rand, 48-char ASCII-safe).
 - Auto-computes `grafana-cloud.authHeader = "Basic " + base64(instanceId:apiToken)` if empty.
 
-`dispatch/{env}/db-credentials` is **CDK-managed** and is not in the seeder's key list — the `DispatchDb` construct creates and owns it alongside the Aurora cluster.
+`digest-pipeline/{env}/db-credentials` is **CDK-managed** and is not in the seeder's key list — the `DigestPipelineDb` construct creates and owns it alongside the Aurora cluster.
 
 After seeding, force an ECS rollover so the already-running api + web tasks pick up the freshly-written values:
 
 ```bash
 CLUSTER=$(aws cloudformation describe-stacks --region us-west-2 \
-  --stack-name DispatchStaging \
+  --stack-name DigestPipelineStaging \
   --query "Stacks[0].Resources[?ResourceType=='AWS::ECS::Cluster'].PhysicalResourceId" \
   --output text)
 
 aws ecs update-service --region us-west-2 --cluster "$CLUSTER" \
-  --service DispatchApiService --force-new-deployment
+  --service DigestPipelineApiService --force-new-deployment
 aws ecs update-service --region us-west-2 --cluster "$CLUSTER" \
-  --service DispatchWebService --force-new-deployment
+  --service DigestPipelineWebService --force-new-deployment
 # The pipeline picks up new secrets on the next scheduled run.
 ```
 
@@ -141,7 +141,7 @@ ENV=staging                                          # or: production
 # ── approvers ───────────────────────────────────────────────────────────
 aws secretsmanager create-secret \
   --region us-west-2 \
-  --name dispatch/${ENV}/approvers \
+  --name digest-pipeline/${ENV}/approvers \
   --description 'WorkOS user IDs allowed to approve + send a draft.' \
   --secret-string '{
     "cosUserId":        "user_01ABC...",
@@ -151,7 +151,7 @@ aws secretsmanager create-secret \
 # ── workos-directory ───────────────────────────────────────────────────
 aws secretsmanager create-secret \
   --region us-west-2 \
-  --name dispatch/${ENV}/workos-directory \
+  --name digest-pipeline/${ENV}/workos-directory \
   --description 'WorkOS Directory Sync read-only API key + directory ID.' \
   --secret-string '{
     "apiKey":     "sk_live_...",
@@ -161,7 +161,7 @@ aws secretsmanager create-secret \
 # ── github ─────────────────────────────────────────────────────────────
 aws secretsmanager create-secret \
   --region us-west-2 \
-  --name dispatch/${ENV}/github \
+  --name digest-pipeline/${ENV}/github \
   --description 'Read-only PAT or GitHub App token + repos to aggregate from.' \
   --secret-string '{
     "token": "ghp_...",
@@ -174,7 +174,7 @@ aws secretsmanager create-secret \
 # ── linear ─────────────────────────────────────────────────────────────
 aws secretsmanager create-secret \
   --region us-west-2 \
-  --name dispatch/${ENV}/linear \
+  --name digest-pipeline/${ENV}/linear \
   --description 'Linear personal API key + optional ask-label override.' \
   --secret-string '{
     "apiKey":  "lin_api_...",
@@ -184,7 +184,7 @@ aws secretsmanager create-secret \
 # ── slack ──────────────────────────────────────────────────────────────
 aws secretsmanager create-secret \
   --region us-west-2 \
-  --name dispatch/${ENV}/slack \
+  --name digest-pipeline/${ENV}/slack \
   --description 'Slack bot token + channels + HR-bot user IDs to filter out.' \
   --secret-string '{
     "botToken":               "xoxb-...",
@@ -196,7 +196,7 @@ aws secretsmanager create-secret \
 # ── notion ─────────────────────────────────────────────────────────────
 aws secretsmanager create-secret \
   --region us-west-2 \
-  --name dispatch/${ENV}/notion \
+  --name digest-pipeline/${ENV}/notion \
   --description 'Notion internal integration token + all-hands database ID.' \
   --secret-string '{
     "apiKey":     "secret_...",
@@ -207,31 +207,31 @@ aws secretsmanager create-secret \
 COOKIE_PASSWORD=$(openssl rand -base64 48 | tr -d '\n/' | cut -c1-48)
 aws secretsmanager create-secret \
   --region us-west-2 \
-  --name dispatch/${ENV}/web-config \
+  --name digest-pipeline/${ENV}/web-config \
   --description 'WorkOS AuthKit credentials for the Next.js review UI.' \
   --secret-string "{
     \"workosApiKey\":     \"sk_live_...\",
     \"workosClientId\":   \"client_01...\",
     \"cookiePassword\":   \"${COOKIE_PASSWORD}\",
-    \"redirectUri\":      \"https://dispatch-${ENV}.internal.company.com/callback\"
+    \"redirectUri\":      \"https://digest-pipeline-${ENV}.internal.company.com/callback\"
   }"
 
 # ── runtime-config (non-credential operational config) ────────────────
 aws secretsmanager create-secret \
   --region us-west-2 \
-  --name dispatch/${ENV}/runtime-config \
+  --name digest-pipeline/${ENV}/runtime-config \
   --description 'Operational knobs consumed by the pipeline + API tasks.' \
   --secret-string '{
     "slackReviewChannelId": "C00REVIEW00",
-    "sesFromAddress":       "dispatch@yourco.com",
+    "sesFromAddress":       "digest-pipeline@yourco.com",
     "newsletterRecipients": "exec-list@yourco.com,staff@yourco.com"
   }'
 
 # ── grafana-cloud (see schema above) ───────────────────────────────────
-# Create separately using the snippet in § "The dispatch/{env}/grafana-cloud secret".
+# Create separately using the snippet in § "The digest-pipeline/{env}/grafana-cloud secret".
 ```
 
-`dispatch/{env}/db-credentials` is **CDK-managed** — don't create it by hand. The `DispatchDb` construct creates and rotates it alongside the Aurora cluster.
+`digest-pipeline/{env}/db-credentials` is **CDK-managed** — don't create it by hand. The `DigestPipelineDb` construct creates and rotates it alongside the Aurora cluster.
 
 ## Rotate a single credential
 
@@ -242,19 +242,19 @@ ENV=staging
 
 aws secretsmanager put-secret-value \
   --region us-west-2 \
-  --secret-id dispatch/${ENV}/github \
+  --secret-id digest-pipeline/${ENV}/github \
   --secret-string "$(jq -c '.token = "ghp_NEW..."' < github-${ENV}.json)"
 
 # Force rollover of any service that consumes the rotated secret.
 aws ecs update-service \
   --region us-west-2 \
-  --cluster DispatchCluster-... \
-  --service DispatchPipelineService-... \
+  --cluster DigestPipelineCluster-... \
+  --service DigestPipelinePipelineService-... \
   --force-new-deployment
 aws ecs update-service \
   --region us-west-2 \
-  --cluster DispatchCluster-... \
-  --service DispatchApiService-... \
+  --cluster DigestPipelineCluster-... \
+  --service DigestPipelineApiService-... \
   --force-new-deployment
 ```
 
@@ -285,21 +285,21 @@ ENV=staging
 for s in approvers workos-directory github linear slack notion \
          web-config runtime-config grafana-cloud; do
   aws secretsmanager describe-secret --region us-west-2 \
-    --secret-id dispatch/${ENV}/${s} \
+    --secret-id digest-pipeline/${ENV}/${s} \
     --query '{name:Name,lastChanged:LastChangedDate}' --output text
 done
 
 # 2. Did the ECS tasks start clean?
 CLUSTER=$(aws cloudformation describe-stacks --region us-west-2 \
-  --stack-name Dispatch$(echo ${ENV^}) \
+  --stack-name DigestPipeline$(echo ${ENV^}) \
   --query "Stacks[0].Outputs[?OutputKey=='ClusterName'].OutputValue" --output text)
 aws ecs describe-services \
   --region us-west-2 --cluster "$CLUSTER" \
-  --services DispatchApiService DispatchWebService \
+  --services DigestPipelineApiService DigestPipelineWebService \
   --query 'services[].{name:serviceName,desired:desiredCount,running:runningCount,lastEvent:events[0].message}'
 
 # 3. Tail the pipeline log for Zod config errors on a fresh run.
-aws logs tail /dispatch/${ENV}/pipeline --follow --since 5m
+aws logs tail /digest-pipeline/${ENV}/pipeline --follow --since 5m
 ```
 
 If the pipeline / api task crash-loops, look for `ZodError: required … missing` in CloudWatch — one of the seeded secrets has a typo or is missing a required key.
@@ -307,7 +307,7 @@ If the pipeline / api task crash-loops, look for `ZodError: required … missing
 ## Security posture
 
 - Secrets Manager encrypts at rest with an AWS-managed KMS key. To use a customer-managed key, recreate each secret under a CMK via the console or CLI. CDK doesn't own the key choice because it doesn't own the secret lifecycle.
-- The pipeline / api / web task roles are each granted `secretsmanager:GetSecretValue` only on `arn:aws:secretsmanager:…:secret:dispatch/{env}/*` (`infra/lib/dispatch-stack.ts:183`, `:259`). No wildcards. The staging task role cannot read production secrets and vice versa.
+- The pipeline / api / web task roles are each granted `secretsmanager:GetSecretValue` only on `arn:aws:secretsmanager:…:secret:digest-pipeline/{env}/*` (`infra/lib/digest-pipeline-stack.ts:183`, `:259`). No wildcards. The staging task role cannot read production secrets and vice versa.
 - CDK imports every secret via `secretsmanager.Secret.fromSecretNameV2(...)` — the secret values never transit CloudFormation. `cdk destroy` does not delete the secrets because CDK never owned them.
 - `GetSecretValue` calls are audited to CloudTrail with the invoking principal. Rotation should be performed by a dedicated deploy role, not a personal IAM user.
 - Never paste a populated secret into chat, issues, or a notebook — Secrets Manager is the authoritative store. Generated values (cookie passwords, OTLP `authHeader`) should be piped directly into `create-secret` / `put-secret-value` without being written to disk.

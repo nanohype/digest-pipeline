@@ -60,10 +60,10 @@ jobs:
         run: helm lint chart
 
       - name: Helm template (staging values)
-        run: helm template dispatch chart -f chart/values-staging.yaml > /dev/null
+        run: helm template digest-pipeline chart -f chart/values-staging.yaml > /dev/null
 
       - name: Helm template (production values)
-        run: helm template dispatch chart -f chart/values-production.yaml > /dev/null
+        run: helm template digest-pipeline chart -f chart/values-production.yaml > /dev/null
 
   web:
     name: web build + typecheck + test
@@ -103,11 +103,11 @@ jobs:
           WORKOS_API_KEY: ci-placeholder
           WORKOS_CLIENT_ID: ci-placeholder
           WORKOS_COOKIE_PASSWORD: ci-placeholder-32-char-string-pad!
-          WORKOS_REDIRECT_URI: https://dispatch.internal/callback
-          API_BASE_URL: https://api.dispatch.internal
+          WORKOS_REDIRECT_URI: https://digest-pipeline.internal/callback
+          API_BASE_URL: https://api.digest-pipeline.internal
           OTEL_SDK_DISABLED: 'true'
           OTEL_EXPORTER_OTLP_ENDPOINT: http://localhost:4318
-          OTEL_SERVICE_NAME: dispatch-web
+          OTEL_SERVICE_NAME: digest-pipeline-web
 
   docker:
     name: docker build (no push)

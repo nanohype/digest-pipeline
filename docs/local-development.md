@@ -1,6 +1,6 @@
 # Local development
 
-How to iterate on Dispatch without deploying — the dev loop, a local Postgres, running a full pipeline end-to-end against staging credentials, and the test suites + what they cover.
+How to iterate on DigestPipeline without deploying — the dev loop, a local Postgres, running a full pipeline end-to-end against staging credentials, and the test suites + what they cover.
 
 ## The dev loop
 
@@ -25,19 +25,19 @@ cd web && npm run dev    # Next.js dev server on :3000
 
 ## Starting Postgres locally
 
-Dispatch expects Postgres ≥ 15. The deployed cluster runs Aurora PostgreSQL 16; mirror that locally:
+DigestPipeline expects Postgres ≥ 15. The deployed cluster runs Aurora PostgreSQL 16; mirror that locally:
 
 ```bash
-docker run -d --name dispatch-pg -p 5432:5432 \
-  -e POSTGRES_USER=dispatch_app \
-  -e POSTGRES_PASSWORD=dispatch_app \
-  -e POSTGRES_DB=dispatchdb postgres:16
+docker run -d --name digest-pipeline-pg -p 5432:5432 \
+  -e POSTGRES_USER=digest_pipeline_app \
+  -e POSTGRES_PASSWORD=digest_pipeline_app \
+  -e POSTGRES_DB=digest_pipeline postgres:16
 
 # First-time (and after schema changes):
 npm run migrate:up
 
 # To tear down:
-docker stop dispatch-pg && docker rm dispatch-pg
+docker stop digest-pipeline-pg && docker rm digest-pipeline-pg
 ```
 
 The default `DATABASE_URL` in `.env.example` matches this setup. If you prefer a Postgres you already have, set `DATABASE_URL` accordingly — Aurora's connection string shape (`postgres://user:pass@host:port/db`) works identically.
@@ -49,20 +49,20 @@ The default `DATABASE_URL` in `.env.example` matches this setup. If you prefer a
 - `aws sso login` (or `AWS_PROFILE` with credentials) so Secrets Manager + Bedrock + S3 calls authenticate.
 - `AWS_REGION` set (usually from your profile, but the `.env` override wins).
 - `OTEL_SDK_DISABLED=true` in `.env` — the SDK won't find a collector on localhost, so disable it to skip the retries-and-warnings path.
-- Staging secrets already seeded (see [`secrets.md`](secrets.md)); point the `*_SECRET_ID` env vars at `dispatch/staging/*`.
+- Staging secrets already seeded (see [`secrets.md`](secrets.md)); point the `*_SECRET_ID` env vars at `digest-pipeline/staging/*`.
 
 ```bash
 # .env overrides for local + staging-creds dev:
 BEDROCK_MODEL_ID=us.anthropic.claude-sonnet-4-6
-GITHUB_SECRET_ID=dispatch/staging/github
-LINEAR_SECRET_ID=dispatch/staging/linear
-SLACK_SECRET_ID=dispatch/staging/slack
-NOTION_SECRET_ID=dispatch/staging/notion
-WORKOS_DIRECTORY_SECRET_ID=dispatch/staging/workos-directory
-VOICE_BASELINE_BUCKET=dispatch-voice-baseline-<account>-staging
-RAW_AGGREGATIONS_BUCKET=dispatch-raw-aggregations-<account>-staging
+GITHUB_SECRET_ID=digest-pipeline/staging/github
+LINEAR_SECRET_ID=digest-pipeline/staging/linear
+SLACK_SECRET_ID=digest-pipeline/staging/slack
+NOTION_SECRET_ID=digest-pipeline/staging/notion
+WORKOS_DIRECTORY_SECRET_ID=digest-pipeline/staging/workos-directory
+VOICE_BASELINE_BUCKET=digest-pipeline-voice-baseline-<account>-staging
+RAW_AGGREGATIONS_BUCKET=digest-pipeline-raw-aggregations-<account>-staging
 SLACK_REVIEW_CHANNEL_ID=C00STAGING00
-DATABASE_URL=postgres://dispatch_app:dispatch_app@localhost:5432/dispatchdb
+DATABASE_URL=postgres://digest_pipeline_app:digest_pipeline_app@localhost:5432/digest_pipeline
 OTEL_SDK_DISABLED=true
 LOG_LEVEL=debug
 ```
@@ -97,7 +97,7 @@ npm run dev
 # listens on :3000, proxies API calls to API_BASE_URL (default http://localhost:3001)
 ```
 
-Sign in via WorkOS AuthKit (needs valid `web-config` credentials). The easiest path: seed `dispatch/local/web-config` with a staging-tier Client ID + a `http://localhost:3000/callback` redirect URI registered on that Client. Then point the web dev server at it:
+Sign in via WorkOS AuthKit (needs valid `web-config` credentials). The easiest path: seed `digest-pipeline/local/web-config` with a staging-tier Client ID + a `http://localhost:3000/callback` redirect URI registered on that Client. Then point the web dev server at it:
 
 ```bash
 # web/.env.local
@@ -169,7 +169,7 @@ When a scheduled staging / production run fails, reproduce locally:
 
    ```bash
    DB_SECRET=$(aws secretsmanager get-secret-value --region us-west-2 \
-     --secret-id dispatch/staging/db-credentials \
+     --secret-id digest-pipeline/staging/db-credentials \
      --query SecretString --output text)
    export PGPASSWORD=$(echo "$DB_SECRET" | jq -r .password)
 
@@ -182,13 +182,13 @@ When a scheduled staging / production run fails, reproduce locally:
             ORDER BY created_at;"
    ```
 
-3. The `details` JSON blob on `PIPELINE_FAILURE` records which phase failed and the error message. Armed with that, rerun locally with the same inputs (or copy the raw aggregation from `s3://dispatch-raw-aggregations-<account>-staging/<run_id>/` if the snapshot made it that far).
+3. The `details` JSON blob on `PIPELINE_FAILURE` records which phase failed and the error message. Armed with that, rerun locally with the same inputs (or copy the raw aggregation from `s3://digest-pipeline-raw-aggregations-<account>-staging/<run_id>/` if the snapshot made it that far).
 
-4. Pull the run's logs. The pipeline Job's stdout goes to Grafana Cloud Loki via the cluster log forwarder — filter on `service="dispatch-pipeline"` and the `run_id` field. For the live Job pod: `kubectl -n tenants-protohype logs job/<job-name>` (the CronJob spawns `dispatch-pipeline-<timestamp>` Jobs). Every line carries `trace_id` so you can jump into Tempo.
+4. Pull the run's logs. The pipeline Job's stdout goes to Grafana Cloud Loki via the cluster log forwarder — filter on `service="digest-pipeline-pipeline"` and the `run_id` field. For the live Job pod: `kubectl -n tenants-protohype logs job/<job-name>` (the CronJob spawns `digest-pipeline-pipeline-<timestamp>` Jobs). Every line carries `trace_id` so you can jump into Tempo.
 
 ## Common dev-time gotchas
 
 - **Bedrock 403 from a local run.** Your AWS profile must have `bedrock:InvokeModel` on `anthropic.claude-*`. Request model access in the console if you haven't already, and add the permission to the IAM user or role your profile uses.
-- **Aurora-shaped `DATABASE_URL` doesn't work locally.** The `dispatch/<env>/db-credentials` secret (owned by the landing-zone `dispatch-platform` rds-aurora module) uses `host`, `port`, `username`, `password`, `dbname` keys; the chart's ExternalSecret composes them into a `postgres://…` URL. Locally, set the simpler `postgres://…` URL directly — it's equivalent.
+- **Aurora-shaped `DATABASE_URL` doesn't work locally.** The `digest-pipeline/<env>/db-credentials` secret (owned by the landing-zone `digest-pipeline-platform` rds-aurora module) uses `host`, `port`, `username`, `password`, `dbname` keys; the chart's ExternalSecret composes them into a `postgres://…` URL. Locally, set the simpler `postgres://…` URL directly — it's equivalent.
 - **`dev:pipeline` runs forever.** `tsx watch` re-runs on every file change in `src/`; if a test file watcher is also running, you can see overlapping runs. Use `tsx src/pipeline/entrypoint.ts` (without `watch`) for a one-shot run.
 - **Live-edit save fails with 401 locally.** Your WorkOS access token expired. Refresh the page to trigger AuthKit re-auth.

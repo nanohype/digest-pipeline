@@ -46,9 +46,9 @@ backupApproverIds[]}`) — it is not hardcoded and not editable from the UI.
 
 - No long-lived credentials in the app. Pods get AWS access via IRSA (Workload Identity); there
   are no static keys anywhere in the repo or image. Bedrock, S3, SES, and Secrets Manager calls
-  AssumeRoleWithWebIdentity into the landing-zone `dispatch-platform` IRSA role.
+  AssumeRoleWithWebIdentity into the landing-zone `digest-pipeline-platform` IRSA role.
 - App-level secrets are projected at deploy time by External Secrets Operator from AWS Secrets
-  Manager (`dispatch/<env>/*`) into a Kubernetes Secret consumed `envFrom` — never committed.
+  Manager (`digest-pipeline/<env>/*`) into a Kubernetes Secret consumed `envFrom` — never committed.
 - Inference runs on-account via Amazon Bedrock — source content is not sent to third parties.
 
 ### Network

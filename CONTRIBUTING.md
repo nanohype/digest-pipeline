@@ -64,16 +64,16 @@ retries within a run.
    small per-run user prompt varies. (Confirm the exact marker shape against current Bedrock
    docs before changing it — do not guess.)
 2. Read `cache_read_input_tokens` / `cache_creation_input_tokens` from the response `usage`
-   and record them via the existing `dispatch.bedrock.tokens` metric with `kind` label values
+   and record them via the existing `digest-pipeline.bedrock.tokens` metric with `kind` label values
    `cache_read` / `cache_write`, so savings show up on the Grafana dashboard.
 3. Add a generator test asserting the request body carries the `cachePoint` marker on the
    system block.
 
 ## Adding a chart template
 
-1. Add the template under `chart/templates/<name>.yaml`. Use the `dispatch.*` helpers
-   (`dispatch.fullname`, `dispatch.labels`, the shared `serviceaccount`) from `_helpers.tpl` —
-   internal naming stays `dispatch`.
+1. Add the template under `chart/templates/<name>.yaml`. Use the `digest-pipeline.*` helpers
+   (`digest-pipeline.fullname`, `digest-pipeline.labels`, the shared `serviceaccount`) from `_helpers.tpl` —
+   internal naming stays `digest-pipeline`.
 2. Thread any new toggles/values through `values.yaml` and both per-env deltas
    (`values-staging.yaml`, `values-production.yaml`).
 3. Keep it in-chart only: **no inline IAM, no cloud resources, no cluster addons.** Namespaced
@@ -85,7 +85,7 @@ retries within a run.
 
 This app ships as a Platform tenant: a Helm `chart/`, a `platform.yaml` (Platform +
 BudgetPolicy CRs), and a `gitops/applicationset-entry.yaml`. Per-tenant AWS substrate lives in
-`landing-zone` (the `dispatch-platform` component); cluster addons live in `eks-gitops`. Do not
+`landing-zone` (the `digest-pipeline-platform` component); cluster addons live in `eks-gitops`. Do not
 add IAM, cloud resources, or cluster addons to the chart — see
 [ARCHITECTURE.md](./ARCHITECTURE.md#boundaries).
 

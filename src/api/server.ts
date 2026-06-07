@@ -1,5 +1,5 @@
 /**
- * Dispatch API Server
+ * DigestPipeline API Server
  *
  *   GET  /health                          — unauthenticated
  *   GET  /drafts/:id                      — WorkOS JWT

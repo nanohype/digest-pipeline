@@ -1,7 +1,7 @@
 {
   "name": "digest-pipeline-web",
   "version": "0.1.0",
-  "description": "Dispatch review + approval UI (Next.js 16 App Router, WorkOS AuthKit)",
+  "description": "DigestPipeline review + approval UI (Next.js 16 App Router, WorkOS AuthKit)",
   "type": "module",
   "private": true,
   "engines": {

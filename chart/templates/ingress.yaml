@@ -2,9 +2,9 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: {{ include "dispatch.fullname" . }}
+  name: {{ include "tenant-chart-base.fullname" . }}
   labels:
-    {{- include "dispatch.labels" . | nindent 4 }}
+    {{- include "tenant-chart-base.labels" . | nindent 4 }}
   annotations:
     {{- if .Values.ingress.tls.enabled }}
     cert-manager.io/cluster-issuer: {{ .Values.ingress.tls.issuer | quote }}
@@ -18,7 +18,7 @@ spec:
   tls:
     - hosts:
         - {{ .Values.ingress.host | quote }}
-      secretName: {{ include "dispatch.fullname" . }}-tls
+      secretName: {{ include "tenant-chart-base.fullname" . }}-tls
   {{- end }}
   rules:
     - host: {{ .Values.ingress.host | quote }}
@@ -29,7 +29,7 @@ spec:
             pathType: ImplementationSpecific
             backend:
               service:
-                name: {{ include "dispatch.fullname" . }}-api
+                name: {{ include "tenant-chart-base.fullname" . }}-api
                 port:
                   number: {{ .Values.api.port }}
           # / → web Service
@@ -37,7 +37,7 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: {{ include "dispatch.fullname" . }}-web
+                name: {{ include "tenant-chart-base.fullname" . }}-web
                 port:
                   number: {{ .Values.web.port }}
 {{- end }}

@@ -9,26 +9,26 @@ web:
   replicaCount: 2
 
 ingress:
-  host: dispatch.example.com
+  host: digest-pipeline.example.com
 
 externalSecret:
-  approversSecret: dispatch/production/approvers
-  workosSecret: dispatch/production/workos-directory
-  dbCredentialsSecret: dispatch/production/db-credentials
-  grafanaCloudSecret: dispatch/production/grafana-cloud
+  approversSecret: digest-pipeline/production/approvers
+  workosSecret: digest-pipeline/production/workos-directory
+  dbCredentialsSecret: digest-pipeline/production/db-credentials
+  grafanaCloudSecret: digest-pipeline/production/grafana-cloud
 
 env:
-  OTEL_RESOURCE_ATTRIBUTES: 'service.namespace=dispatch,service.version=0.1.0,deployment.environment=production,agents.tenant=protohype,agents.platform=dispatch'
+  OTEL_RESOURCE_ATTRIBUTES: 'service.namespace=digest-pipeline,service.version=0.1.0,deployment.environment=production,agents.tenant=protohype,agents.platform=digest-pipeline'
 
 aws:
-  # Fill from landing-zone `dispatch-platform` (production) output: irsa_role_arn.
-  # `tofu -chdir=live/aws/workload-prod/us-west-2/production/dispatch-platform output -raw irsa_role_arn`
+  # Fill from landing-zone `digest-pipeline-platform` (production) output: irsa_role_arn.
+  # `tofu -chdir=live/aws/workload-prod/us-west-2/production/digest-pipeline-platform output -raw irsa_role_arn`
   platformRoleArn: ''
 
 tenantInfra:
-  # Bucket names match landing-zone dispatch-platform outputs 1:1.
-  voiceBaselineBucket: dispatch-voice-baseline-production
-  rawAggregationsBucket: dispatch-raw-aggregations-production
+  # Bucket names match landing-zone digest-pipeline-platform outputs 1:1.
+  voiceBaselineBucket: digest-pipeline-voice-baseline-production
+  rawAggregationsBucket: digest-pipeline-raw-aggregations-production
   slackReviewChannelId: ''
-  approversSecretId: dispatch/production/approvers
-  workosDirectorySecretId: dispatch/production/workos-directory
+  approversSecretId: digest-pipeline/production/approvers
+  workosDirectorySecretId: digest-pipeline/production/workos-directory

@@ -12,7 +12,7 @@
  * `LOG_LEVEL=silent` muffles all output (used by the test environment).
  * `OTEL_SERVICE_NAME` drives the Pino `base.service` field, matching
  * the OTel resource attribute, so the pipeline tags as
- * `dispatch-pipeline` and the API tags as `dispatch-api` from the same
+ * `digest-pipeline-pipeline` and the API tags as `digest-pipeline-api` from the same
  * factory.
  */
 
@@ -24,7 +24,7 @@ export function getLogger(): Logger {
   if (!cached) {
     cached = pino({
       level: process.env.LOG_LEVEL ?? 'info',
-      base: { service: process.env.OTEL_SERVICE_NAME ?? 'dispatch' },
+      base: { service: process.env.OTEL_SERVICE_NAME ?? 'digest-pipeline' },
       timestamp: pino.stdTimeFunctions.isoTime,
     });
   }

@@ -13,7 +13,7 @@ import type { Aggregator, AggregatorContext } from './types.js';
 
 const TIMEOUT_MS = 8_000;
 const MAX_ITEMS = 20;
-const SKIP_LABELS = new Set(['chore', 'skip-dispatch', 'internal', 'dependencies']);
+const SKIP_LABELS = new Set(['chore', 'skip-digest-pipeline', 'internal', 'dependencies']);
 
 export const aggregateGitHub: Aggregator = async (ctx: AggregatorContext): Promise<AggregationResult> => {
   const { runId, since, resolveIdentity, services } = ctx;

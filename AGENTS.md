@@ -2,7 +2,7 @@
 
 You're an AI client (or the author of one) about to run this service locally, add an aggregator source, wire a Bedrock cachePoint, or ship it as a Platform tenant. This file gets you running in five minutes. For the wider picture — how this repo fits into the nanohype stack — read the [Platform Reference](../nanohype/docs/platform-reference.md).
 
-> Internal service handle: **dispatch**. The GitHub repo and product name are `digest-pipeline`, but the npm package, the OTel `service.name` / `agents.platform`, the `dispatch.*` metric names + template helpers + labels, and the `dispatch/<env>/*` secret prefixes all stay `dispatch` — they're coupled to the landing-zone `dispatch-platform` substrate component.
+> Internal service handle: **digest-pipeline**. The GitHub repo and product name are `digest-pipeline`, but the npm package, the OTel `service.name` / `agents.platform`, the `digest-pipeline.*` metric names + template helpers + labels, and the `digest-pipeline/<env>/*` secret prefixes all stay `digest-pipeline` — they're coupled to the landing-zone `digest-pipeline-platform` substrate component.
 
 ## What this repo gives you
 
@@ -47,10 +47,10 @@ Two CRs in different groups — a `BudgetPolicy` (`governance.nanohype.dev/v1alp
 apiVersion: governance.nanohype.dev/v1alpha1
 kind: BudgetPolicy
 metadata:
-  name: dispatch
+  name: digest-pipeline
   namespace: tenants-protohype
 spec:
-  platformRef: { name: dispatch }
+  platformRef: { name: digest-pipeline }
   monthlyUsd: '2000' # kill-switch fires at 120% (USD 2400); Bedrock fanout is weekly, not per-query
   alertThresholdsPercent: [50, 80, 100]
   killSwitchEnabled: true
@@ -58,13 +58,13 @@ spec:
 apiVersion: platform.nanohype.dev/v1alpha1
 kind: Platform
 metadata:
-  name: dispatch
+  name: digest-pipeline
   namespace: tenants-protohype
 spec:
-  displayName: dispatch
+  displayName: digest-pipeline
   persona: ops
   tenant: protohype
-  budget: { name: dispatch }
+  budget: { name: digest-pipeline }
   identity:
     allowedModelFamilies: [anthropic] # Claude via Bedrock
     extraPolicyArns: [] # app pods assume the landing-zone role directly
@@ -72,26 +72,26 @@ spec:
   isolation: namespace
 ```
 
-The operator reconciles the namespace `tenants-protohype`, ResourceQuota, LimitRange, default-deny NetworkPolicy, ArgoCD AppProject, and a per-Platform IRSA role trusting the `tenant-runtime` SA. **dispatch's own app pods don't use that operator role** — all three workloads assume the landing-zone `dispatch-platform` IRSA role directly via the chart's `aws.platformRoleArn` Helm value. `extraPolicyArns` stays empty for that reason.
+The operator reconciles the namespace `tenants-protohype`, ResourceQuota, LimitRange, default-deny NetworkPolicy, ArgoCD AppProject, and a per-Platform IRSA role trusting the `tenant-runtime` SA. **digest-pipeline's own app pods don't use that operator role** — all three workloads assume the landing-zone `digest-pipeline-platform` IRSA role directly via the chart's `aws.platformRoleArn` Helm value. `extraPolicyArns` stays empty for that reason.
 
 ### The Helm chart (`chart/`)
 
 Three workloads in one chart — the weekly pipeline, the review API, and the review web app — plus everything that supports them. Templates under `chart/templates/`:
 
-| Template                                   | Owns                                                                                                                                                                                                            |
-| ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pipeline-cronjob.yaml`                    | The weekly runner — `CronJob` (Friday 09:00 UTC, `concurrencyPolicy: Forbid`, 30-min `activeDeadlineSeconds`)                                                                                                   |
-| `api-deployment.yaml` + `api-service.yaml` | The Fastify API (JWT-gated review backend, ClusterIP :3001)                                                                                                                                                     |
-| `web-deployment.yaml` + `web-service.yaml` | The Next.js review app (WorkOS AuthKit, ClusterIP :3000; `DISPATCH_API_URL` wired to the api Service DNS)                                                                                                       |
-| `ingress.yaml`                             | ingress-nginx + cert-manager TLS — `/api/*` → api (rewrite-target), `/` → web                                                                                                                                   |
-| `serviceaccount.yaml`                      | Shared SA across all three workloads; `eks.amazonaws.com/role-arn` rendered from `aws.platformRoleArn`                                                                                                          |
-| `externalsecret.yaml`                      | ESO aggregates four Secrets Manager entries (`dispatch/<env>/{approvers,workos-directory,db-credentials,grafana-cloud}`) into one Secret consumed via `envFrom`; composes `DATABASE_URL` in the template engine |
-| `migrate-job.yaml`                         | Helm pre-install/pre-upgrade hook running `npm run migrate:up` on the api image so schema lands before new pods roll                                                                                            |
-| `networkpolicy.yaml`                       | Default-deny + egress allow-list (DNS, HTTPS for AWS + all aggregator sources, Postgres on the VPC CIDR) + intra-pod ingress                                                                                    |
-| `prometheusrule.yaml`                      | Pipeline/Bedrock/send alerts                                                                                                                                                                                    |
-| `grafana-dashboard.yaml`                   | ConfigMap loading `chart/dashboards/dispatch.json`                                                                                                                                                              |
+| Template                                   | Owns                                                                                                                                                                                                                   |
+| ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pipeline-cronjob.yaml`                    | The weekly runner — `CronJob` (Friday 09:00 UTC, `concurrencyPolicy: Forbid`, 30-min `activeDeadlineSeconds`)                                                                                                          |
+| `api-deployment.yaml` + `api-service.yaml` | The Fastify API (JWT-gated review backend, ClusterIP :3001)                                                                                                                                                            |
+| `web-deployment.yaml` + `web-service.yaml` | The Next.js review app (WorkOS AuthKit, ClusterIP :3000; `DIGEST_PIPELINE_API_URL` wired to the api Service DNS)                                                                                                       |
+| `ingress.yaml`                             | ingress-nginx + cert-manager TLS — `/api/*` → api (rewrite-target), `/` → web                                                                                                                                          |
+| `serviceaccount.yaml`                      | Shared SA across all three workloads; `eks.amazonaws.com/role-arn` rendered from `aws.platformRoleArn`                                                                                                                 |
+| `externalsecret.yaml`                      | ESO aggregates four Secrets Manager entries (`digest-pipeline/<env>/{approvers,workos-directory,db-credentials,grafana-cloud}`) into one Secret consumed via `envFrom`; composes `DATABASE_URL` in the template engine |
+| `migrate-job.yaml`                         | Helm pre-install/pre-upgrade hook running `npm run migrate:up` on the api image so schema lands before new pods roll                                                                                                   |
+| `networkpolicy.yaml`                       | Default-deny + egress allow-list (DNS, HTTPS for AWS + all aggregator sources, Postgres on the VPC CIDR) + intra-pod ingress                                                                                           |
+| `prometheusrule.yaml`                      | Pipeline/Bedrock/send alerts                                                                                                                                                                                           |
+| `grafana-dashboard.yaml`                   | ConfigMap loading `chart/dashboards/digest-pipeline.json`                                                                                                                                                              |
 
-`values.yaml` is the base; `values-staging.yaml` / `values-production.yaml` carry the per-env deltas (image tags, `aws.platformRoleArn`, `tenantInfra.*` from the landing-zone outputs, ingress host). The image is `ghcr.io/nanohype/digest-pipeline`, built per workload (`:<tag>-pipeline`, `:<tag>-api`, `:<tag>-web`). OTel attrs `agents.tenant=protohype` + `agents.platform=dispatch` are set in every values file (required by the platform-tenant contract).
+`values.yaml` is the base; `values-staging.yaml` / `values-production.yaml` carry the per-env deltas (image tags, `aws.platformRoleArn`, `tenantInfra.*` from the landing-zone outputs, ingress host). The image is `ghcr.io/nanohype/digest-pipeline`, built per workload (`:<tag>-pipeline`, `:<tag>-api`, `:<tag>-web`). OTel attrs `agents.tenant=protohype` + `agents.platform=digest-pipeline` are set in every values file (required by the platform-tenant contract).
 
 ### Required tenant files
 
@@ -138,4 +138,4 @@ The newsletter generator (`src/pipeline/ai/generator.ts`) calls Claude via `Invo
 - [`docs/`](docs/) — local development, deployment guide, fork-for-a-new-client recipe
 - [Platform Reference](../nanohype/docs/platform-reference.md) — the stack-wide view
 - [`eks-agent-platform`](https://github.com/nanohype/eks-agent-platform) — the operator that reconciles the Platform CR
-- [`landing-zone`](https://github.com/nanohype/landing-zone) — the `dispatch-platform` substrate the chart's IRSA role and data stores live in
+- [`landing-zone`](https://github.com/nanohype/landing-zone) — the `digest-pipeline-platform` substrate the chart's IRSA role and data stores live in

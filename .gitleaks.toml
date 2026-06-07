@@ -1,4 +1,4 @@
-# gitleaks configuration for digest-pipeline (internal service handle: dispatch).
+# gitleaks configuration for digest-pipeline (internal service handle: digest-pipeline).
 #
 # Strategy: extend the default ruleset, then allowlist only the placeholder
 # strings we intentionally commit. Suppression is path- and stopword-scoped,
@@ -21,7 +21,7 @@ paths = [
   # Scoped to this one test file — not real credentials.
   '''^src/pipeline/filters/pii\.test\.ts$''',
   # The secrets shape doc: every value is a REPLACE_ME placeholder. Populated
-  # copies (dispatch-secrets.*.json) are gitignored and never committed; this
+  # copies (digest-pipeline-secrets.*.json) are gitignored and never committed; this
   # template documents the Secrets Manager payload shape only.
   '''^secrets\.template\.json$''',
 ]

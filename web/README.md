@@ -1,6 +1,6 @@
-# dispatch-web
+# digest-pipeline-web
 
-Next.js 16 (App Router) review + approval UI for the dispatch newsletter pipeline. WorkOS AuthKit handles sign-in; every data fetch proxies through server-side route handlers at `/api/drafts/*` that extract the access token from the AuthKit session cookie and forward it to the dispatch Fastify API.
+Next.js 16 (App Router) review + approval UI for the digest-pipeline newsletter pipeline. WorkOS AuthKit handles sign-in; every data fetch proxies through server-side route handlers at `/api/drafts/*` that extract the access token from the AuthKit session cookie and forward it to the digest-pipeline Fastify API.
 
 ## Run locally
 
@@ -10,7 +10,7 @@ npm install
 npm run dev
 ```
 
-Opens on http://localhost:3000. The `/review/:draftId` route needs a live dispatch API at `API_BASE_URL` to return real drafts; without one you'll hit a 502 on the proxy call.
+Opens on http://localhost:3000. The `/review/:draftId` route needs a live digest-pipeline API at `API_BASE_URL` to return real drafts; without one you'll hit a 502 on the proxy call.
 
 ## Build for production
 

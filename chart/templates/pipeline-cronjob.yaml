@@ -2,10 +2,10 @@
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  name: {{ include "dispatch.fullname" . }}-pipeline
+  name: {{ include "tenant-chart-base.fullname" . }}-pipeline
   labels:
-    {{- include "dispatch.labels" . | nindent 4 }}
-    dispatch.io/service: pipeline
+    {{- include "tenant-chart-base.labels" . | nindent 4 }}
+    digest-pipeline.io/service: pipeline
 spec:
   schedule: {{ .Values.pipeline.schedule | quote }}
   concurrencyPolicy: {{ .Values.pipeline.concurrencyPolicy }}
@@ -18,11 +18,11 @@ spec:
       template:
         metadata:
           labels:
-            {{- include "dispatch.labels" . | nindent 12 }}
-            dispatch.io/service: pipeline
+            {{- include "tenant-chart-base.labels" . | nindent 12 }}
+            digest-pipeline.io/service: pipeline
         spec:
           restartPolicy: Never
-          serviceAccountName: {{ include "dispatch.serviceAccountName" . }}
+          serviceAccountName: {{ include "tenant-chart-base.serviceAccountName" . }}
           securityContext:
             {{- toYaml .Values.podSecurityContext | nindent 12 }}
           containers:
@@ -32,12 +32,12 @@ spec:
               securityContext:
                 {{- toYaml .Values.containerSecurityContext | nindent 16 }}
               env:
-                {{- include "dispatch.env" (dict "Values" .Values "service" "pipeline") | nindent 16 }}
+                {{- include "digest-pipeline.env" (dict "Values" .Values "service" "pipeline") | nindent 16 }}
                 - name: OTEL_SERVICE_NAME
-                  value: dispatch-pipeline
+                  value: digest-pipeline-pipeline
               envFrom:
                 - secretRef:
-                    name: {{ include "dispatch.fullname" . }}-secrets
+                    name: {{ include "tenant-chart-base.fullname" . }}-secrets
               resources:
                 {{- toYaml .Values.pipeline.resources | nindent 16 }}
               volumeMounts:

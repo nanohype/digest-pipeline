@@ -8,10 +8,10 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ include "dispatch.fullname" . }}-migrate-{{ .Release.Revision }}
+  name: {{ include "tenant-chart-base.fullname" . }}-migrate-{{ .Release.Revision }}
   labels:
-    {{- include "dispatch.labels" . | nindent 4 }}
-    dispatch.io/service: migrate
+    {{- include "tenant-chart-base.labels" . | nindent 4 }}
+    digest-pipeline.io/service: migrate
   annotations:
     "helm.sh/hook": pre-install,pre-upgrade
     "helm.sh/hook-weight": "-5"
@@ -22,11 +22,11 @@ spec:
   template:
     metadata:
       labels:
-        {{- include "dispatch.labels" . | nindent 8 }}
-        dispatch.io/service: migrate
+        {{- include "tenant-chart-base.labels" . | nindent 8 }}
+        digest-pipeline.io/service: migrate
     spec:
       restartPolicy: Never
-      serviceAccountName: {{ include "dispatch.serviceAccountName" . }}
+      serviceAccountName: {{ include "tenant-chart-base.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
@@ -37,12 +37,12 @@ spec:
             {{- toYaml .Values.containerSecurityContext | nindent 12 }}
           command: ["npm", "run", "migrate:up"]
           env:
-            {{- include "dispatch.env" (dict "Values" .Values "service" "migrate") | nindent 12 }}
+            {{- include "digest-pipeline.env" (dict "Values" .Values "service" "migrate") | nindent 12 }}
             - name: OTEL_SDK_DISABLED
               value: "true"
           envFrom:
             - secretRef:
-                name: {{ include "dispatch.fullname" . }}-secrets
+                name: {{ include "tenant-chart-base.fullname" . }}-secrets
           resources:
             {{- toYaml .Values.migrate.resources | nindent 12 }}
           volumeMounts:

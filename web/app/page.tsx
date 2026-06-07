@@ -12,7 +12,7 @@ export default function HomePage() {
     <main className="page-shell">
       <header className="review-header">
         <div className="review-header-row">
-          <h1>Dispatch</h1>
+          <h1>DigestPipeline</h1>
           <AuthStatus />
         </div>
         <p className="muted">
@@ -23,8 +23,8 @@ export default function HomePage() {
       <section className="card" style={{ marginTop: 24 }}>
         <h2>Getting here</h2>
         <p>
-          Dispatch posts a link into <code>#newsletter-review</code> every Friday morning. Click that link to land on
-          the review page for the week&apos;s draft.
+          DigestPipeline posts a link into <code>#newsletter-review</code> every Friday morning. Click that link to land
+          on the review page for the week&apos;s draft.
         </p>
       </section>
     </main>

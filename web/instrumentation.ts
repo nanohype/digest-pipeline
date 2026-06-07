@@ -18,8 +18,8 @@ export async function register(): Promise<void> {
   const endpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT ?? 'http://localhost:4318';
   const sdk = new NodeSDK({
     resource: resourceFromAttributes({
-      'service.name': process.env.OTEL_SERVICE_NAME ?? 'dispatch-web',
-      'service.namespace': 'dispatch',
+      'service.name': process.env.OTEL_SERVICE_NAME ?? 'digest-pipeline-web',
+      'service.namespace': 'digest-pipeline',
       'deployment.environment.name': process.env.NODE_ENV ?? 'development',
     }),
     traceExporter: new OTLPTraceExporter({ url: `${endpoint}/v1/traces` }),

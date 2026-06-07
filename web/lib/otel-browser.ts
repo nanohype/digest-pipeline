@@ -25,8 +25,8 @@ export function startBrowserOtel(): void {
   started = true;
   const provider = new WebTracerProvider({
     resource: resourceFromAttributes({
-      'service.name': 'dispatch-web-browser',
-      'service.namespace': 'dispatch',
+      'service.name': 'digest-pipeline-web-browser',
+      'service.namespace': 'digest-pipeline',
     }),
     spanProcessors: [new BatchSpanProcessor(new OTLPTraceExporter({ url: '/api/otel/v1/traces' }))],
   });

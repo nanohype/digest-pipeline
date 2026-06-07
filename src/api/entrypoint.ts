@@ -82,13 +82,13 @@ function createSlackConfirmerFromBot(botToken: string, channelId: string): Slack
       try {
         await client.chat.postMessage({
           channel: channelId,
-          text: `✅ Dispatch sent — run ${runId}, draft ${draftId}, ${recipientCount} recipients`,
+          text: `✅ DigestPipeline sent — run ${runId}, draft ${draftId}, ${recipientCount} recipients`,
           blocks: [
             {
               type: 'section',
               text: {
                 type: 'mrkdwn',
-                text: `✅ *Dispatch sent*\nRun \`${runId}\` · Draft \`${draftId}\` · ${recipientCount} recipients`,
+                text: `✅ *DigestPipeline sent*\nRun \`${runId}\` · Draft \`${draftId}\` · ${recipientCount} recipients`,
               },
             },
           ],
@@ -132,10 +132,10 @@ async function main(): Promise<void> {
   registerShutdownHandlers(app);
 
   await app.listen({ host: '0.0.0.0', port: config.env.PORT });
-  app.log.info({ port: config.env.PORT }, 'dispatch API listening');
+  app.log.info({ port: config.env.PORT }, 'digest-pipeline API listening');
 }
 
 main().catch((err) => {
-  console.error('dispatch API failed to start:', err);
+  console.error('digest-pipeline API failed to start:', err);
   process.exit(1);
 });
