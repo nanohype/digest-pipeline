@@ -1,6 +1,6 @@
 /**
- * Server-side helpers for proxying dispatch-web route handlers to the
- * dispatch Fastify API. The access token is extracted from the WorkOS
+ * Server-side helpers for proxying digest-pipeline-web route handlers to the
+ * digest-pipeline Fastify API. The access token is extracted from the WorkOS
  * AuthKit session cookie — the client doesn't need to send Authorization
  * headers.
  */

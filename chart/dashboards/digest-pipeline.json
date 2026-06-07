@@ -1,7 +1,7 @@
 {
-  "uid": "dispatch",
-  "title": "Dispatch",
-  "tags": ["protohype", "dispatch"],
+  "uid": "digest-pipeline",
+  "title": "DigestPipeline",
+  "tags": ["protohype", "digest-pipeline"],
   "timezone": "browser",
   "schemaVersion": 39,
   "refresh": "1m",
@@ -27,7 +27,7 @@
           "type": "prometheus",
           "uid": "$datasource"
         },
-        "query": "label_values(dispatch_run_duration_ms_bucket, deployment_environment)",
+        "query": "label_values(digest_pipeline_run_duration_ms_bucket, deployment_environment)",
         "current": {
           "text": "production",
           "value": "production"
@@ -43,7 +43,7 @@
       "gridPos": {"x": 0, "y": 0, "w": 8, "h": 6},
       "targets": [
         {
-          "expr": "sum by (status) (increase(dispatch_run_duration_ms_count{deployment_environment=\"$environment\"}[28d]))",
+          "expr": "sum by (status) (increase(digest_pipeline_run_duration_ms_count{deployment_environment=\"$environment\"}[28d]))",
           "legendFormat": "{{status}}",
           "refId": "A"
         }
@@ -57,12 +57,12 @@
       "gridPos": {"x": 8, "y": 0, "w": 16, "h": 6},
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, sum by (le) (rate(dispatch_run_duration_ms_bucket{deployment_environment=\"$environment\"}[28d])))",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(digest_pipeline_run_duration_ms_bucket{deployment_environment=\"$environment\"}[28d])))",
           "legendFormat": "p50",
           "refId": "A"
         },
         {
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(dispatch_run_duration_ms_bucket{deployment_environment=\"$environment\"}[28d])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(digest_pipeline_run_duration_ms_bucket{deployment_environment=\"$environment\"}[28d])))",
           "legendFormat": "p95",
           "refId": "B"
         }
@@ -76,7 +76,7 @@
       "gridPos": {"x": 0, "y": 6, "w": 12, "h": 8},
       "targets": [
         {
-          "expr": "sum by (source) (increase(dispatch_source_items_total{deployment_environment=\"$environment\"}[7d]))",
+          "expr": "sum by (source) (increase(digest_pipeline_source_items_total{deployment_environment=\"$environment\"}[7d]))",
           "legendFormat": "{{source}}",
           "refId": "A"
         }
@@ -90,7 +90,7 @@
       "gridPos": {"x": 12, "y": 6, "w": 12, "h": 8},
       "targets": [
         {
-          "expr": "sum by (source) (increase(dispatch_source_failure_total{deployment_environment=\"$environment\"}[7d]))",
+          "expr": "sum by (source) (increase(digest_pipeline_source_failure_total{deployment_environment=\"$environment\"}[7d]))",
           "legendFormat": "{{source}}",
           "refId": "A"
         }
@@ -104,7 +104,7 @@
       "gridPos": {"x": 0, "y": 14, "w": 12, "h": 8},
       "targets": [
         {
-          "expr": "sum by (kind, model) (increase(dispatch_bedrock_tokens_total{deployment_environment=\"$environment\"}[28d]))",
+          "expr": "sum by (kind, model) (increase(digest_pipeline_bedrock_tokens_total{deployment_environment=\"$environment\"}[28d]))",
           "legendFormat": "{{model}} / {{kind}}",
           "refId": "A"
         }
@@ -118,7 +118,7 @@
       "gridPos": {"x": 12, "y": 14, "w": 12, "h": 8},
       "targets": [
         {
-          "expr": "sum(increase(dispatch_bedrock_fallback_total{deployment_environment=\"$environment\"}[28d]))",
+          "expr": "sum(increase(digest_pipeline_bedrock_fallback_total{deployment_environment=\"$environment\"}[28d]))",
           "legendFormat": "fallbacks (28d)",
           "refId": "A"
         }
@@ -132,7 +132,7 @@
       "gridPos": {"x": 0, "y": 22, "w": 12, "h": 8},
       "targets": [
         {
-          "expr": "sum by (run_id) (dispatch_draft_edit_rate{deployment_environment=\"$environment\"})",
+          "expr": "sum by (run_id) (digest_pipeline_draft_edit_rate{deployment_environment=\"$environment\"})",
           "legendFormat": "{{run_id}}",
           "refId": "A"
         }
@@ -146,7 +146,7 @@
       "gridPos": {"x": 12, "y": 22, "w": 12, "h": 8},
       "targets": [
         {
-          "expr": "sum(increase(dispatch_email_sent_total{deployment_environment=\"$environment\"}[28d]))",
+          "expr": "sum(increase(digest_pipeline_email_sent_total{deployment_environment=\"$environment\"}[28d]))",
           "legendFormat": "sends (28d)",
           "refId": "A"
         }

@@ -5,7 +5,7 @@
 ![Node](https://img.shields.io/badge/Node-%3E%3D24-339933?logo=node.js)
 ![Kubernetes](https://img.shields.io/badge/Kubernetes-Tenant-326CE5?logo=kubernetes)
 
-Automated weekly newsletter pipeline for a Chief of Staff. Aggregates cross-team activity from GitHub, Linear, Notion, and Slack; resolves identities through WorkOS Directory Sync; redacts PII; drafts with Claude via Bedrock; gates on human approval before SES send. The internal service handle is `dispatch` (the npm package, OTel `service.name` / `agents.platform`, the `dispatch.*` metrics + Helm helpers + labels, and the `dispatch/<env>/*` secret prefixes all stay `dispatch`).
+Automated weekly newsletter pipeline for a Chief of Staff. Aggregates cross-team activity from GitHub, Linear, Notion, and Slack; resolves identities through WorkOS Directory Sync; redacts PII; drafts with Claude via Bedrock; gates on human approval before SES send. The internal service handle is `digest-pipeline` (the npm package, OTel `service.name` / `agents.platform`, the `digest-pipeline.*` metrics + Helm helpers + labels, and the `digest-pipeline/<env>/*` secret prefixes all stay `digest-pipeline`).
 
 Runs every Friday morning on a single weekly CronJob (09:00 UTC). One failed source does not fail the run — status becomes `PARTIAL` and the remaining sources still produce a draft. Every mutation to a draft is an immutable audit event; the edit-rate metric is derived from the ledger, never recomputed from current draft text.
 
@@ -71,7 +71,7 @@ A nanohype composite composing templates (`data-pipeline`, `worker-service`, `ra
 - **`src/data/`** — Postgres-backed `DraftRepository` + `AuditWriter` implementations. Status transitions (`PENDING → APPROVED → SENT`) guarded by SQL `WHERE` clauses, so a draft cannot be approved twice or sent from a non-approved state.
 - **`src/common/`** — shared Pino logger (stdout only — log shipping is an infrastructure concern), OTel bootstrap (`--import` loaded before app code), tracer + metrics accessors, Secrets Manager client with Zod-validated 5-minute cache, `createRegistry<T>`.
 - **`chart/`** — Helm chart with `pipeline-cronjob.yaml` (weekly Friday 09:00 UTC), `api-deployment.yaml` + `api-service.yaml` (Fastify on :3001), `web-deployment.yaml` + `web-service.yaml` (Next.js on :3000), `ingress.yaml` (ingress-nginx + cert-manager: `/api/*` → api with rewrite-target, `/` → web), `externalsecret.yaml` aggregating four Secrets Manager entries, `migrate-job.yaml` Helm pre-install/pre-upgrade hook running schema migrations against Aurora. See [`chart/README.md`](chart/README.md) for the full template-by-template description.
-- **`platform.yaml`** — Platform CR (`platform.nanohype.dev/v1alpha1`) plus a co-declared BudgetPolicy (`governance.nanohype.dev/v1alpha1`) declaring dispatch as a tenant of the `protohype` team on the `eks-agent-platform` operator. Operator reconciles Namespace, ResourceQuota, IRSA role, KMS grants, S3 bucket policy.
+- **`platform.yaml`** — Platform CR (`platform.nanohype.dev/v1alpha1`) plus a co-declared BudgetPolicy (`governance.nanohype.dev/v1alpha1`) declaring digest-pipeline as a tenant of the `protohype` team on the `eks-agent-platform` operator. Operator reconciles Namespace, ResourceQuota, IRSA role, KMS grants, S3 bucket policy.
 - **`gitops/applicationset-entry.yaml`** — ApplicationSet entry registered with `nanohype/eks-gitops` for ArgoCD reconciliation.
 
 ## Run locally
@@ -88,9 +88,9 @@ Full local-dev loop (Postgres, running a pipeline end-to-end with staging creden
 Quick Postgres:
 
 ```bash
-docker run -d --name dispatch-pg -p 5432:5432 \
-  -e POSTGRES_USER=dispatch_app -e POSTGRES_PASSWORD=dispatch_app \
-  -e POSTGRES_DB=dispatchdb postgres:16
+docker run -d --name digest-pipeline-pg -p 5432:5432 \
+  -e POSTGRES_USER=digest_pipeline_app -e POSTGRES_PASSWORD=digest_pipeline_app \
+  -e POSTGRES_DB=digest_pipeline postgres:16
 npm run migrate:up
 npm run dev:pipeline
 ```
@@ -125,14 +125,14 @@ cd web && npm run build  # Next.js standalone bundle for Dockerfile.web
 
 Renders as a Platform tenant on the [`eks-agent-platform`](https://github.com/nanohype/eks-agent-platform) operator. The chart produces three workloads (pipeline CronJob + api Deployment + web Deployment), an ingress that fronts both api and web, an ExternalSecret aggregating four Secrets Manager entries into one Kubernetes Secret, and a Helm pre-install/pre-upgrade hook that runs schema migrations against Aurora before any pod from the new version rolls out.
 
-Telemetry ships to Grafana Cloud via the cluster-level OTel Collector + log forwarder installed by `eks-gitops` — no per-pod sidecars. Resource names, secret paths, and IAM policies are env-scoped (`dispatch/staging/*` vs `dispatch/production/*`). The staging IRSA role **cannot** read production secrets and vice versa.
+Telemetry ships to Grafana Cloud via the cluster-level OTel Collector + log forwarder installed by `eks-gitops` — no per-pod sidecars. Resource names, secret paths, and IAM policies are env-scoped (`digest-pipeline/staging/*` vs `digest-pipeline/production/*`). The staging IRSA role **cannot** read production secrets and vice versa.
 
 ```bash
-cp secrets.template.json dispatch-secrets.staging.json
+cp secrets.template.json digest-pipeline-secrets.staging.json
 # Fill in real values — replace every REPLACE_ME. cookiePassword + authHeader
-# auto-derive if left empty. `dispatch-secrets.*.json` is gitignored.
+# auto-derive if left empty. `digest-pipeline-secrets.*.json` is gitignored.
 npm run seed:staging:dry            # validates shape, no AWS calls
-npm run seed:staging                # creates/updates nine secrets in dispatch/staging/*
+npm run seed:staging                # creates/updates nine secrets in digest-pipeline/staging/*
 
 npm run chart:lint                  # helm lint chart
 npm run chart:template:staging      # render chart with staging values
@@ -142,13 +142,13 @@ npm run chart:template:staging      # render chart with staging values
 # (apply platform.yaml → wait Ready → register ApplicationSet entry).
 ```
 
-Requires Bedrock model access enabled in the deployment region. The per-tenant AWS substrate (Aurora Serverless v2, S3 buckets, the IRSA role the Platform CR references, SES verified sending identity) is provisioned by the `dispatch-platform` component in [`landing-zone`](https://github.com/nanohype/landing-zone) and documented in [`chart/README.md`](chart/README.md) under "Per-tenant infra".
+Requires Bedrock model access enabled in the deployment region. The per-tenant AWS substrate (Aurora Serverless v2, S3 buckets, the IRSA role the Platform CR references, SES verified sending identity) is provisioned by the `digest-pipeline-platform` component in [`landing-zone`](https://github.com/nanohype/landing-zone) and documented in [`chart/README.md`](chart/README.md) under "Per-tenant infra".
 
 Full first-time walkthrough covering AWS prerequisites (Bedrock model access + on-demand-throughput caveat, SES identity verification), third-party account setup, Secrets Manager seeding, WorkOS AuthKit wiring, voice-baseline corpus bootstrap, and the promotion path to production — [`docs/deployment-guide.md`](docs/deployment-guide.md).
 
-**Forking Dispatch for a different client** — swap secrets, WorkOS directory, Slack workspace, Linear workspace, Notion database, and Grafana tenant without touching application code — [`docs/forking-for-a-new-client.md`](docs/forking-for-a-new-client.md).
+**Forking DigestPipeline for a different client** — swap secrets, WorkOS directory, Slack workspace, Linear workspace, Notion database, and Grafana tenant without touching application code — [`docs/forking-for-a-new-client.md`](docs/forking-for-a-new-client.md).
 
-**Secret seeding + rotation** — env-scoped inventory (`dispatch/staging/*`, `dispatch/production/*`), JSON payload shapes, `put-secret-value` commands, rotation cadence — [`docs/secrets.md`](docs/secrets.md).
+**Secret seeding + rotation** — env-scoped inventory (`digest-pipeline/staging/*`, `digest-pipeline/production/*`), JSON payload shapes, `put-secret-value` commands, rotation cadence — [`docs/secrets.md`](docs/secrets.md).
 
 **Slack app setup** — one-time Slack app provisioning per environment (bot scopes, channel memberships, HR-bot filtering) — [`docs/slack-app-setup.md`](docs/slack-app-setup.md).
 
@@ -156,26 +156,26 @@ Full first-time walkthrough covering AWS prerequisites (Bedrock model access + o
 
 This repo owns the application — the aggregation pipeline, the PII filter, the WorkOS identity resolution, the Bedrock generator, the review API + web UI, and the tenant trio that deploys it. It does **not** own:
 
-- AWS substrate (Aurora Serverless v2, the two S3 buckets, the SES identity + config set, the IRSA role, Secrets Manager seeding) → the `dispatch-platform` component in [`landing-zone`](https://github.com/nanohype/landing-zone). Its `irsa_role_arn` output feeds the chart's `aws.platformRoleArn`.
+- AWS substrate (Aurora Serverless v2, the two S3 buckets, the SES identity + config set, the IRSA role, Secrets Manager seeding) → the `digest-pipeline-platform` component in [`landing-zone`](https://github.com/nanohype/landing-zone). Its `irsa_role_arn` output feeds the chart's `aws.platformRoleArn`.
 - Cluster addons (ingress-nginx, cert-manager, external-secrets, the OTel collector + log forwarder, kube-prometheus-stack) → [`eks-gitops`](https://github.com/nanohype/eks-gitops).
 
 ## Configuration
 
 All configuration via env vars (validated by Zod at startup — `src/api/config.ts` for the API, the `PipelineEnvSchema` in `src/pipeline/entrypoint.ts` for the pipeline). In-cluster, secret values come from AWS Secrets Manager via the chart's ExternalSecret, which the External Secrets Operator syncs into one Kubernetes Secret the pods consume `envFrom`; `.env.example` is for local dev only. Full inventory + JSON payload shapes in [`docs/secrets.md`](docs/secrets.md).
 
-| Variable                                                                         | Source                                                                                          | Purpose                                                                                                                                                                                               |
-| -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `AWS_REGION`                                                                     | chart env                                                                                       | Region for Bedrock, S3, SES, Secrets Manager                                                                                                                                                          |
-| `BEDROCK_MODEL_ID`                                                               | chart env                                                                                       | Claude model to invoke (default `us.anthropic.claude-sonnet-4-6` — cross-region inference profile required for on-demand throughput on Claude 4.x; switch to `eu.`/`ap.` outside the US)              |
-| `WORKOS_ISSUER` / `WORKOS_CLIENT_ID`                                             | chart env                                                                                       | JWT validation against WorkOS JWKS — `aud` claim matches Client ID                                                                                                                                    |
-| `APPROVERS_SECRET_ID`                                                            | chart env → secret `dispatch/{env}/approvers`                                                   | `{ cosUserId, backupApproverIds[] }` — API reads on every `/approve` call (5-min cache)                                                                                                               |
-| `WORKOS_DIRECTORY_SECRET_ID`                                                     | chart env → secret `dispatch/{env}/workos-directory`                                            | `{ apiKey, directoryId }` for Directory Sync                                                                                                                                                          |
-| `GITHUB_SECRET_ID` / `LINEAR_SECRET_ID` / `SLACK_SECRET_ID` / `NOTION_SECRET_ID` | chart env → `dispatch/{env}/{github,linear,slack,notion}`                                       | Per-provider credentials + integration config                                                                                                                                                         |
-| `SLACK_REVIEW_CHANNEL_ID` / `SES_FROM_ADDRESS` / `NEWSLETTER_RECIPIENT_LIST`     | ExternalSecret → fields of secret `dispatch/{env}/runtime-config`                               | Operational config co-located with secrets; the ExternalSecret projects each JSON field of `runtime-config` into its own env var on the consumed Secret                                               |
-| `DATABASE_URL`                                                                   | local dev only — in-cluster the ExternalSecret composes it from `dispatch/{env}/db-credentials` | Postgres connection                                                                                                                                                                                   |
-| `VOICE_BASELINE_BUCKET` / `RAW_AGGREGATIONS_BUCKET`                              | chart env / ExternalSecret                                                                      | S3 bucket names (the landing-zone `dispatch-platform` outputs feed the per-env values)                                                                                                                |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` / `OTEL_SERVICE_NAME` / `OTEL_RESOURCE_ATTRIBUTES` | chart env                                                                                       | OTLP target is the cluster collector at `otel-collector.observability.svc.cluster.local:4318` (no sidecar); tags traces with `service` + `agents.tenant`/`agents.platform` + `deployment.environment` |
-| `OTEL_SDK_DISABLED`                                                              | tests + any run where the cluster collector isn't reachable                                     | Short-circuits the SDK; Pino still writes to stdout                                                                                                                                                   |
+| Variable                                                                         | Source                                                                                                 | Purpose                                                                                                                                                                                               |
+| -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AWS_REGION`                                                                     | chart env                                                                                              | Region for Bedrock, S3, SES, Secrets Manager                                                                                                                                                          |
+| `BEDROCK_MODEL_ID`                                                               | chart env                                                                                              | Claude model to invoke (default `us.anthropic.claude-sonnet-4-6` — cross-region inference profile required for on-demand throughput on Claude 4.x; switch to `eu.`/`ap.` outside the US)              |
+| `WORKOS_ISSUER` / `WORKOS_CLIENT_ID`                                             | chart env                                                                                              | JWT validation against WorkOS JWKS — `aud` claim matches Client ID                                                                                                                                    |
+| `APPROVERS_SECRET_ID`                                                            | chart env → secret `digest-pipeline/{env}/approvers`                                                   | `{ cosUserId, backupApproverIds[] }` — API reads on every `/approve` call (5-min cache)                                                                                                               |
+| `WORKOS_DIRECTORY_SECRET_ID`                                                     | chart env → secret `digest-pipeline/{env}/workos-directory`                                            | `{ apiKey, directoryId }` for Directory Sync                                                                                                                                                          |
+| `GITHUB_SECRET_ID` / `LINEAR_SECRET_ID` / `SLACK_SECRET_ID` / `NOTION_SECRET_ID` | chart env → `digest-pipeline/{env}/{github,linear,slack,notion}`                                       | Per-provider credentials + integration config                                                                                                                                                         |
+| `SLACK_REVIEW_CHANNEL_ID` / `SES_FROM_ADDRESS` / `NEWSLETTER_RECIPIENT_LIST`     | ExternalSecret → fields of secret `digest-pipeline/{env}/runtime-config`                               | Operational config co-located with secrets; the ExternalSecret projects each JSON field of `runtime-config` into its own env var on the consumed Secret                                               |
+| `DATABASE_URL`                                                                   | local dev only — in-cluster the ExternalSecret composes it from `digest-pipeline/{env}/db-credentials` | Postgres connection                                                                                                                                                                                   |
+| `VOICE_BASELINE_BUCKET` / `RAW_AGGREGATIONS_BUCKET`                              | chart env / ExternalSecret                                                                             | S3 bucket names (the landing-zone `digest-pipeline-platform` outputs feed the per-env values)                                                                                                         |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` / `OTEL_SERVICE_NAME` / `OTEL_RESOURCE_ATTRIBUTES` | chart env                                                                                              | OTLP target is the cluster collector at `otel-collector.observability.svc.cluster.local:4318` (no sidecar); tags traces with `service` + `agents.tenant`/`agents.platform` + `deployment.environment` |
+| `OTEL_SDK_DISABLED`                                                              | tests + any run where the cluster collector isn't reachable                                            | Short-circuits the SDK; Pino still writes to stdout                                                                                                                                                   |
 
 ## Observability
 
@@ -183,13 +183,13 @@ OpenTelemetry for traces + metrics. Logs are decoupled from OTel — apps emit P
 
 - **Bootstrap** (`src/common/otel-bootstrap.ts`) loaded via `--import` in the pipeline + API Dockerfiles. Web uses `web/instrumentation.ts` (Next.js convention) + `web/lib/otel-browser.ts` (mounted via `OtelInit` client component).
 - **Spans** — pipeline phases (`pipeline.run`, `phase.aggregate`, `phase.dedupe`, `phase.rank`, `phase.generate`, `phase.audit_and_notify`) and generator sub-phases (`bedrock.load_voice_baseline`, `bedrock.invoke_model`, `bedrock.validate_output`) are explicit. Fastify auto-instrumentation wraps every API request.
-- **Metrics** (`src/common/metrics.ts`) — `dispatch.run.duration_ms{status}`, `dispatch.source.{items,failure}{source}`, `dispatch.bedrock.{tokens{kind,model},fallback}`, `dispatch.draft.edit_rate`, `dispatch.email.sent`. OTLP → cluster OTel Collector → Grafana Cloud Mimir; the chart's `prometheusrule.yaml` alerts and `grafana-dashboard.yaml` (`chart/dashboards/dispatch.json`) query them.
+- **Metrics** (`src/common/metrics.ts`) — `digest-pipeline.run.duration_ms{status}`, `digest-pipeline.source.{items,failure}{source}`, `digest-pipeline.bedrock.{tokens{kind,model},fallback}`, `digest-pipeline.draft.edit_rate`, `digest-pipeline.email.sent`. OTLP → cluster OTel Collector → Grafana Cloud Mimir; the chart's `prometheusrule.yaml` alerts and `grafana-dashboard.yaml` (`chart/dashboards/digest-pipeline.json`) query them.
 - **Logs** — Pino → stdout → cluster log forwarder → Grafana Cloud Loki. `trace_id` / `span_id` auto-injected by `@opentelemetry/instrumentation-pino`.
-- **Resource attributes** — `agents.tenant=protohype` + `agents.platform=dispatch` ride on every span/metric, keying the cluster collector pipeline + dashboard queries.
+- **Resource attributes** — `agents.tenant=protohype` + `agents.platform=digest-pipeline` ride on every span/metric, keying the cluster collector pipeline + dashboard queries.
 - **Sampling** — 100% (parent-based always-on at the SDK; the collector batches but does not down-sample).
 - **Browser → API trace propagation** — W3C `traceparent` via `@opentelemetry/instrumentation-fetch`; the Next.js proxy routes and Fastify continue the trace, so a single trace spans browser → API → Postgres.
 
-The secret `dispatch/{env}/grafana-cloud` carries `{ instanceId, apiToken, otlpEndpoint, authHeader }` for the cluster collector's upstream auth. The operator pre-computes `authHeader = "Basic " + base64("instanceId:apiToken")` once. No `lokiEndpoint` — logs don't go through the collector.
+The secret `digest-pipeline/{env}/grafana-cloud` carries `{ instanceId, apiToken, otlpEndpoint, authHeader }` for the cluster collector's upstream auth. The operator pre-computes `authHeader = "Basic " + base64("instanceId:apiToken")` once. No `lokiEndpoint` — logs don't go through the collector.
 
 `OTEL_SDK_DISABLED=true` short-circuits the SDK — used by tests and any run where the cluster collector isn't reachable. Pino still writes to stdout regardless.
 
@@ -227,6 +227,6 @@ The secret `dispatch/{env}/grafana-cloud` carries `{ instanceId, apiToken, otlpE
 | Slack app setup (one-time per env)                     | [docs/slack-app-setup.md](docs/slack-app-setup.md)                   |
 | Local development (dev loop + debugging failed runs)   | [docs/local-development.md](docs/local-development.md)               |
 | Troubleshooting catalogue (every concrete error + fix) | [docs/troubleshooting.md](docs/troubleshooting.md)                   |
-| Forking Dispatch for a new client                      | [docs/forking-for-a-new-client.md](docs/forking-for-a-new-client.md) |
+| Forking DigestPipeline for a new client                | [docs/forking-for-a-new-client.md](docs/forking-for-a-new-client.md) |
 | Changelog                                              | [CHANGELOG.md](CHANGELOG.md)                                         |
 | Web review UI                                          | [web/README.md](web/README.md)                                       |

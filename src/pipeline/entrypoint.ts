@@ -167,7 +167,7 @@ async function buildDeps(): Promise<PipelineDeps> {
       try {
         await slackNotifyClient.chat.postMessage({
           channel: env.SLACK_REVIEW_CHANNEL_ID,
-          text: `Dispatch draft ready for review.`,
+          text: `DigestPipeline draft ready for review.`,
           blocks: [
             {
               type: 'header',
@@ -191,7 +191,7 @@ async function buildDeps(): Promise<PipelineDeps> {
       try {
         await slackNotifyClient.chat.postMessage({
           channel: env.SLACK_REVIEW_CHANNEL_ID,
-          text: `⚠️ Dispatch alert (run ${runId}): ${message}`,
+          text: `⚠️ DigestPipeline alert (run ${runId}): ${message}`,
         });
       } catch (err) {
         log.error({ runId, message, err }, 'slack.alert-failed');

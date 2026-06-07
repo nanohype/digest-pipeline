@@ -2,10 +2,10 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "dispatch.fullname" . }}-api
+  name: {{ include "tenant-chart-base.fullname" . }}-api
   labels:
-    {{- include "dispatch.labels" . | nindent 4 }}
-    dispatch.io/service: api
+    {{- include "tenant-chart-base.labels" . | nindent 4 }}
+    digest-pipeline.io/service: api
 spec:
   replicas: {{ .Values.api.replicaCount }}
   strategy:
@@ -15,16 +15,16 @@ spec:
       maxUnavailable: 0
   selector:
     matchLabels:
-      {{- include "dispatch.selectorLabels" (dict "Values" .Values "Release" .Release "Chart" .Chart "service" "api") | nindent 6 }}
+      {{- include "digest-pipeline.selectorLabels" (dict "Values" .Values "Release" .Release "Chart" .Chart "service" "api") | nindent 6 }}
   template:
     metadata:
       labels:
-        {{- include "dispatch.labels" . | nindent 8 }}
-        dispatch.io/service: api
+        {{- include "tenant-chart-base.labels" . | nindent 8 }}
+        digest-pipeline.io/service: api
       annotations:
         checksum/external-secret: {{ printf "%s-%s" .Values.externalSecret.dbCredentialsSecret .Values.externalSecret.refreshInterval | sha256sum }}
     spec:
-      serviceAccountName: {{ include "dispatch.serviceAccountName" . }}
+      serviceAccountName: {{ include "tenant-chart-base.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
@@ -38,14 +38,14 @@ spec:
               containerPort: {{ .Values.api.port }}
               protocol: TCP
           env:
-            {{- include "dispatch.env" (dict "Values" .Values "service" "api") | nindent 12 }}
+            {{- include "digest-pipeline.env" (dict "Values" .Values "service" "api") | nindent 12 }}
             - name: OTEL_SERVICE_NAME
-              value: dispatch-api
+              value: digest-pipeline-api
             - name: PORT
               value: {{ .Values.api.port | quote }}
           envFrom:
             - secretRef:
-                name: {{ include "dispatch.fullname" . }}-secrets
+                name: {{ include "tenant-chart-base.fullname" . }}-secrets
           livenessProbe:
             {{- toYaml .Values.probes.api.liveness | nindent 12 }}
           readinessProbe:

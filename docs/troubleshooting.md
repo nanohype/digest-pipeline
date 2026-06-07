@@ -1,6 +1,6 @@
 # Troubleshooting catalogue
 
-Every concrete error Dispatch has surfaced during bring-up and operation, with root cause and fix. Keyed on the exact error text where possible so you (or the next operator) can grep-find the answer instead of re-diagnosing.
+Every concrete error DigestPipeline has surfaced during bring-up and operation, with root cause and fix. Keyed on the exact error text where possible so you (or the next operator) can grep-find the answer instead of re-diagnosing.
 
 Sections:
 - [CloudFormation / CDK deploy errors](#cloudformation--cdk-deploy-errors)
@@ -18,11 +18,11 @@ Sections:
 
 ## CloudFormation / CDK deploy errors
 
-### `ResourceNotFoundException: Secrets Manager can't find the specified secret. (dispatch/{env}/...)`
+### `ResourceNotFoundException: Secrets Manager can't find the specified secret. (digest-pipeline/{env}/...)`
 
 **Cause:** The secret referenced by `Secret.fromSecretNameV2(...)` doesn't exist yet. CDK resolves the ARN at deploy time via the SDK, and missing secrets fail the synth-to-CloudFormation transition.
 
-**Fix:** Create the missing secret before retrying the deploy. See [`secrets.md`](secrets.md) § "Seeding every secret" for the full per-secret commands. `dispatch/{env}/db-credentials` is the exception — CDK owns it; don't create by hand.
+**Fix:** Create the missing secret before retrying the deploy. See [`secrets.md`](secrets.md) § "Seeding every secret" for the full per-secret commands. `digest-pipeline/{env}/db-credentials` is the exception — CDK owns it; don't create by hand.
 
 ### `cdk deploy` stuck at `UPDATE_IN_PROGRESS` → ECS task never becomes healthy → CloudFormation rolls back after ~60 min
 
@@ -31,7 +31,7 @@ Sections:
 **Fix:** Tail the task logs while the deploy is in progress (CloudWatch starts accepting records the moment the task starts, even if CFN still shows `UPDATE_IN_PROGRESS`):
 
 ```bash
-aws logs tail /dispatch/{env}/pipeline --follow --since 10m
+aws logs tail /digest-pipeline/{env}/pipeline --follow --since 10m
 # or .../api, .../web
 ```
 
@@ -39,14 +39,14 @@ Look for `ZodError: … required` or `ZodError: expected string`. `put-secret-va
 
 ### `Resource handler returned message: "DatabaseName <name> cannot be used. It is a reserved word for this engine"` on the RDS cluster
 
-**Cause:** Aurora PostgreSQL reserves a fixed list of identifiers that cannot be used as the default database name (the list is engine-specific and grows over major versions). On Aurora PostgreSQL 16, `dispatch` is reserved.
+**Cause:** Aurora PostgreSQL reserves a fixed list of identifiers that cannot be used as the default database name (the list is engine-specific and grows over major versions). On Aurora PostgreSQL 16, `digest-pipeline` is reserved.
 
-**Fix:** The stack uses `defaultDatabaseName: 'dispatchdb'` (`infra/lib/dispatch-stack.ts`). If you fork and pick a new project name, also rename the database in:
-- `infra/lib/dispatch-stack.ts` → `defaultDatabaseName`
+**Fix:** The stack uses `defaultDatabaseName: 'digest_pipeline'` (`infra/lib/digest-pipeline-stack.ts`). If you fork and pick a new project name, also rename the database in:
+- `infra/lib/digest-pipeline-stack.ts` → `defaultDatabaseName`
 - `.env.example`, `docs/local-development.md`, `README.md` → the local `DATABASE_URL` and `POSTGRES_DB` examples
 - The pipeline + API resolve the database name from the secret (`secret.dbname`), so no source code change is needed when you rename the default.
 
-### `Resource of type 'AWS::S3::Bucket' with identifier 'dispatch-voice-baseline-{account}-production' already exists`
+### `Resource of type 'AWS::S3::Bucket' with identifier 'digest-pipeline-voice-baseline-{account}-production' already exists`
 
 **Cause:** The voice-baseline bucket has `RemovalPolicy.RETAIN` in production. A previous failed deploy rolled back but left the bucket behind. CFN tries to create a new bucket with the same name and S3 rejects the collision (bucket names are globally unique).
 
@@ -54,8 +54,8 @@ Look for `ZodError: … required` or `ZodError: expected string`. `put-secret-va
 
 ```bash
 # Delete path (dev/staging only — never for production voice-baseline):
-aws s3 rm --recursive s3://dispatch-voice-baseline-${CDK_DEFAULT_ACCOUNT}-production/
-aws s3api delete-bucket --bucket dispatch-voice-baseline-${CDK_DEFAULT_ACCOUNT}-production
+aws s3 rm --recursive s3://digest-pipeline-voice-baseline-${CDK_DEFAULT_ACCOUNT}-production/
+aws s3api delete-bucket --bucket digest-pipeline-voice-baseline-${CDK_DEFAULT_ACCOUNT}-production
 
 # Adopt path (production): use CloudFormation Import to bring the existing
 # bucket under the new stack's management. See AWS docs → CloudFormation
@@ -66,20 +66,20 @@ RETAIN is deliberate for `voice-baseline` — the few-shot corpus is weeks of ha
 
 ### `Resource of type 'AWS::RDS::DBCluster' ... cannot be deleted because deletion protection is enabled`
 
-**Cause:** Production Aurora has `deletionProtection: true`. `cdk destroy DispatchProduction` fails before it can remove the cluster.
+**Cause:** Production Aurora has `deletionProtection: true`. `cdk destroy DigestPipelineProduction` fails before it can remove the cluster.
 
 **Fix:** Disable deletion protection via the console/CLI, then retry `cdk destroy`:
 
 ```bash
 CLUSTER_ID=$(aws rds describe-db-clusters --region us-west-2 \
-  --query 'DBClusters[?DBClusterIdentifier==`dispatchproduction-dispatchdb-...`].DBClusterIdentifier' \
+  --query 'DBClusters[?DBClusterIdentifier==`digest-pipelineproduction-digest_pipeline-...`].DBClusterIdentifier' \
   --output text)
 aws rds modify-db-cluster --region us-west-2 \
   --db-cluster-identifier "$CLUSTER_ID" \
   --no-deletion-protection --apply-immediately
 
 # Wait a minute for the modify to settle, then:
-cd dispatch/infra && npx cdk destroy DispatchProduction
+cd digest-pipeline/infra && npx cdk destroy DigestPipelineProduction
 ```
 
 ## Build / TypeScript errors
@@ -96,13 +96,13 @@ npm install
 npx tsc --noEmit   # should now report 0 errors
 ```
 
-Commit the refreshed `package-lock.json`. The dispatch CI workflow uses `npm install` (not `npm ci`) specifically because the macOS-generated lockfile omits Linux platform-conditional deps (rolldown, lightningcss, esbuild) that vitest + Next.js pull in on CI runners.
+Commit the refreshed `package-lock.json`. The digest-pipeline CI workflow uses `npm install` (not `npm ci`) specifically because the macOS-generated lockfile omits Linux platform-conditional deps (rolldown, lightningcss, esbuild) that vitest + Next.js pull in on CI runners.
 
 ### Web build fails on Linux with `Cannot find module '@rolldown/binding-linux-x64-gnu'`
 
 **Cause:** Same class of issue — platform-conditional optional deps. The macOS lockfile doesn't carry the Linux binary.
 
-**Fix:** Let `npm install` resolve the platform deps instead of `npm ci`. The CI workflow already does this (`.github/workflows/dispatch-ci.yml:34,62`). Locally, if you need to validate the Linux build, use `docker build -f Dockerfile.web .` rather than wrestling with the lockfile.
+**Fix:** Let `npm install` resolve the platform deps instead of `npm ci`. The CI workflow already does this (`.github/workflows/digest-pipeline-ci.yml:34,62`). Locally, if you need to validate the Linux build, use `docker build -f Dockerfile.web .` rather than wrestling with the lockfile.
 
 ### `cdk deploy` fails to build a Docker asset with `npm error EUSAGE … Missing: @img/sharp-linux-x64@… from lock file` (or `@unrs/resolver-binding-*`, `@emnapi/*`)
 
@@ -121,7 +121,7 @@ Commit the regenerated `package-lock.json`. Reverse: same trick on macOS to repo
 
 ### `cdk deploy` web build fails at the runtime stage with `failed to compute cache key … "/app/public": not found`
 
-**Cause:** Next.js's standalone output treats `public/` as optional, but `Dockerfile.web`'s runtime stage `COPY --from=build /app/public ./public` requires the directory. Dispatch ships without static assets, so a fresh checkout has no `web/public/`.
+**Cause:** Next.js's standalone output treats `public/` as optional, but `Dockerfile.web`'s runtime stage `COPY --from=build /app/public ./public` requires the directory. DigestPipeline ships without static assets, so a fresh checkout has no `web/public/`.
 
 **Fix:** `Dockerfile.web` pre-creates the directory in the build stage (`RUN mkdir -p public`), so the runtime COPY always finds an empty dir. If you add static assets to `web/public/`, the existing `COPY web/ ./` in the build stage pulls them in and the runtime layer carries them through — no Dockerfile change needed.
 
@@ -131,21 +131,21 @@ Commit the regenerated `package-lock.json`. Reverse: same trick on macOS to repo
 
 **Cause:** The **task execution role** lacks `secretsmanager:GetSecretValue` on the secret ARN, or the ARN in the policy doesn't match the resource being requested.
 
-**Fix:** `infra/lib/dispatch-stack.ts:183,259` grants `secretsmanager:GetSecretValue` on `arn:aws:secretsmanager:…:secret:dispatch/{env}/*` to both the task role AND the execution role via CDK's `.grantRead()` helpers. If you see this after a manual edit, confirm the inline policy still covers the env-scoped prefix.
+**Fix:** `infra/lib/digest-pipeline-stack.ts:183,259` grants `secretsmanager:GetSecretValue` on `arn:aws:secretsmanager:…:secret:digest-pipeline/{env}/*` to both the task role AND the execution role via CDK's `.grantRead()` helpers. If you see this after a manual edit, confirm the inline policy still covers the env-scoped prefix.
 
 ### `ResourceInitializationError: … ResourceNotFoundException: Secrets Manager can't find the specified secret` with a partial ARN in the error
 
-**Cause:** The ECS task def's `valueFrom` field carries a partial ARN like `arn:aws:secretsmanager:us-west-2:…:secret:dispatch/staging/runtime-config` (no 6-char random suffix). `GetSecretValue` accepts either the full suffixed ARN or just the friendly name (no `arn:…` prefix) — a partial ARN looks ARN-shaped but matches nothing, and Secrets Manager returns `ResourceNotFoundException`.
+**Cause:** The ECS task def's `valueFrom` field carries a partial ARN like `arn:aws:secretsmanager:us-west-2:…:secret:digest-pipeline/staging/runtime-config` (no 6-char random suffix). `GetSecretValue` accepts either the full suffixed ARN or just the friendly name (no `arn:…` prefix) — a partial ARN looks ARN-shaped but matches nothing, and Secrets Manager returns `ResourceNotFoundException`.
 
 `secretsmanager.Secret.fromSecretNameV2(this, id, name)` returns an `ISecret` whose `secretArn` is the partial form. `ecs.Secret.fromSecretsManager(...)` then puts that partial ARN into the task def's `secrets:` block — and ECS dies on first task start.
 
-**Fix (in the dispatch stack):** `infra/lib/dispatch-stack.ts` defines `refSecret(id, name)` which uses an `AwsCustomResource` to call `DescribeSecret` at deploy time, then imports the result via `secretsmanager.Secret.fromSecretCompleteArn(this, id, lookup.getResponseField('ARN'))`. The full suffixed ARN ends up in `valueFrom`. CDK auto-creates one `*Lookup` resource per imported secret.
+**Fix (in the digest-pipeline stack):** `infra/lib/digest-pipeline-stack.ts` defines `refSecret(id, name)` which uses an `AwsCustomResource` to call `DescribeSecret` at deploy time, then imports the result via `secretsmanager.Secret.fromSecretCompleteArn(this, id, lookup.getResponseField('ARN'))`. The full suffixed ARN ends up in `valueFrom`. CDK auto-creates one `*Lookup` resource per imported secret.
 
 **Verify the lookup resources are present:**
 
 ```bash
 AWS_PROFILE=stxkxs aws cloudformation describe-stack-resources --region us-west-2 \
-  --stack-name DispatchStaging \
+  --stack-name DigestPipelineStaging \
   --query "StackResources[?contains(LogicalResourceId, 'Lookup')].LogicalResourceId" \
   --output text
 ```
@@ -154,13 +154,13 @@ Expect one `*Lookup` per operator-seeded secret: `ApproversSecretLookup`, `WorkO
 
 If the lookup resources exist but you still hit `ResourceNotFoundException`, the underlying secret really doesn't exist in Secrets Manager — re-run `npm run seed:{env}` and re-check via `docs/secrets.md` § "Verification".
 
-### `dispatch API failed to start: ResourceNotFoundException` from inside the running container
+### `digest-pipeline API failed to start: ResourceNotFoundException` from inside the running container
 
-**Cause:** Different from the ECS-startup variant above. This one fires when the **app code** (`src/common/secrets.ts` → `GetSecretValue`) is given a `SecretId` that includes Secrets Manager's 6-char random suffix as if it were part of the friendly name — e.g. `dispatch/staging/approvers-mBkByn`. Secrets Manager treats that as a different secret name and returns `ResourceNotFoundException`.
+**Cause:** Different from the ECS-startup variant above. This one fires when the **app code** (`src/common/secrets.ts` → `GetSecretValue`) is given a `SecretId` that includes Secrets Manager's 6-char random suffix as if it were part of the friendly name — e.g. `digest-pipeline/staging/approvers-mBkByn`. Secrets Manager treats that as a different secret name and returns `ResourceNotFoundException`.
 
-The trap: for an `ISecret` returned by `secretsmanager.Secret.fromSecretCompleteArn(scope, id, completeArn)`, CDK's `.secretName` getter returns the raw post-`:secret:` portion of the ARN with the suffix still attached, because friendly names can themselves contain hyphens and CDK can't reliably strip the suffix at synth time. So `approversSecret.secretName` resolves to `dispatch/staging/approvers-mBkByn` instead of `dispatch/staging/approvers`.
+The trap: for an `ISecret` returned by `secretsmanager.Secret.fromSecretCompleteArn(scope, id, completeArn)`, CDK's `.secretName` getter returns the raw post-`:secret:` portion of the ARN with the suffix still attached, because friendly names can themselves contain hyphens and CDK can't reliably strip the suffix at synth time. So `approversSecret.secretName` resolves to `digest-pipeline/staging/approvers-mBkByn` instead of `digest-pipeline/staging/approvers`.
 
-**Fix (in the dispatch stack):** for any imported secret (anything passing through `refSecret`), pass `.secretArn` to env vars instead of `.secretName`. `GetSecretValue` accepts either a friendly name OR a full ARN, so the ARN form works without app changes. CDK-owned secrets created with an explicit `secretName` (e.g. `dbSecret`) keep `.secretName` — that getter returns the literal value you passed at construction.
+**Fix (in the digest-pipeline stack):** for any imported secret (anything passing through `refSecret`), pass `.secretArn` to env vars instead of `.secretName`. `GetSecretValue` accepts either a friendly name OR a full ARN, so the ARN form works without app changes. CDK-owned secrets created with an explicit `secretName` (e.g. `dbSecret`) keep `.secretName` — that getter returns the literal value you passed at construction.
 
 ```typescript
 // Imported (refSecret → fromSecretCompleteArn): pass ARN
@@ -177,20 +177,20 @@ If you add a new secret env var to the stack, default to `.secretArn` unless the
 
 **Cause:** Docker architecture mismatch. The image was built for one architecture (typically arm64 on Apple Silicon), Fargate launched on another. ECS's task scheduler pulls the platform manifest matching the task def's `runtimePlatform.cpuArchitecture`; if the image only carries a single-arch manifest for the wrong arch, the container can't `exec` the entrypoint binary.
 
-**Fix (already in the stack):** `infra/lib/dispatch-stack.ts` pins both sides to ARM64:
+**Fix (already in the stack):** `infra/lib/digest-pipeline-stack.ts` pins both sides to ARM64:
 
 - Each `FargateTaskDefinition` carries `runtimePlatform: { cpuArchitecture: ARM64, operatingSystemFamily: LINUX }` via the shared `fargateRuntimePlatform` constant.
 - Each `ContainerImage.fromAsset(...)` passes `platform: ecr_assets.Platform.LINUX_ARM64` so the local Docker build emits an arm64 image (no QEMU cross-compile on Apple Silicon; on x86 builders, Docker Buildx invokes QEMU).
 
 ARM64 was chosen because it's ~20% cheaper on Fargate (Graviton) and matches the Apple Silicon build hosts used by most contributors.
 
-If you switch a deploy host to x86 and hit slower builds, that's expected — the build invokes QEMU under the hood. To switch the whole stack to amd64 instead: change `cpuArchitecture: ARM64` → `X86_64` and `Platform.LINUX_ARM64` → `Platform.LINUX_AMD64` in `dispatch-stack.ts`. The collector sidecar image (`public.ecr.aws/aws-observability/aws-otel-collector:latest`) is a multi-arch manifest and works for either.
+If you switch a deploy host to x86 and hit slower builds, that's expected — the build invokes QEMU under the hood. To switch the whole stack to amd64 instead: change `cpuArchitecture: ARM64` → `X86_64` and `Platform.LINUX_ARM64` → `Platform.LINUX_AMD64` in `digest-pipeline-stack.ts`. The collector sidecar image (`public.ecr.aws/aws-observability/aws-otel-collector:latest`) is a multi-arch manifest and works for either.
 
 ### `Task failed container health checks` on the API or web service — ALB target marked unhealthy
 
 **Cause:** The health-check path isn't responding `200`. The API's `/health` is unauthenticated and should return immediately; the web's `/api/health` is likewise unauthenticated. If either is returning 5xx, the task is starting but the app is crashing inside.
 
-**Fix:** `aws logs tail /dispatch/{env}/{api,web} --follow` and look for the stack trace. Most common causes:
+**Fix:** `aws logs tail /digest-pipeline/{env}/{api,web} --follow` and look for the stack trace. Most common causes:
 
 - API: Zod validation failure on `loadApiConfig()` at startup — a missing env or malformed `WORKOS_ISSUER` URL. The `EnvSchema` in `src/api/config.ts:10-21` throws before the server even binds, so the task dies within the first second.
 - Web: WorkOS `cookiePassword` shorter than 32 chars. AuthKit hard-fails at middleware init.
@@ -201,13 +201,13 @@ If you switch a deploy host to x86 and hit slower builds, that's expected — th
 
 **Cause:** `phase.generate` threw — Bedrock returned a non-JSON response, an access-denied, or a throttle. The orchestrator catches it in `src/pipeline/index.ts:104-127`, audits `PIPELINE_FAILURE`, falls back to a skeleton draft built from the ranked items, and still notifies Slack.
 
-**Fix:** The skeleton is legible and approvable — the CoS can edit + send. Diagnose the underlying Bedrock error via `aws logs tail /dispatch/{env}/pipeline` — look for the `phase.generate` span error message. If it's `AccessDeniedException`, enable model access (console) or switch to an inference-profile model ID (see [Bedrock errors](#bedrock-errors) below).
+**Fix:** The skeleton is legible and approvable — the CoS can edit + send. Diagnose the underlying Bedrock error via `aws logs tail /digest-pipeline/{env}/pipeline` — look for the `phase.generate` span error message. If it's `AccessDeniedException`, enable model access (console) or switch to an inference-profile model ID (see [Bedrock errors](#bedrock-errors) below).
 
 ### Pipeline status `PARTIAL` with `slack.history-failed: not_in_channel`
 
 **Cause:** The Slack bot is not a member of `announcementsChannelId` or `teamChannelId`.
 
-**Fix:** `/invite @dispatch-{env}` in the missing channel. See [`slack-app-setup.md`](slack-app-setup.md) § 4.
+**Fix:** `/invite @digest-pipeline-{env}` in the missing channel. See [`slack-app-setup.md`](slack-app-setup.md) § 4.
 
 ### Pipeline status `PARTIAL` — every source returns items but identity resolution logs `resolver.miss` for every author
 
@@ -226,13 +226,13 @@ If you switch a deploy host to x86 and hit slower builds, that's expected — th
 
 ### Pipeline task hangs in `RUNNING` after the app exits
 
-**Cause:** The collector sidecar is `essential: false` on the pipeline task (`infra/lib/dispatch-stack.ts:199`), so the app's exit should terminate the run. If ECS still lists the task as `RUNNING`, the collector's batch processor is flushing on shutdown and hasn't finished yet (batch `timeout: 10s` in the collector config).
+**Cause:** The collector sidecar is `essential: false` on the pipeline task (`infra/lib/digest-pipeline-stack.ts:199`), so the app's exit should terminate the run. If ECS still lists the task as `RUNNING`, the collector's batch processor is flushing on shutdown and hasn't finished yet (batch `timeout: 10s` in the collector config).
 
 **Fix:** Wait up to 30 seconds. If it persists beyond that, `aws ecs describe-tasks` and check each container's `lastStatus` + `exitCode`. A lingering collector with no app container is safe to `stop-task` manually.
 
 ## API runtime errors
 
-### `dispatch API failed to start: FastifyError: logger options only accepts a configuration object` (`FST_ERR_LOG_INVALID_LOGGER_CONFIG`)
+### `digest-pipeline API failed to start: FastifyError: logger options only accepts a configuration object` (`FST_ERR_LOG_INVALID_LOGGER_CONFIG`)
 
 **Cause:** Fastify v5 split the logger setup into two distinct options:
 - `logger: true` or `logger: { … }` — Fastify creates its own Pino instance from the supplied config object (or defaults).
@@ -240,7 +240,7 @@ If you switch a deploy host to x86 and hit slower builds, that's expected — th
 
 Pre-v5 accepted a Pino instance via `logger`. v5 rejects that with `FST_ERR_LOG_INVALID_LOGGER_CONFIG` at boot.
 
-**Fix (in the dispatch stack):** `src/api/server.ts` uses `loggerInstance: getLogger()` so Fastify reuses the shared Pino instance from `src/common/logger.ts` (carrying the `service` field, OTel trace-context injection, and stdout transport). The return statement casts to `FastifyInstance` because `loggerInstance` types the instance with Pino's `Logger` (which has `msgPrefix`) while `FastifyInstance`'s default generic uses `FastifyBaseLogger` (which doesn't) — the two are call-compatible at runtime.
+**Fix (in the digest-pipeline stack):** `src/api/server.ts` uses `loggerInstance: getLogger()` so Fastify reuses the shared Pino instance from `src/common/logger.ts` (carrying the `service` field, OTel trace-context injection, and stdout transport). The return statement casts to `FastifyInstance` because `loggerInstance` types the instance with Pino's `Logger` (which has `msgPrefix`) while `FastifyInstance`'s default generic uses `FastifyBaseLogger` (which doesn't) — the two are call-compatible at runtime.
 
 ### `Invalid or expired token` (401) from `/drafts/:id/approve` (or any JWT-gated route) right after a fresh sign-in
 
@@ -291,11 +291,11 @@ Verify the `aud` claim on a real token: decode it at jwt.io, check that `aud ===
 
 **Cause:** The caller's `sub` (WorkOS user ID) isn't in the `approvers` allow-list.
 
-**Fix:** Add the user to `dispatch/{env}/approvers`:
+**Fix:** Add the user to `digest-pipeline/{env}/approvers`:
 
 ```bash
 aws secretsmanager put-secret-value \
-  --region us-west-2 --secret-id dispatch/{env}/approvers \
+  --region us-west-2 --secret-id digest-pipeline/{env}/approvers \
   --secret-string '{"cosUserId":"user_01COS...","backupApproverIds":["user_01NEW..."]}'
 ```
 
@@ -317,7 +317,7 @@ The API's `SecretsClient` caches approvers with a 5-minute TTL, so the new value
 
 ### Web console: `dangerouslySetInnerHTML called without a string`
 
-**Cause:** Dispatch never uses `dangerouslySetInnerHTML` — if you see this, someone introduced it. Audit recent diffs.
+**Cause:** DigestPipeline never uses `dangerouslySetInnerHTML` — if you see this, someone introduced it. Audit recent diffs.
 
 **Fix:** Use text content + CSS, or an explicit sanitization layer. Shouldn't exist in this codebase.
 
@@ -342,7 +342,7 @@ The API's `SecretsClient` caches approvers with a 5-minute TTL, so the new value
 **Fix (already in the stack defaults):** the stack defaults `BEDROCK_MODEL_ID` to `us.anthropic.claude-sonnet-4-6` and grants IAM on both the profile ARN and the underlying foundation-model ARNs (cross-region):
 
 ```typescript
-// infra/lib/dispatch-stack.ts
+// infra/lib/digest-pipeline-stack.ts
 bedrockModelId = 'us.anthropic.claude-sonnet-4-6',
 // ...
 new iam.PolicyStatement({
@@ -373,7 +373,7 @@ If you have a provisioned-throughput commitment and want to skip the profile, se
 
 **Cause:** SES `SendEmail` requires `ses:SendEmail` permission on **both** the verified identity AND any configuration set attached to it. If your SES account has a default configuration set (or the identity has one), every `SendEmail` call implicitly references the config set — and the IAM policy needs to allow it. Granting permission only on `identity/*` is insufficient.
 
-**Fix (in `infra/lib/dispatch-stack.ts`):** the API task role's SES policy includes both resource ARN patterns:
+**Fix (in `infra/lib/digest-pipeline-stack.ts`):** the API task role's SES policy includes both resource ARN patterns:
 
 ```typescript
 new iam.PolicyStatement({
@@ -402,10 +402,10 @@ Wildcard on `configuration-set/*` covers the default and any future named ones. 
 
 ```bash
 aws secretsmanager put-secret-value \
-  --region us-west-2 --secret-id dispatch/{env}/runtime-config \
+  --region us-west-2 --secret-id digest-pipeline/{env}/runtime-config \
   --secret-string '{
     "slackReviewChannelId": "C00...",
-    "sesFromAddress":       "dispatch@yourco.com",
+    "sesFromAddress":       "digest-pipeline@yourco.com",
     "newsletterRecipients": "exec-list@yourco.com,staff@yourco.com"
   }'
 ```
@@ -416,9 +416,9 @@ Comma-separated, no surrounding whitespace.
 
 ### Directory Sync returns zero users
 
-**Cause:** The WorkOS directory isn't connected to your IdP yet, or the `directoryId` in `dispatch/{env}/workos-directory` is wrong.
+**Cause:** The WorkOS directory isn't connected to your IdP yet, or the `directoryId` in `digest-pipeline/{env}/workos-directory` is wrong.
 
-**Fix:** In the WorkOS dashboard → Directory Sync → confirm the directory is in the `linked` state with >0 users. Re-seed `dispatch/{env}/workos-directory` with the correct `directoryId` if needed.
+**Fix:** In the WorkOS dashboard → Directory Sync → confirm the directory is in the `linked` state with >0 users. Re-seed `digest-pipeline/{env}/workos-directory` with the correct `directoryId` if needed.
 
 ### Web logs show `[AuthKit callback error] Error: OAuth state mismatch` or `Auth cookie missing — cannot verify OAuth state`
 
@@ -426,7 +426,7 @@ Comma-separated, no surrounding whitespace.
 
 The duplicate happens when the session-refresh middleware (`authkitMiddleware()`) runs on the `/api/auth/sign-in` route and writes a session-refresh cookie alongside the PKCE/state cookie that `getSignInUrl()` is writing in the route handler. Same cookie name, different values, single response.
 
-**Fix (in the dispatch web):** the middleware matcher in `web/middleware.ts` excludes `/api/auth/*`. Auth route handlers own their cookie surface; the session-refresh middleware should never touch them.
+**Fix (in the digest-pipeline web):** the middleware matcher in `web/middleware.ts` excludes `/api/auth/*`. Auth route handlers own their cookie surface; the session-refresh middleware should never touch them.
 
 ```typescript
 // web/middleware.ts
@@ -441,7 +441,7 @@ After fix, `curl -i https://<host>/api/auth/sign-in` should show exactly one `Se
 
 **Cause:** AuthKit's `handleAuth()` (in `app/callback/route.ts`) constructs the post-sign-in redirect from `request.url` when no `baseURL` option is passed. Behind an ALB on Fargate, Next.js's `request.url` sometimes resolves the host to the container's internal VPC DNS name (`ip-10-0-X-Y.us-west-2.compute.internal`) instead of the public hostname the browser used. The 302 sends the browser to the internal name, which obviously isn't publicly resolvable.
 
-**Fix (in the dispatch web):** `app/callback/route.ts` derives `baseURL` from `WORKOS_REDIRECT_URI` (already set on the container as the public callback URL) and passes it to `handleAuth({ baseURL })`. Once set, AuthKit uses it as the redirect base instead of `request.url`.
+**Fix (in the digest-pipeline web):** `app/callback/route.ts` derives `baseURL` from `WORKOS_REDIRECT_URI` (already set on the container as the public callback URL) and passes it to `handleAuth({ baseURL })`. Once set, AuthKit uses it as the redirect base instead of `request.url`.
 
 ```typescript
 // app/callback/route.ts
@@ -467,10 +467,10 @@ The `NEXT_PUBLIC_` prefix is required because Next.js inlines values with that p
 - `handleAuth()` falls back to `request.url` for the post-sign-in redirect
 - Cookie security flags are computed against an empty URL → defaults that may be wrong
 
-**Fix (in the dispatch stack):** every reference uses the `NEXT_PUBLIC_` name:
+**Fix (in the digest-pipeline stack):** every reference uses the `NEXT_PUBLIC_` name:
 
 - `Dockerfile.web` — `ARG NEXT_PUBLIC_WORKOS_REDIRECT_URI` + `ENV NEXT_PUBLIC_WORKOS_REDIRECT_URI=...` before `npm run build`.
-- `infra/lib/dispatch-stack.ts` — `buildArgs: { NEXT_PUBLIC_WORKOS_REDIRECT_URI: ... }` on the web's `ContainerImage.fromAsset(...)`, and `NEXT_PUBLIC_WORKOS_REDIRECT_URI` as the runtime ECS secret env name (defense-in-depth, though the build-arg is the load-bearing source).
+- `infra/lib/digest-pipeline-stack.ts` — `buildArgs: { NEXT_PUBLIC_WORKOS_REDIRECT_URI: ... }` on the web's `ContainerImage.fromAsset(...)`, and `NEXT_PUBLIC_WORKOS_REDIRECT_URI` as the runtime ECS secret env name (defense-in-depth, though the build-arg is the load-bearing source).
 - `web/middleware.ts` and `web/app/callback/route.ts` read `process.env.NEXT_PUBLIC_WORKOS_REDIRECT_URI` directly.
 
 Verify after deploy:
@@ -485,7 +485,7 @@ curl -sS -i https://<host>/api/auth/sign-in 2>&1 | grep -i '^location' | grep -o
 
 **Cause:** AuthKit's `withAuth()` and `getSignInUrl()` both want to mutate cookies — the first refreshes an expiring session token, the second sets a PKCE verifier. Next.js App Router only allows cookie mutations from Route Handlers (`app/.../route.ts`) and Server Actions, never from Server Components. Calling either from a server component (e.g. an `async function HomePage()`) throws.
 
-**Fix (in the dispatch web):** keep the page server component pure (no auth-mutating calls), and route auth through:
+**Fix (in the digest-pipeline web):** keep the page server component pure (no auth-mutating calls), and route auth through:
 - `app/api/auth/sign-in/route.ts` — calls `getSignInUrl()` then `redirect()` (PKCE cookie set in the route handler).
 - `app/api/auth/sign-out/route.ts` — calls AuthKit's `signOut()`.
 - `app/api/auth/me/route.ts` — wraps `withAuth()` and returns `{ user: { email, id } | null }`. Try/catches the AuthKit refresh error so a logged-out visitor doesn't 500 the call.
@@ -497,10 +497,10 @@ The page server component just imports `<AuthStatus />` and renders.
 
 **Cause:** AuthKit's `authkitMiddleware()` reads `process.env.WORKOS_REDIRECT_URI` at **module-load time**, not at request time. Next.js bundles the middleware for the Edge runtime via static analysis — `process.env.X` references are resolved at `next build` time, not at runtime in the running container. Setting `WORKOS_REDIRECT_URI` as a runtime ECS secret makes it visible to Node code at request time, but AuthKit has already thrown by then.
 
-**Fix (in the dispatch stack):** `Dockerfile.web` accepts `WORKOS_REDIRECT_URI` as a Docker build arg and exports it as `ENV` before `npm run build`, so the value is present when Next.js bundles the middleware. CDK passes it from the deploy-time `domainName`:
+**Fix (in the digest-pipeline stack):** `Dockerfile.web` accepts `WORKOS_REDIRECT_URI` as a Docker build arg and exports it as `ENV` before `npm run build`, so the value is present when Next.js bundles the middleware. CDK passes it from the deploy-time `domainName`:
 
 ```typescript
-// infra/lib/dispatch-stack.ts
+// infra/lib/digest-pipeline-stack.ts
 image: ecs.ContainerImage.fromAsset('../', {
   file: 'Dockerfile.web',
   buildArgs: { WORKOS_REDIRECT_URI: `https://${domainName}/callback` },
@@ -509,13 +509,13 @@ image: ecs.ContainerImage.fromAsset('../', {
 
 The redirect URI is a public OAuth callback (the WorkOS dashboard literally exposes it to anyone with read access on the application), so baking it into the image is fine. The other AuthKit values (`workosApiKey`, `workosClientId`, `cookiePassword`) stay as runtime secrets — those are read inside request handlers via `getEnvVariable`, not at module load, so runtime injection works for them.
 
-If you fork dispatch and the redirect URI ever needs to differ between environments, vary `domainName` per stack (already the case for staging vs production) and the build arg follows.
+If you fork digest-pipeline and the redirect URI ever needs to differ between environments, vary `domainName` per stack (already the case for staging vs production) and the build arg follows.
 
 ### AuthKit callback: `invalid_client`
 
 **Cause:** `web-config.workosApiKey` doesn't match the Client ID. The WorkOS SDK derives the API key from the secret you provide, and AuthKit cross-checks it against the Client ID during the token exchange.
 
-**Fix:** Re-seed `dispatch/{env}/web-config` with the matching `{workosApiKey, workosClientId}` pair from the same WorkOS application.
+**Fix:** Re-seed `digest-pipeline/{env}/web-config` with the matching `{workosApiKey, workosClientId}` pair from the same WorkOS application.
 
 ## Slack errors
 
@@ -523,13 +523,13 @@ If you fork dispatch and the redirect URI ever needs to differ between environme
 
 **Cause:** `runtime-config.slackReviewChannelId` is wrong, or the bot isn't a member of the channel (Slack's `channel_not_found` response collapses both cases).
 
-**Fix:** Copy the channel ID directly from the Slack UI (right-click → View channel details). Re-run `/invite @dispatch-{env}` in the channel.
+**Fix:** Copy the channel ID directly from the Slack UI (right-click → View channel details). Re-run `/invite @digest-pipeline-{env}` in the channel.
 
 ### `slack.notify-failed: not_in_channel`
 
 **Cause:** The bot isn't a member.
 
-**Fix:** `/invite @dispatch-{env}` in the review channel.
+**Fix:** `/invite @digest-pipeline-{env}` in the review channel.
 
 ### Aggregator reads every channel but returns zero items
 
@@ -546,9 +546,9 @@ If you fork dispatch and the redirect URI ever needs to differ between environme
 **Fix:** Check the collector container log for each task:
 
 ```bash
-aws logs tail /dispatch/{env}/otel-collector-pipeline --follow
-aws logs tail /dispatch/{env}/otel-collector-api --follow
-aws logs tail /dispatch/{env}/otel-collector-web --follow
+aws logs tail /digest-pipeline/{env}/otel-collector-pipeline --follow
+aws logs tail /digest-pipeline/{env}/otel-collector-api --follow
+aws logs tail /digest-pipeline/{env}/otel-collector-web --follow
 ```
 
 Common errors:
@@ -558,7 +558,7 @@ Common errors:
 
 ### Logs not in Grafana
 
-**Cause:** Dispatch does NOT ship logs through OTel. Logs go directly from stdout → ECS awslogs driver → CloudWatch.
+**Cause:** DigestPipeline does NOT ship logs through OTel. Logs go directly from stdout → ECS awslogs driver → CloudWatch.
 
 **Fix:** Add CloudWatch as a Grafana data source (one-time UI step: Grafana → Connections → Data sources → Add new → CloudWatch). Logs become queryable in Grafana; `trace_id` is present on every line, so the Tempo ↔ CloudWatch join is one click.
 
@@ -583,17 +583,17 @@ Common errors:
 **Fix:** See [`local-development.md`](local-development.md) § "Starting Postgres locally". Quick version:
 
 ```bash
-docker run -d --name dispatch-pg -p 5432:5432 \
-  -e POSTGRES_USER=dispatch_app \
-  -e POSTGRES_PASSWORD=dispatch_app \
-  -e POSTGRES_DB=dispatchdb postgres:16
+docker run -d --name digest-pipeline-pg -p 5432:5432 \
+  -e POSTGRES_USER=digest_pipeline_app \
+  -e POSTGRES_PASSWORD=digest_pipeline_app \
+  -e POSTGRES_DB=digest_pipeline postgres:16
 ```
 
 ### `npm run migrate:up` succeeds but `SELECT * FROM drafts` returns `relation "drafts" does not exist`
 
 **Cause:** `DATABASE_URL` points at a different database than the migrations ran against.
 
-**Fix:** Compare the `DATABASE_URL` you ran `migrate:up` with against the one the pipeline/api is using. A common mistake: running migrations against `postgres://localhost/postgres` (default DB) instead of the `dispatch` database.
+**Fix:** Compare the `DATABASE_URL` you ran `migrate:up` with against the one the pipeline/api is using. A common mistake: running migrations against `postgres://localhost/postgres` (default DB) instead of the `digest-pipeline` database.
 
 ### Aurora connection throttled with `too many clients already`
 

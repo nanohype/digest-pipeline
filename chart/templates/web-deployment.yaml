@@ -2,10 +2,10 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "dispatch.fullname" . }}-web
+  name: {{ include "tenant-chart-base.fullname" . }}-web
   labels:
-    {{- include "dispatch.labels" . | nindent 4 }}
-    dispatch.io/service: web
+    {{- include "tenant-chart-base.labels" . | nindent 4 }}
+    digest-pipeline.io/service: web
 spec:
   replicas: {{ .Values.web.replicaCount }}
   strategy:
@@ -15,16 +15,16 @@ spec:
       maxUnavailable: 0
   selector:
     matchLabels:
-      {{- include "dispatch.selectorLabels" (dict "Values" .Values "Release" .Release "Chart" .Chart "service" "web") | nindent 6 }}
+      {{- include "digest-pipeline.selectorLabels" (dict "Values" .Values "Release" .Release "Chart" .Chart "service" "web") | nindent 6 }}
   template:
     metadata:
       labels:
-        {{- include "dispatch.labels" . | nindent 8 }}
-        dispatch.io/service: web
+        {{- include "tenant-chart-base.labels" . | nindent 8 }}
+        digest-pipeline.io/service: web
       annotations:
         checksum/external-secret: {{ printf "%s-%s" .Values.externalSecret.workosSecret .Values.externalSecret.refreshInterval | sha256sum }}
     spec:
-      serviceAccountName: {{ include "dispatch.serviceAccountName" . }}
+      serviceAccountName: {{ include "tenant-chart-base.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
@@ -38,18 +38,18 @@ spec:
               containerPort: {{ .Values.web.port }}
               protocol: TCP
           env:
-            {{- include "dispatch.env" (dict "Values" .Values "service" "web") | nindent 12 }}
+            {{- include "digest-pipeline.env" (dict "Values" .Values "service" "web") | nindent 12 }}
             - name: OTEL_SERVICE_NAME
-              value: dispatch-web
+              value: digest-pipeline-web
             - name: PORT
               value: {{ .Values.web.port | quote }}
             # Next.js needs to know the API base URL it should proxy to.
             # Same chart release, so resolve via the api Service DNS name.
-            - name: DISPATCH_API_URL
-              value: "http://{{ include "dispatch.fullname" . }}-api:{{ .Values.api.port }}"
+            - name: DIGEST_PIPELINE_API_URL
+              value: "http://{{ include "tenant-chart-base.fullname" . }}-api:{{ .Values.api.port }}"
           envFrom:
             - secretRef:
-                name: {{ include "dispatch.fullname" . }}-secrets
+                name: {{ include "tenant-chart-base.fullname" . }}-secrets
           livenessProbe:
             {{- toYaml .Values.probes.web.liveness | nindent 12 }}
           readinessProbe:

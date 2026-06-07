@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to Dispatch are documented here. Dates use ISO 8601 (YYYY-MM-DD).
+All notable changes to DigestPipeline are documented here. Dates use ISO 8601 (YYYY-MM-DD).
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) — until v1.0.0 any minor version can include breaking changes with a migration path documented in the release entry.
 
@@ -8,7 +8,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Ver
 
 ## [0.1.0] — Initial release
 
-Dispatch is an automated weekly newsletter pipeline for a Chief of Staff. It aggregates cross-team activity from GitHub, Linear, Notion, and Slack; resolves identities through WorkOS Directory Sync; redacts PII; generates a voice-matched draft with Claude via Bedrock; posts it to Slack for review; and sends via SES only after explicit human approval.
+DigestPipeline is an automated weekly newsletter pipeline for a Chief of Staff. It aggregates cross-team activity from GitHub, Linear, Notion, and Slack; resolves identities through WorkOS Directory Sync; redacts PII; generates a voice-matched draft with Claude via Bedrock; posts it to Slack for review; and sends via SES only after explicit human approval.
 
 ### Added
 
@@ -27,18 +27,18 @@ Dispatch is an automated weekly newsletter pipeline for a Chief of Staff. It agg
 #### Observability
 
 - **OpenTelemetry traces + metrics** shipped via the ADOT collector sidecar to Grafana Cloud Tempo + Mimir. Pipeline phases and Bedrock sub-phases are explicit named spans.
-- **Pino → stdout → CloudWatch.** Log shipping is an infrastructure concern: apps emit structured JSON; the ECS awslogs driver ships to CloudWatch log groups (`/dispatch/{env}/{pipeline,api,web}`). `trace_id` / `span_id` are auto-injected by `@opentelemetry/instrumentation-pino`, so every log record joins to Tempo. Grafana adds CloudWatch as a data source for unified UI.
+- **Pino → stdout → CloudWatch.** Log shipping is an infrastructure concern: apps emit structured JSON; the ECS awslogs driver ships to CloudWatch log groups (`/digest-pipeline/{env}/{pipeline,api,web}`). `trace_id` / `span_id` are auto-injected by `@opentelemetry/instrumentation-pino`, so every log record joins to Tempo. Grafana adds CloudWatch as a data source for unified UI.
 - **Browser → API trace propagation.** W3C `traceparent` header added to fetch calls by `@opentelemetry/instrumentation-fetch`; the Next.js proxy routes and Fastify auto-instrumentation continue the trace so a single trace spans browser → API → Postgres.
-- **Custom metrics**: `dispatch.run.duration_ms{status}`, `dispatch.source.{items,failure}{source}`, `dispatch.bedrock.{tokens{kind,model},fallback}`, `dispatch.draft.edit_rate`, `dispatch.email.sent`.
+- **Custom metrics**: `digest-pipeline.run.duration_ms{status}`, `digest-pipeline.source.{items,failure}{source}`, `digest-pipeline.bedrock.{tokens{kind,model},fallback}`, `digest-pipeline.draft.edit_rate`, `digest-pipeline.email.sent`.
 - **CloudWatch alarm** on the API's ALB 5xx count (threshold 5 in a 5-minute window, 2 consecutive periods).
 
 #### Infrastructure (CDK v2)
 
-- **Two-stack pattern** (`DispatchStaging`, `DispatchProduction`) sharing one codebase. Env-scoped secret paths (`dispatch/{env}/*`); staging and production can coexist in one account.
+- **Two-stack pattern** (`DigestPipelineStaging`, `DigestPipelineProduction`) sharing one codebase. Env-scoped secret paths (`digest-pipeline/{env}/*`); staging and production can coexist in one account.
 - **VPC** with public / private-with-egress / isolated subnets; Aurora Serverless v2 Postgres in the isolated subnets. Production runs a reader instance; staging is writer-only.
-- **S3**: `dispatch-voice-baseline-{account}-{env}` (versioned, RETAIN in prod) for the few-shot corpus; `dispatch-raw-aggregations-{account}-{env}` (90-day lifecycle) for per-run source snapshots.
+- **S3**: `digest-pipeline-voice-baseline-{account}-{env}` (versioned, RETAIN in prod) for the few-shot corpus; `digest-pipeline-raw-aggregations-{account}-{env}` (90-day lifecycle) for per-run source snapshots.
 - **ECS cluster** with three Fargate services: pipeline (weekly task, scheduled by EventBridge), api (ALB-fronted, `/health` health check), web (Next.js standalone, public ALB). Each task runs an ADOT collector sidecar for traces + metrics.
-- **IAM least privilege.** Pipeline task role can read only `dispatch/{env}/*` secrets, invoke `anthropic.claude-*` foundation models, read the voice-baseline bucket, write the raw-aggregations bucket. API task role adds `ses:SendEmail`. Staging and production roles do not cross-read.
+- **IAM least privilege.** Pipeline task role can read only `digest-pipeline/{env}/*` secrets, invoke `anthropic.claude-*` foundation models, read the voice-baseline bucket, write the raw-aggregations bucket. API task role adds `ses:SendEmail`. Staging and production roles do not cross-read.
 - **Deletion protection** + 14-day Aurora backup retention on production; 3-day retention + `DESTROY` S3 buckets on staging.
 
 #### Operator surface
@@ -50,7 +50,7 @@ Dispatch is an automated weekly newsletter pipeline for a Chief of Staff. It agg
 #### Testing + CI
 
 - Vitest suites: PII regex coverage, ranker scoring + dedupe, resilience state machines (`withTimeout`, `withRetry`), WorkOS identity caching, voice-baseline listing, aggregator → resolver → filter → ranker → mock-Bedrock → audit integration, Levenshtein diff, and a per-aggregator-factory integration test against fake services.
-- `.github/workflows/dispatch-ci.yml` on PRs touching `dispatch/**`: `npm audit --omit=dev --audit-level=high`, lint, typecheck, test, build, CDK synth (`DispatchStaging`), web typecheck + Next.js standalone build. Node 24.
+- `.github/workflows/digest-pipeline-ci.yml` on PRs touching `digest-pipeline/**`: `npm audit --omit=dev --audit-level=high`, lint, typecheck, test, build, CDK synth (`DigestPipelineStaging`), web typecheck + Next.js standalone build. Node 24.
 
 #### Documentation
 
@@ -73,5 +73,5 @@ Dispatch is an automated weekly newsletter pipeline for a Chief of Staff. It agg
 - HTML output in the API is entity-escaped; no `dangerouslySetInnerHTML` in the web.
 - Secret values never embedded in CloudFormation: CDK references secrets by name; ECS pulls values at task start via the task execution role's scoped `secretsmanager:GetSecretValue` permission.
 
-[Unreleased]: https://github.com/nanohype/protohype/compare/feature/dispatch-v1...HEAD
-[0.1.0]: https://github.com/nanohype/protohype/releases/tag/dispatch-v0.1.0
+[Unreleased]: https://github.com/nanohype/protohype/compare/feature/digest-pipeline-v1...HEAD
+[0.1.0]: https://github.com/nanohype/protohype/releases/tag/digest-pipeline-v0.1.0

@@ -1,4 +1,4 @@
-# Base values for dispatch (all environments). Per-env deltas in values-{staging,production}.yaml.
+# Base values for digest-pipeline (all environments). Per-env deltas in values-{staging,production}.yaml.
 #
 # Three services in one chart:
 #   - pipeline (CronJob, weekly Friday 09:00 UTC) — aggregates → ranks → generates → audits → notifies
@@ -21,12 +21,20 @@ serviceAccount:
   annotations: {}
 
 aws:
-  # ARN of the IRSA role dispatch's pods assume. Comes from landing-zone's
-  # dispatch-platform component (output: irsa_role_arn). Empty at the chart
+  # ARN of the IRSA role digest-pipeline's pods assume. Comes from landing-zone's
+  # digest-pipeline-platform component (output: irsa_role_arn). Empty at the chart
   # level — per-env values plumb in the actual ARN. Empty value omits the
   # eks.amazonaws.com/role-arn annotation entirely (useful for local
   # helm-template / kind smoke runs where no real IAM role exists).
   platformRoleArn: ''
+
+# Resource attributes the shared chart labels read (tenant-chart-base.labels →
+# agents.nanohype.dev/{tenant,platform}). The OTEL_RESOURCE_ATTRIBUTES env var
+# carries the same values into the app's OTel SDK at runtime.
+otel:
+  resourceAttributes:
+    agents.tenant: protohype
+    agents.platform: digest-pipeline
 
 podSecurityContext:
   runAsNonRoot: true
@@ -133,10 +141,10 @@ externalSecret:
   secretStore: aws-secrets-manager
   refreshInterval: 1h
   # Source secrets in AWS Secrets Manager (composed per-env by the seed scripts).
-  approversSecret: '' # dispatch/<env>/approvers
-  workosSecret: '' # dispatch/<env>/workos-directory
-  dbCredentialsSecret: '' # dispatch/<env>/db-credentials
-  grafanaCloudSecret: '' # dispatch/<env>/grafana-cloud
+  approversSecret: '' # digest-pipeline/<env>/approvers
+  workosSecret: '' # digest-pipeline/<env>/workos-directory
+  dbCredentialsSecret: '' # digest-pipeline/<env>/db-credentials
+  grafanaCloudSecret: '' # digest-pipeline/<env>/grafana-cloud
 
 # Helm hook: applies pending DB migrations BEFORE the new chart version rolls
 # out, against the same Postgres the api/pipeline reach via DATABASE_URL.
@@ -203,10 +211,10 @@ env:
   OTEL_METRICS_EXPORTER: otlp
   OTEL_METRIC_EXPORT_INTERVAL: '60000'
   # OTel resource attrs — agents.tenant/agents.platform required by PLATFORM_TENANT_CONTRACT
-  OTEL_RESOURCE_ATTRIBUTES: 'service.namespace=dispatch,service.version=0.1.0,agents.tenant=protohype,agents.platform=dispatch'
+  OTEL_RESOURCE_ATTRIBUTES: 'service.namespace=digest-pipeline,service.version=0.1.0,agents.tenant=protohype,agents.platform=digest-pipeline'
 
 # Per-tenant infra references — populated by per-env values from the
-# landing-zone dispatch-platform component's outputs (terragrunt run-all
+# landing-zone digest-pipeline-platform component's outputs (terragrunt run-all
 # output -json). Empty at the chart level for local dev.
 tenantInfra:
   voiceBaselineBucket: ''

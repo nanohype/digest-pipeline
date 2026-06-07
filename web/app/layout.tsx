@@ -4,7 +4,7 @@ import { OtelInit } from '@/components/OtelInit';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Dispatch — weekly newsletter review',
+  title: 'DigestPipeline — weekly newsletter review',
   description: 'Review, edit, and approve the weekly all-hands newsletter.',
 };
 

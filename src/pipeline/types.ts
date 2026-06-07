@@ -1,9 +1,9 @@
 /**
- * Dispatch Pipeline — Shared Types
+ * DigestPipeline Pipeline — Shared Types
  * Agent: eng-ai + eng-backend
  */
 
-export type DispatchStatus = 'PENDING' | 'APPROVED' | 'EXPIRED' | 'SENT' | 'FAILED';
+export type DigestPipelineStatus = 'PENDING' | 'APPROVED' | 'EXPIRED' | 'SENT' | 'FAILED';
 
 export type SectionName = 'what_shipped' | 'whats_coming' | 'new_joiners' | 'wins_recognition' | 'the_ask';
 
@@ -44,7 +44,7 @@ export interface Draft {
   id: string;
   runId: string; // correlation ID
   weekOf: Date;
-  status: DispatchStatus;
+  status: DigestPipelineStatus;
   sections: RankedSection[];
   fullText: string;
   createdAt: Date;

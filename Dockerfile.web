@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.9
 
-# Build context is the dispatch/ directory (matches the CDK asset
+# Build context is the digest-pipeline/ directory (matches the CDK asset
 # reference `ecs.ContainerImage.fromAsset('../', { file: 'Dockerfile.web' })`).
 
 # ─── deps ───
@@ -40,14 +40,14 @@ ENV NODE_ENV=production \
     PORT=3000 \
     HOSTNAME=0.0.0.0
 
-RUN addgroup -S dispatch && adduser -S dispatch -G dispatch
+RUN addgroup -S digest-pipeline && adduser -S digest-pipeline -G digest-pipeline
 
 # Next.js `output: 'standalone'` emits a self-contained server.js plus a
 # pruned node_modules — no need to carry the full workspace.
-COPY --from=build --chown=dispatch:dispatch /app/.next/standalone ./
-COPY --from=build --chown=dispatch:dispatch /app/.next/static ./.next/static
-COPY --from=build --chown=dispatch:dispatch /app/public ./public
+COPY --from=build --chown=digest-pipeline:digest-pipeline /app/.next/standalone ./
+COPY --from=build --chown=digest-pipeline:digest-pipeline /app/.next/static ./.next/static
+COPY --from=build --chown=digest-pipeline:digest-pipeline /app/public ./public
 
 EXPOSE 3000
-USER dispatch
+USER digest-pipeline
 CMD ["node", "server.js"]

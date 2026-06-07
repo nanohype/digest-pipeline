@@ -1,5 +1,5 @@
 /**
- * Dispatch Pipeline — Main Orchestrator
+ * DigestPipeline Pipeline — Main Orchestrator
  * Entry point for ECS Fargate task
  * Agent: eng-backend
  */
@@ -53,7 +53,7 @@ export interface PipelineDeps {
 export async function runPipeline(deps: PipelineDeps): Promise<PipelineRunResult> {
   const { resolver, generator, auditWriter, draftStore, notifier, services, aggregatorConfig } = deps;
   const log = getLogger();
-  const tracer = getTracer('dispatch.pipeline');
+  const tracer = getTracer('digest-pipeline.pipeline');
   const runId = randomUUID();
   const start = Date.now();
   const weekOf = getThisFriday(deps.now?.() ?? new Date());

@@ -7,14 +7,14 @@
  */
 
 import type { Pool } from 'pg';
-import type { Draft, DispatchStatus, RankedSection } from '../pipeline/types.js';
+import type { Draft, DigestPipelineStatus, RankedSection } from '../pipeline/types.js';
 import type { DraftRepository } from '../api/server.js';
 
 interface DraftRow {
   id: string;
   run_id: string;
   week_of: Date;
-  status: DispatchStatus;
+  status: DigestPipelineStatus;
   sections: RankedSection[];
   full_text: string;
   edited_text: string | null;

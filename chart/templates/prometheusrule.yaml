@@ -1,10 +1,10 @@
 {{- if .Values.prometheusRule.enabled -}}
 # PromQL rules over OTel metrics exported by src/common/metrics.ts:
-#   dispatch.run.duration_ms{status}
-#   dispatch.source.{items,failure}{source}
-#   dispatch.bedrock.{tokens{kind,model},fallback}
-#   dispatch.draft.edit_rate{run_id}
-#   dispatch.email.sent{run_id}
+#   digest-pipeline.run.duration_ms{status}
+#   digest-pipeline.source.{items,failure}{source}
+#   digest-pipeline.bedrock.{tokens{kind,model},fallback}
+#   digest-pipeline.draft.edit_rate{run_id}
+#   digest-pipeline.email.sent{run_id}
 #
 # Metric names land in Mimir after the OTel collector's metric-name
 # normalization (dots → underscores). Adjust label selectors below if
@@ -13,106 +13,106 @@
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
-  name: {{ include "dispatch.fullname" . }}
+  name: {{ include "tenant-chart-base.fullname" . }}
   labels:
-    {{- include "dispatch.labels" . | nindent 4 }}
+    {{- include "tenant-chart-base.labels" . | nindent 4 }}
     {{- with .Values.prometheusRule.selector }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
 spec:
   groups:
-    - name: dispatch.pipeline
+    - name: digest-pipeline.pipeline
       interval: 1m
       rules:
-        - alert: DispatchRunFailureRateHigh
+        - alert: DigestPipelineRunFailureRateHigh
           # Pipeline runs land in three terminal statuses: ok / partial /
           # failed. Anything non-ok ratio rising above 50% across the last
           # 4 weekly runs (28 days) is suspicious — sources are degraded
           # or the generator is regressing.
           expr: |
-            (sum(increase(dispatch_run_duration_ms_count{status!="ok"}[28d]))
-             / sum(increase(dispatch_run_duration_ms_count[28d]))) > 0.5
+            (sum(increase(digest_pipeline_run_duration_ms_count{status!="ok"}[28d]))
+             / sum(increase(digest_pipeline_run_duration_ms_count[28d]))) > 0.5
           for: 1h
           labels:
             severity: page
-            service: dispatch
+            service: digest-pipeline
           annotations:
-            summary: Dispatch pipeline non-ok rate > 50% over the last 4 runs
+            summary: DigestPipeline pipeline non-ok rate > 50% over the last 4 runs
             description: |
               {{ "{{" }} $value | humanizePercentage {{ "}}" }} of the last 4 weekly runs ended in PARTIAL or FAILED status.
               Either a source is broken or the generator is regressing — check the latest run's logs.
               Runbook: docs/runbook.md § "Pipeline run failures"
 
-        - alert: DispatchRunDurationP95Breach
-          expr: histogram_quantile(0.95, sum by (le) (rate(dispatch_run_duration_ms_bucket[28d]))) > 600000
+        - alert: DigestPipelineRunDurationP95Breach
+          expr: histogram_quantile(0.95, sum by (le) (rate(digest_pipeline_run_duration_ms_bucket[28d]))) > 600000
           for: 1h
           labels:
             severity: warn
-            service: dispatch
+            service: digest-pipeline
             slo: run-under-10min
           annotations:
-            summary: Dispatch pipeline P95 run duration > 10 minutes
+            summary: DigestPipeline pipeline P95 run duration > 10 minutes
             description: |
               P95 run duration over the last 28 days is {{ "{{" }} $value | printf "%.0f" {{ "}}" }} ms (>600000 ms = 10 min).
               Bedrock or an aggregator is degrading — review the slowest stage in the trace.
               Runbook: docs/runbook.md § "Run duration SLO"
 
-    - name: dispatch.sources
+    - name: digest-pipeline.sources
       interval: 5m
       rules:
-        - alert: DispatchSourceFailing
+        - alert: DigestPipelineSourceFailing
           # A single source failing two consecutive weekly runs is a real
           # incident — the next run will have a stale or empty section.
           expr: |
-            (sum by (source) (increase(dispatch_source_failure_total[14d]))
-             / sum by (source) (increase(dispatch_source_items_total[14d]) + increase(dispatch_source_failure_total[14d]))) > 0.5
+            (sum by (source) (increase(digest_pipeline_source_failure_total[14d]))
+             / sum by (source) (increase(digest_pipeline_source_items_total[14d]) + increase(digest_pipeline_source_failure_total[14d]))) > 0.5
           for: 1h
           labels:
             severity: warn
-            service: dispatch
+            service: digest-pipeline
           annotations:
-            summary: Dispatch source {{ "{{" }} $labels.source {{ "}}" }} failure rate > 50% over two runs
+            summary: DigestPipeline source {{ "{{" }} $labels.source {{ "}}" }} failure rate > 50% over two runs
             description: |
               {{ "{{" }} $labels.source {{ "}}" }} failure rate over the last 14 days is {{ "{{" }} $value | humanizePercentage {{ "}}" }}.
               Likely causes: third-party API token expired, schema changed, rate-limit ban.
               Runbook: docs/runbook.md § "Source failures"
 
-    - name: dispatch.bedrock-ai
+    - name: digest-pipeline.bedrock-ai
       interval: 5m
       rules:
-        - alert: DispatchBedrockFallbackHigh
+        - alert: DigestPipelineBedrockFallbackHigh
           # The generator falls back to a safe template if Bedrock fails
           # or returns unparseable output. Any fallback in a production
           # run is shipping a less-good newsletter to readers.
-          expr: sum(increase(dispatch_bedrock_fallback_total[28d])) > 0
+          expr: sum(increase(digest_pipeline_bedrock_fallback_total[28d])) > 0
           for: 1h
           labels:
             severity: page
-            service: dispatch
+            service: digest-pipeline
           annotations:
-            summary: Dispatch hit Bedrock fallback in the last 4 weekly runs
+            summary: DigestPipeline hit Bedrock fallback in the last 4 weekly runs
             description: |
               {{ "{{" }} $value | printf "%.0f" {{ "}}" }} fallback(s) used across the last 4 runs.
               Output quality is degraded — verify model availability + prompt validity.
               Runbook: docs/runbook.md § "Bedrock fallback"
 
-    - name: dispatch.email
+    - name: digest-pipeline.email
       interval: 5m
       rules:
-        - alert: DispatchEmailUnsentAfterApproval
+        - alert: DigestPipelineEmailUnsentAfterApproval
           # After a successful approval, the email should send. The cosUserId
           # approves and the SES SendEmail follows immediately. Approvals with
           # no corresponding email send within 5 minutes mean the SES path
           # is broken.
           expr: |
-            (sum(increase(dispatch_draft_approved_total[1h]))
-             - sum(increase(dispatch_email_sent_total[1h]))) > 0
+            (sum(increase(digest_pipeline_draft_approved_total[1h]))
+             - sum(increase(digest_pipeline_email_sent_total[1h]))) > 0
           for: 5m
           labels:
             severity: page
-            service: dispatch
+            service: digest-pipeline
           annotations:
-            summary: Dispatch approved drafts without a corresponding SES send
+            summary: DigestPipeline approved drafts without a corresponding SES send
             description: |
               {{ "{{" }} $value | printf "%.0f" {{ "}}" }} approval(s) in the last hour without an email_sent counter increment.
               Likely SES failure or IRSA policy regression.

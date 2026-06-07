@@ -2,10 +2,10 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "dispatch.fullname" . }}-web
+  name: {{ include "tenant-chart-base.fullname" . }}-web
   labels:
-    {{- include "dispatch.labels" . | nindent 4 }}
-    dispatch.io/service: web
+    {{- include "tenant-chart-base.labels" . | nindent 4 }}
+    digest-pipeline.io/service: web
 spec:
   type: ClusterIP
   ports:
@@ -14,5 +14,5 @@ spec:
       protocol: TCP
       name: http
   selector:
-    {{- include "dispatch.selectorLabels" (dict "Values" .Values "Release" .Release "Chart" .Chart "service" "web") | nindent 4 }}
+    {{- include "digest-pipeline.selectorLabels" (dict "Values" .Values "Release" .Release "Chart" .Chart "service" "web") | nindent 4 }}
 {{- end }}

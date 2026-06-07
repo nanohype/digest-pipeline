@@ -16,8 +16,8 @@ import type { PipelineConfig, RankedSection, SanitizedSourceItem, SourceItem } f
 const CONFIG: PipelineConfig = {
   slackReviewChannelId: 'C123',
   backupApproverIds: [],
-  voiceBaselineBucket: 'dispatch-voice-baseline',
-  rawAggregationsBucket: 'dispatch-raw-aggregations',
+  voiceBaselineBucket: 'digest-pipeline-voice-baseline',
+  rawAggregationsBucket: 'digest-pipeline-raw-aggregations',
   llm: {
     modelId: 'anthropic.claude-sonnet-4',
     region: 'us-east-1',

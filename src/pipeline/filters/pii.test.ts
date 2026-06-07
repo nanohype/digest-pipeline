@@ -14,7 +14,7 @@ describe('piiFilter', () => {
   });
 
   it('redacts contact info (email, phone, street address)', () => {
-    expect(piiFilter('Ping sarah.doe+dispatch@example.com later')).not.toContain('sarah.doe');
+    expect(piiFilter('Ping sarah.doe+digest-pipeline@example.com later')).not.toContain('sarah.doe');
     expect(piiFilter('Call (415) 555-1234 if needed')).toContain('[REDACTED]');
     expect(piiFilter('Mail to 1600 Pennsylvania Ave today')).toContain('[REDACTED]');
   });

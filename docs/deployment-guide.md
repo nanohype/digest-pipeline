@@ -1,6 +1,6 @@
 # Deployment guide
 
-End-to-end walkthrough for bringing Dispatch up in a fresh environment. Dispatch ships as a **Platform tenant** on the `eks-agent-platform` operator: per-tenant AWS substrate lives in the landing-zone `dispatch-platform` component, the app deploys as a Helm chart reconciled by ArgoCD, and staging + production are separate, env-scoped instances of the same trio. Stand staging up first, run a manual end-to-end, then repeat for production.
+End-to-end walkthrough for bringing DigestPipeline up in a fresh environment. DigestPipeline ships as a **Platform tenant** on the `eks-agent-platform` operator: per-tenant AWS substrate lives in the landing-zone `digest-pipeline-platform` component, the app deploys as a Helm chart reconciled by ArgoCD, and staging + production are separate, env-scoped instances of the same trio. Stand staging up first, run a manual end-to-end, then repeat for production.
 
 If you're rotating credentials on an already-running tenant, jump to [`secrets.md`](secrets.md) instead. If a specific error has bitten you, [`troubleshooting.md`](troubleshooting.md) has concrete fixes keyed on the error text.
 
@@ -8,7 +8,7 @@ If you're rotating credentials on an already-running tenant, jump to [`secrets.m
 
 ### AWS side
 
-The slow-moving, per-tenant AWS substrate is owned by the landing-zone `dispatch-platform` component (Aurora Serverless v2, the two S3 buckets, the SES identity + configuration set, the IRSA role, and Secrets Manager wiring). You provision it with terragrunt before deploying the chart — see [`landing-zone`](https://github.com/nanohype/landing-zone). Set the region that has Bedrock access enabled:
+The slow-moving, per-tenant AWS substrate is owned by the landing-zone `digest-pipeline-platform` component (Aurora Serverless v2, the two S3 buckets, the SES identity + configuration set, the IRSA role, and Secrets Manager wiring). You provision it with terragrunt before deploying the chart — see [`landing-zone`](https://github.com/nanohype/landing-zone). Set the region that has Bedrock access enabled:
 
 ```bash
 export AWS_REGION=us-west-2
@@ -18,15 +18,15 @@ export AWS_REGION=us-west-2
 
   Enable via AWS console → Bedrock → Model access → Request access. The pipeline fails at run-time with `AccessDeniedException` during `phase.generate` if access is missing, falls back to a raw skeleton draft, and audits `PIPELINE_FAILURE`.
 
-  **Why an inference profile by default.** Claude 4.x bare model IDs (`anthropic.claude-sonnet-4-6`) only work with provisioned-throughput commitments. On-demand invocation requires a cross-region profile (`us.`/`eu.`/`ap.` prefix). The `dispatch-platform` IRSA policy grants both forms so you can switch to a bare model ID when you have provisioned capacity. See [`troubleshooting.md`](troubleshooting.md) § "Bedrock errors".
+  **Why an inference profile by default.** Claude 4.x bare model IDs (`anthropic.claude-sonnet-4-6`) only work with provisioned-throughput commitments. On-demand invocation requires a cross-region profile (`us.`/`eu.`/`ap.` prefix). The `digest-pipeline-platform` IRSA policy grants both forms so you can switch to a bare model ID when you have provisioned capacity. See [`troubleshooting.md`](troubleshooting.md) § "Bedrock errors".
 
-- **SES verified identity.** The `sesFromAddress` you will seed into `dispatch/{env}/runtime-config` must be a verified SES identity (either the email or the sending domain) in the deployment region. The `dispatch-platform` component (`ses.tf`) provisions the identity + configuration set and emits the DKIM tokens; if SES is still in sandbox mode, every recipient address in `newsletterRecipients` must also be verified — request production access before you promote to production.
+- **SES verified identity.** The `sesFromAddress` you will seed into `digest-pipeline/{env}/runtime-config` must be a verified SES identity (either the email or the sending domain) in the deployment region. The `digest-pipeline-platform` component (`ses.tf`) provisions the identity + configuration set and emits the DKIM tokens; if SES is still in sandbox mode, every recipient address in `newsletterRecipients` must also be verified — request production access before you promote to production.
 
 - **Cluster + addons.** A reachable EKS cluster with the eks-gitops addon catalog installed: ingress-nginx, cert-manager, external-secrets, the OTel collector + log forwarder, and kube-prometheus-stack. The chart assumes these exist; it does not install them.
 
 ### Third-party accounts (staging + production)
 
-Provision these **separately** per environment — staging and production each want their own Slack workspace (or at minimum a distinct bot user + review channel) / Linear workspace / Notion database / WorkOS directory / Grafana Cloud stack. Credentials land in env-scoped Secrets Manager paths (`dispatch/staging/*` vs `dispatch/production/*`); sharing them defeats the isolation.
+Provision these **separately** per environment — staging and production each want their own Slack workspace (or at minimum a distinct bot user + review channel) / Linear workspace / Notion database / WorkOS directory / Grafana Cloud stack. Credentials land in env-scoped Secrets Manager paths (`digest-pipeline/staging/*` vs `digest-pipeline/production/*`); sharing them defeats the isolation.
 
 | System | What you need | Where to get it |
 |---|---|---|
@@ -35,7 +35,7 @@ Provision these **separately** per environment — staging and production each w
 | **Linear** | Personal API key, optional `askLabel` override | Linear → Settings → API → Personal API keys. The aggregator reads closed epics, upcoming milestones, and issues tagged with `askLabel` (default `ask`) from the past week. |
 | **Notion** | Internal-integration token (`secret_…`), database ID of the all-hands page | Notion → Settings → Connections → Develop or manage integrations. Share the all-hands database with the integration explicitly. |
 | **GitHub** | PAT with `repo:read` over the repos you want aggregated | GitHub → Settings → Developer settings → Personal access tokens. Read-only; used for merged-PR fetch. |
-| **Grafana Cloud** | OTLP instance ID, Cloud Access Policy token (`glc_…`, `metrics:write`+`traces:write`), OTLP endpoint URL | grafana.com → Connections → OpenTelemetry. The cluster OTel Collector (eks-gitops) reads this for its upstream auth. See [`secrets.md`](secrets.md) § "The `dispatch/{env}/grafana-cloud` secret" for the JSON payload shape. |
+| **Grafana Cloud** | OTLP instance ID, Cloud Access Policy token (`glc_…`, `metrics:write`+`traces:write`), OTLP endpoint URL | grafana.com → Connections → OpenTelemetry. The cluster OTel Collector (eks-gitops) reads this for its upstream auth. See [`secrets.md`](secrets.md) § "The `digest-pipeline/{env}/grafana-cloud` secret" for the JSON payload shape. |
 
 ### Local tooling
 
@@ -50,17 +50,17 @@ The rest of this walkthrough brings up the `staging` tenant. Once staging is liv
 
 ### 1. Provision the AWS substrate
 
-The landing-zone `dispatch-platform` component creates Aurora Serverless v2 (and its `dispatch/<env>/db-credentials` secret), the two S3 buckets, the SES identity + configuration set, and the IRSA role. Apply it via terragrunt:
+The landing-zone `digest-pipeline-platform` component creates Aurora Serverless v2 (and its `digest-pipeline/<env>/db-credentials` secret), the two S3 buckets, the SES identity + configuration set, and the IRSA role. Apply it via terragrunt:
 
 ```bash
 cd landing-zone
-terragrunt apply --terragrunt-working-dir live/aws/workload-staging/us-west-2/staging/dispatch-platform
+terragrunt apply --terragrunt-working-dir live/aws/workload-staging/us-west-2/staging/digest-pipeline-platform
 ```
 
 Record the IRSA role ARN — the chart needs it:
 
 ```bash
-tofu -chdir=live/aws/workload-staging/us-west-2/staging/dispatch-platform output -raw irsa_role_arn
+tofu -chdir=live/aws/workload-staging/us-west-2/staging/digest-pipeline-platform output -raw irsa_role_arn
 ```
 
 Drop it into `chart/values-staging.yaml` under `aws.platformRoleArn`. (Production uses `live/aws/workload-prod/...`.) See [`../chart/README.md`](../chart/README.md) § "IRSA wiring".
@@ -72,16 +72,16 @@ Every non-DB secret is operator-provisioned — the chart's ExternalSecret refer
 The seeder (`npm run seed:{env}`) handles both first-seed (create) and rotation (put) transparently:
 
 ```bash
-cp secrets.template.json dispatch-secrets.staging.json
+cp secrets.template.json digest-pipeline-secrets.staging.json
 # Edit the file — replace every REPLACE_ME with the real value.
 # web-config.cookiePassword + grafana-cloud.authHeader auto-derive if left
-# empty. `dispatch-secrets.*.json` is gitignored.
+# empty. `digest-pipeline-secrets.*.json` is gitignored.
 
 npm run seed:staging:dry     # validates shape, no AWS calls
 npm run seed:staging         # creates every required secret in Secrets Manager
 ```
 
-This seeds nine secrets for `dispatch/staging/`: `approvers`, `workos-directory`, `github`, `linear`, `slack`, `notion`, `web-config`, `runtime-config`, `grafana-cloud`. `db-credentials` is the exception — the `dispatch-platform` rds-aurora module creates and owns it.
+This seeds nine secrets for `digest-pipeline/staging/`: `approvers`, `workos-directory`, `github`, `linear`, `slack`, `notion`, `web-config`, `runtime-config`, `grafana-cloud`. `db-credentials` is the exception — the `digest-pipeline-platform` rds-aurora module creates and owns it.
 
 Per-key provenance (what comes from which third-party account), JSON schema per payload, and rotation guidance are all in [`secrets.md`](secrets.md). The raw `aws secretsmanager create-secret` commands are there too if you need to seed from a machine without the repo checked out.
 
@@ -98,7 +98,7 @@ cd web && npm ci && npx tsc --noEmit && npm run build
 
 ### 4. Apply the Platform CR
 
-The Platform CR declares dispatch as a tenant of the `protohype` team. Apply it once during initial setup:
+The Platform CR declares digest-pipeline as a tenant of the `protohype` team. Apply it once during initial setup:
 
 ```bash
 kubectl apply -f platform.yaml
@@ -107,12 +107,12 @@ kubectl apply -f platform.yaml
 The operator reconciles Namespace `tenants-protohype`, ResourceQuota, LimitRange, default-deny NetworkPolicy, ArgoCD AppProject `tenant-protohype`, the IRSA role, KMS grants, and the S3 bucket policy. Wait for the Platform to reach `Ready`:
 
 ```bash
-kubectl get platform dispatch -n tenants-protohype -o jsonpath='{.status.phase}'
+kubectl get platform digest-pipeline -n tenants-protohype -o jsonpath='{.status.phase}'
 ```
 
 ### 5. Register the ApplicationSet entry
 
-`gitops/applicationset-entry.yaml` is the entry that registers into `nanohype/eks-gitops` (`applicationsets/apps-tenants.yaml`). Add it there, commit, and push. ArgoCD's ApplicationSet controller renders one Application per cluster (matrix generator over `clusters × [dispatch]`), Helm multi-source `$values` resolving `values.yaml` + `values-staging.yaml` from this repo.
+`gitops/applicationset-entry.yaml` is the entry that registers into `nanohype/eks-gitops` (`applicationsets/apps-tenants.yaml`). Add it there, commit, and push. ArgoCD's ApplicationSet controller renders one Application per cluster (matrix generator over `clusters × [digest-pipeline]`), Helm multi-source `$values` resolving `values.yaml` + `values-staging.yaml` from this repo.
 
 ### 6. Let ArgoCD sync
 
@@ -122,10 +122,10 @@ Watch the rollout:
 
 ```bash
 kubectl -n tenants-protohype get pods -w
-argocd app get tenants-protohype-dispatch    # if you have the ArgoCD CLI
+argocd app get tenants-protohype-digest-pipeline    # if you have the ArgoCD CLI
 ```
 
-The ExternalSecret materializes the in-cluster Secret from the seeded `dispatch/staging/*` entries; if a key is missing the pods stay in `CreateContainerConfigError` until it's seeded and the ExternalSecret resyncs.
+The ExternalSecret materializes the in-cluster Secret from the seeded `digest-pipeline/staging/*` entries; if a key is missing the pods stay in `CreateContainerConfigError` until it's seeded and the ExternalSecret resyncs.
 
 ### 7. Verify migrations landed
 
@@ -133,7 +133,7 @@ The `migrate-job` hook runs `npm run migrate:up` against Aurora. Confirm it succ
 
 ```bash
 kubectl -n tenants-protohype get jobs
-kubectl -n tenants-protohype logs job/dispatch-migrate
+kubectl -n tenants-protohype logs job/digest-pipeline-migrate
 ```
 
 If you need to run migrations by hand (e.g. from a bastion inside the VPC):
@@ -141,7 +141,7 @@ If you need to run migrations by hand (e.g. from a bastion inside the VPC):
 ```bash
 DB_SECRET=$(aws secretsmanager get-secret-value \
   --region us-west-2 \
-  --secret-id dispatch/staging/db-credentials \
+  --secret-id digest-pipeline/staging/db-credentials \
   --query SecretString --output text)
 
 export DATABASE_URL="postgres://$(echo "$DB_SECRET" | jq -r '.username'):$(echo "$DB_SECRET" | jq -r '.password' | jq -sRr @uri)@$(echo "$DB_SECRET" | jq -r '.host'):$(echo "$DB_SECRET" | jq -r '.port')/$(echo "$DB_SECRET" | jq -r '.dbname')"
@@ -160,11 +160,11 @@ Until this is registered, `/callback?code=…` returns a WorkOS `invalid_redirec
 
 ### 9. Upload the voice-baseline corpus
 
-The newsletter generator loads few-shot examples from `s3://dispatch-voice-baseline-<account>-staging/`. Bootstrap it with at least one example newsletter the Chief of Staff has signed off on (the more, the better — ~5 examples is a good starting point):
+The newsletter generator loads few-shot examples from `s3://digest-pipeline-voice-baseline-<account>-staging/`. Bootstrap it with at least one example newsletter the Chief of Staff has signed off on (the more, the better — ~5 examples is a good starting point):
 
 ```bash
 aws s3 cp ./voice-baseline/2026-01-12.md \
-  s3://dispatch-voice-baseline-<account>-staging/baseline/2026-01-12.md
+  s3://digest-pipeline-voice-baseline-<account>-staging/baseline/2026-01-12.md
 ```
 
 Each file is a plain markdown newsletter. The generator concatenates them into the Bedrock system prompt as few-shot examples (cached via a `cachePoint` marker so the corpus is paid for once per run). If the bucket is empty, the generator falls back to zero-shot — legible but not voice-matched.
@@ -178,7 +178,7 @@ The bot has to be a member of:
 - `slackReviewChannelId` — write target (`postMessage` for "Draft ready" + alerts)
 
 ```
-/invite @dispatch-bot
+/invite @digest-pipeline-bot
 ```
 
 The Slack aggregator uses `withTimeout(15s)` + `withRetry(3)` per channel — a missing bot membership surfaces as a per-source error, and the pipeline run lands as `PARTIAL` with a warning log (`slack.history-failed`).
@@ -188,21 +188,21 @@ The Slack aggregator uses `withTimeout(15s)` + `withRetry(3)` per channel — a 
 The weekly `CronJob` is the scheduled runner. To kick off a one-off run before Friday, create a Job from the CronJob template:
 
 ```bash
-kubectl -n tenants-protohype create job dispatch-pipeline-manual-$(date +%s) \
-  --from=cronjob/dispatch-pipeline
+kubectl -n tenants-protohype create job digest-pipeline-pipeline-manual-$(date +%s) \
+  --from=cronjob/digest-pipeline-pipeline
 ```
 
-Watch the run (stdout also reaches Grafana Cloud Loki — filter `service="dispatch-pipeline"`):
+Watch the run (stdout also reaches Grafana Cloud Loki — filter `service="digest-pipeline-pipeline"`):
 
 ```bash
-kubectl -n tenants-protohype logs -f job/dispatch-pipeline-manual-<ts>
+kubectl -n tenants-protohype logs -f job/digest-pipeline-pipeline-manual-<ts>
 ```
 
 Expected sequence: `pipeline.start` → `phase.aggregate` (per-source item counts) → `phase.dedupe` → `phase.rank` → `phase.generate` (Bedrock span + token usage, incl. cache-read/cache-write tokens) → `phase.audit_and_notify` → `slack.notify-draft` → `pipeline.exit` with `status: "OK"` or `"PARTIAL"`.
 
 In Slack you should see a "Weekly newsletter draft ready" message in the review channel with a link that leads the approver to `https://<staging-host>/review/<draftId>`. Sign in with WorkOS, edit the draft, click **Approve & Send**, and verify:
 
-- Edit event in `audit_events` (check the api logs / Loki: `service="dispatch-api"`)
+- Edit event in `audit_events` (check the api logs / Loki: `service="digest-pipeline-api"`)
 - SES message ID in the `approved` → `sent` audit chain
 - Email lands in your verified-identity inbox
 
@@ -213,7 +213,7 @@ Repeat the staging steps with `production` in place of `staging`:
 ```bash
 # 1. Provision the prod substrate.
 cd landing-zone
-terragrunt apply --terragrunt-working-dir live/aws/workload-prod/us-west-2/production/dispatch-platform
+terragrunt apply --terragrunt-working-dir live/aws/workload-prod/us-west-2/production/digest-pipeline-platform
 
 # 2. Seed production secrets (see secrets.md).
 cd ../digest-pipeline
@@ -227,14 +227,14 @@ Production uses completely separate resources:
 
 | | Staging | Production |
 |---|---|---|
-| Secret path | `dispatch/staging/*` | `dispatch/production/*` |
+| Secret path | `digest-pipeline/staging/*` | `digest-pipeline/production/*` |
 | Aurora scaling | 0.5 → 2 ACU, no reader | 0.5 → 8 ACU, one reader |
 | Aurora retention | 3-day backup, deletion protection OFF | 14-day backup, deletion protection ON |
 | S3 `voice-baseline` retention | destroy on teardown | retained on teardown |
 | api / web replicas | 1 / 1 | 2 / 2 |
-| IRSA policy scope | `dispatch/staging/*` only | `dispatch/production/*` only |
+| IRSA policy scope | `digest-pipeline/staging/*` only | `digest-pipeline/production/*` only |
 
-The staging IRSA role **cannot** read production secrets (and vice versa) — each environment's `dispatch-platform` instance scopes its IRSA policy to its own `dispatch/<env>/*` secret-ARN prefix.
+The staging IRSA role **cannot** read production secrets (and vice versa) — each environment's `digest-pipeline-platform` instance scopes its IRSA policy to its own `digest-pipeline/<env>/*` secret-ARN prefix.
 
 The weekly `CronJob` runs in both environments. If you want staging to skip the auto-run while you iterate, set `pipeline.suspend: true` in `chart/values-staging.yaml` (`spec.suspend` on the CronJob) and trigger manual runs via step 11.
 
@@ -253,23 +253,23 @@ kubectl delete -f platform.yaml
 
 # 3. Tear down the AWS substrate:
 cd landing-zone
-terragrunt destroy --terragrunt-working-dir live/aws/workload-staging/us-west-2/${ENV}/dispatch-platform
+terragrunt destroy --terragrunt-working-dir live/aws/workload-staging/us-west-2/${ENV}/digest-pipeline-platform
 
 # 4. Delete the operator-seeded secrets (the substrate owns db-credentials):
 for s in approvers workos-directory github linear slack notion \
          web-config runtime-config grafana-cloud; do
   aws secretsmanager delete-secret --region us-west-2 \
-    --secret-id dispatch/${ENV}/${s} --force-delete-without-recovery
+    --secret-id digest-pipeline/${ENV}/${s} --force-delete-without-recovery
 done
 ```
 
-> **Do not delete** `dispatch/production` voice-baseline contents lightly. The `voice-baseline` bucket carries the curated few-shot corpus the Chief of Staff built by hand; rebuilding it is weeks of work, not minutes. In production the substrate retains the bucket on teardown for exactly this reason — drain it deliberately, not by accident.
+> **Do not delete** `digest-pipeline/production` voice-baseline contents lightly. The `voice-baseline` bucket carries the curated few-shot corpus the Chief of Staff built by hand; rebuilding it is weeks of work, not minutes. In production the substrate retains the bucket on teardown for exactly this reason — drain it deliberately, not by accident.
 
 ## Common first-deploy failures
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| Pods stuck in `CreateContainerConfigError` | The ExternalSecret can't resolve one of the `dispatch/{env}/*` entries | Re-run the seeder for the missing secret; the ExternalSecret resyncs and the pods start |
+| Pods stuck in `CreateContainerConfigError` | The ExternalSecret can't resolve one of the `digest-pipeline/{env}/*` entries | Re-run the seeder for the missing secret; the ExternalSecret resyncs and the pods start |
 | Pod crash-loops on startup with a `ZodError` | One of the JSON secrets has a missing or mistyped field | `kubectl logs` the pod (or filter Loki); `put-secret-value` the fix, let the ExternalSecret resync, then `kubectl rollout restart` the Deployment |
 | Pipeline Job runs once, exits, status `Failed` with `AccessDeniedException` on Bedrock | Model access not enabled across all regions the inference profile spans | Default profile is `us.anthropic.claude-sonnet-4-6` — request model access for `anthropic.claude-sonnet-4-6` in us-east-1, us-east-2, AND us-west-2. See [`troubleshooting.md`](troubleshooting.md) § "Bedrock errors" |
 | API 5xx on `/drafts/:id/approve` with `SES.MessageRejected` | `sesFromAddress` not a verified SES identity, or SES still in sandbox and the recipient isn't verified | Verify the identity in SES; request production-access or verify each recipient during bring-up |

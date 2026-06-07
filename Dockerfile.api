@@ -23,14 +23,14 @@ WORKDIR /app
 ENV NODE_ENV=production \
     PORT=3001
 
-RUN addgroup -S dispatch && adduser -S dispatch -G dispatch
+RUN addgroup -S digest-pipeline && adduser -S digest-pipeline -G digest-pipeline
 
-COPY --from=build --chown=dispatch:dispatch /app/node_modules ./node_modules
-COPY --from=build --chown=dispatch:dispatch /app/dist ./dist
-COPY --from=build --chown=dispatch:dispatch /app/package.json ./package.json
+COPY --from=build --chown=digest-pipeline:digest-pipeline /app/node_modules ./node_modules
+COPY --from=build --chown=digest-pipeline:digest-pipeline /app/dist ./dist
+COPY --from=build --chown=digest-pipeline:digest-pipeline /app/package.json ./package.json
 
 EXPOSE 3001
-USER dispatch
+USER digest-pipeline
 
 # Entry point wiring (repositories, audit writer, SES sender, Slack
 # confirmer) is composed in dist/api/entrypoint.js, added in the data-layer

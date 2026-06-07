@@ -5,6 +5,6 @@
 
 import { trace, type Tracer } from '@opentelemetry/api';
 
-export function getTracer(name = 'dispatch'): Tracer {
+export function getTracer(name = 'digest-pipeline'): Tracer {
   return trace.getTracer(name);
 }

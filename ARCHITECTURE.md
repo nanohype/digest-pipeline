@@ -1,6 +1,6 @@
 # Architecture
 
-`digest-pipeline` (internal service handle: **dispatch**) is an automated weekly newsletter pipeline: it aggregates cross-team activity, drafts a voice-matched newsletter with Claude via Bedrock, and gates on human approval before sending over SES. This document covers the bounded contexts, the load-bearing decisions, the data flow of one weekly run, and where the boundaries sit relative to the rest of the stack.
+`digest-pipeline` (internal service handle: **digest-pipeline**) is an automated weekly newsletter pipeline: it aggregates cross-team activity, drafts a voice-matched newsletter with Claude via Bedrock, and gates on human approval before sending over SES. This document covers the bounded contexts, the load-bearing decisions, the data flow of one weekly run, and where the boundaries sit relative to the rest of the stack.
 
 ## Bounded contexts
 
@@ -13,7 +13,7 @@ The system organizes around four contexts. External-IO inside the pipeline goes 
 | **web**      | `web/`          | The Next.js App Router review app. `/review/[draftId]` renders the draft with inline edit, a live edit-rate indicator, and an approve-and-send action. WorkOS AuthKit for auth; proxy routes forward to the api with the W3C trace header so a single trace spans browser → api → Postgres                                                                                                                                                                    |
 | **data**     | `src/data/`     | Postgres-backed persistence. `DraftRepository` (drafts.ts) is the draft lifecycle store; `AuditWriter` (audit.ts) is the append-only `audit_events` ledger + the derived `email_analytics` row on send. `pool.ts` builds the `pg` pool. Migrations live under `migrations/`                                                                                                                                                                                   |
 
-Cross-cutting (`src/common/`): `registry.ts` (the `createRegistry<T>` provider registry), `otel-bootstrap.ts` (loaded via `--import` in the pipeline + api), `tracer.ts` (`getTracer`, explicit pipeline-phase spans), `metrics.ts` (the `dispatch.*` OTel instruments), `logger.ts` (one shared Pino factory; `OTEL_SERVICE_NAME` drives the `service` field), `secrets.ts`, `string.ts` (Levenshtein for the edit-rate).
+Cross-cutting (`src/common/`): `registry.ts` (the `createRegistry<T>` provider registry), `otel-bootstrap.ts` (loaded via `--import` in the pipeline + api), `tracer.ts` (`getTracer`, explicit pipeline-phase spans), `metrics.ts` (the `digest-pipeline.*` OTel instruments), `logger.ts` (one shared Pino factory; `OTEL_SERVICE_NAME` drives the `service` field), `secrets.ts`, `string.ts` (Levenshtein for the edit-rate).
 
 ## Key decisions
 
@@ -31,7 +31,7 @@ Aggregators register with a `createRegistry<T>` registry (`src/pipeline/aggregat
 
 ### The weekly CronJob is the only runner
 
-The pipeline ships as a `CronJob` (Friday 09:00 UTC, `concurrencyPolicy: Forbid`, 30-min `activeDeadlineSeconds`, `restartPolicy: Never`) — there's no always-on pipeline pod. A weekly newsletter doesn't need one, and `Forbid` plus the deadline means a stuck run can't stack onto the next week's. Off-cycle runs are an operator break-glass action — `kubectl create job --from=cronjob/dispatch-pipeline` — so an ad-hoc run reuses the exact definition the scheduler uses. There's no second runner and no app-side RBAC.
+The pipeline ships as a `CronJob` (Friday 09:00 UTC, `concurrencyPolicy: Forbid`, 30-min `activeDeadlineSeconds`, `restartPolicy: Never`) — there's no always-on pipeline pod. A weekly newsletter doesn't need one, and `Forbid` plus the deadline means a stuck run can't stack onto the next week's. Off-cycle runs are an operator break-glass action — `kubectl create job --from=cronjob/digest-pipeline-pipeline` — so an ad-hoc run reuses the exact definition the scheduler uses. There's no second runner and no app-side RBAC.
 
 ### Human-approval gate before SES send
 
@@ -70,20 +70,20 @@ This repo owns the application — source, chart, Platform CR, gitops entry. Eve
 
 ### Substrate → `landing-zone`
 
-`landing-zone/components/aws/dispatch-platform/` provisions the per-tenant AWS data plane and does not move here:
+`landing-zone/components/aws/digest-pipeline-platform/` provisions the per-tenant AWS data plane and does not move here:
 
 - Aurora Serverless v2 Postgres (the draft store + audit ledger)
 - Two S3 buckets (voice-baseline corpus, raw aggregations)
 - SES verified identity + configuration set (the newsletter send; DKIM CNAMEs are emitted as outputs for the operator to publish)
 - Bedrock invoke policy on the IRSA role
-- Secrets Manager seeding (`dispatch/<env>/{approvers,workos-directory,db-credentials,grafana-cloud}`)
+- Secrets Manager seeding (`digest-pipeline/<env>/{approvers,workos-directory,db-credentials,grafana-cloud}`)
 
-Its `irsa_role_arn` output is the role dispatch's app pods assume — plumbed into the chart through the per-env `aws.platformRoleArn` Helm value; the bucket names, channel id, and secret ids land in the chart's `tenantInfra.*`. The chart contains **no inline IAM**; the trust relationship is owned in landing-zone and consumed by reference. All three workloads share one SA, all assume the `dispatch-platform` role.
+Its `irsa_role_arn` output is the role digest-pipeline's app pods assume — plumbed into the chart through the per-env `aws.platformRoleArn` Helm value; the bucket names, channel id, and secret ids land in the chart's `tenantInfra.*`. The chart contains **no inline IAM**; the trust relationship is owned in landing-zone and consumed by reference. All three workloads share one SA, all assume the `digest-pipeline-platform` role.
 
 ### Cluster addons → `eks-gitops`
 
 The chart assumes these cluster-level capabilities are already installed and reconciled by `eks-gitops`:
 
-- **External Secrets Operator** — backs `externalsecret.yaml` (aggregates the four `dispatch/<env>/*` Secrets Manager entries into one Secret, composing `DATABASE_URL`)
+- **External Secrets Operator** — backs `externalsecret.yaml` (aggregates the four `digest-pipeline/<env>/*` Secrets Manager entries into one Secret, composing `DATABASE_URL`)
 - **ingress-nginx** + **cert-manager** — back `ingress.yaml` (TLS for `/` → web and `/api/*` → api)
-- **observability stack** — the cluster OTel Collector (`otel-collector.observability.svc.cluster.local:4318`) and log forwarder that carry traces/metrics/logs to Grafana Cloud. The app emits OTLP and structured Pino JSON to stdout; there are no per-pod sidecars. The `prometheusrule.yaml` alerts and the `grafana-dashboard.yaml` dashboard (`chart/dashboards/dispatch.json`) load into that stack, querying the `dispatch.*` metrics.
+- **observability stack** — the cluster OTel Collector (`otel-collector.observability.svc.cluster.local:4318`) and log forwarder that carry traces/metrics/logs to Grafana Cloud. The app emits OTLP and structured Pino JSON to stdout; there are no per-pod sidecars. The `prometheusrule.yaml` alerts and the `grafana-dashboard.yaml` dashboard (`chart/dashboards/digest-pipeline.json`) load into that stack, querying the `digest-pipeline.*` metrics.

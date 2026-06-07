@@ -8,4 +8,4 @@ cdk.out/
 
 # Filled-in secret files — seed with `npm run seed:{env}` then leave the file
 # on your laptop. Template (committed) is secrets.template.json.
-dispatch-secrets.*.json
+digest-pipeline-secrets.*.json
