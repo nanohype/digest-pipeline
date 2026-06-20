@@ -62,8 +62,15 @@ export function unsafeDecodeClaims(token: string): JWTPayload | null {
 
 export function extractBearerToken(authorizationHeader: string | undefined): string | null {
   if (!authorizationHeader) return null;
-  const match = /^Bearer\s+(.+)$/i.exec(authorizationHeader);
-  return match ? match[1].trim() : null;
+  // Parse "Bearer <token>" without a backtracking regex. The previous
+  // /^Bearer\s+(.+)$/ had overlapping \s+ and .+ quantifiers (\s ⊂ .), a
+  // polynomial-ReDoS surface on a crafted Authorization header. Anchored
+  // literal + single-char tests are linear-time.
+  if (!/^bearer/i.test(authorizationHeader)) return null;
+  const rest = authorizationHeader.slice('bearer'.length);
+  if (!/^\s/.test(rest)) return null;
+  const token = rest.trim();
+  return token.length > 0 ? token : null;
 }
 
 export function isApprover(claims: SessionClaims, approvers: Approvers): boolean {
