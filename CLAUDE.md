@@ -136,7 +136,7 @@ The secret `digest-pipeline/${env}/grafana-cloud` carries `{ instanceId, apiToke
 
 ## Testing
 
-Unit tests per module with Vitest. Integration test hits a real Postgres container and mocks only Bedrock and external SDKs.
+Unit tests per module with Vitest. Integration tests exercise the pipeline orchestrator (fake aggregators → real filter/ranker → mocked Bedrock → audited) and the API (Fastify `app.inject` with in-memory ports); Bedrock and the external SDKs are the only mocked boundaries. A hermetic real-Postgres test (pg-mem/testcontainers) for the data-layer status guards is a tracked follow-up.
 
 - `src/pipeline/filters/pii.test.ts` — every regex category + `assertNoPii`
 - `src/pipeline/ai/ranker.test.ts` — scoring, dedup, section mapping, 5-item cap

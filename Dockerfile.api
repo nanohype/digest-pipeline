@@ -32,8 +32,7 @@ COPY --from=build --chown=digest-pipeline:digest-pipeline /app/package.json ./pa
 EXPOSE 3001
 USER digest-pipeline
 
-# Entry point wiring (repositories, audit writer, SES sender, Slack
-# confirmer) is composed in dist/api/entrypoint.js, added in the data-layer
-# pass. Running this image before that pass lands exits immediately — the
-# image builds cleanly so cdk synth/deploy resolves its asset reference.
+# dist/api/entrypoint.js is the composition root: it wires the Postgres
+# repositories, audit writer, SES sender, and Slack confirmer, then starts
+# the Fastify server.
 CMD ["node", "--import=./dist/common/otel-bootstrap.js", "--enable-source-maps", "dist/api/entrypoint.js"]

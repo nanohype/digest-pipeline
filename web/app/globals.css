@@ -7,6 +7,7 @@
   --accent: #22c55e;
   --accent-soft: #16a34a;
   --warn: #eab308;
+  --amber: #f97316;
   --danger: #ef4444;
   --border: #222b3d;
   --radius: 10px;
@@ -164,6 +165,23 @@ section.draft-section {
   color: var(--text-dim);
 }
 
+.diff-value {
+  font-weight: 700;
+  font-size: 1.15rem;
+}
+.diff-value--good {
+  color: var(--accent);
+}
+.diff-value--warn {
+  color: var(--warn);
+}
+.diff-value--amber {
+  color: var(--amber);
+}
+.diff-value--danger {
+  color: var(--danger);
+}
+
 .diff-target {
   color: var(--text-dim);
   font-size: 12px;
@@ -200,50 +218,6 @@ section.draft-section {
   background: #9ca3af;
   cursor: not-allowed;
   opacity: 0.7;
-}
-
-.trigger-pipeline {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  align-items: flex-start;
-}
-
-.trigger-pipeline-button {
-  background: var(--panel-soft);
-  color: var(--text);
-  padding: 10px 20px;
-  border-radius: var(--radius);
-  font-weight: 500;
-  font-size: 14px;
-  border: 1px solid var(--border);
-  cursor: pointer;
-  transition:
-    background 0.15s ease,
-    transform 0.05s ease;
-}
-
-.trigger-pipeline-button:hover:not(:disabled) {
-  background: var(--panel);
-}
-
-.trigger-pipeline-button:active:not(:disabled) {
-  transform: translateY(1px);
-}
-
-.trigger-pipeline-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
-}
-
-.trigger-pipeline-link {
-  color: var(--accent);
-  text-decoration: none;
-  font-weight: 500;
-}
-
-.trigger-pipeline-link:hover {
-  text-decoration: underline;
 }
 
 .review-header-row {

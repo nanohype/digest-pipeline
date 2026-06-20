@@ -85,7 +85,7 @@ aws secretsmanager create-secret \
   }"
 ```
 
-> **Logs do not go through this secret.** DigestPipeline ships logs directly from stdout via the ECS awslogs driver to CloudWatch. The collector sidecar only handles traces + metrics. There is no `lokiEndpoint` or `lokiUsername` field in `digest-pipeline/{env}/grafana-cloud` — if you see one, it's a leftover from an earlier iteration and can be removed. See [`troubleshooting.md`](troubleshooting.md) § "Logs not in Grafana" for the Grafana-side wiring.
+> **Logs do not go through this secret.** DigestPipeline ships logs directly from stdout: the eks-gitops cluster log forwarder picks up pod stdout and ships it to Grafana Cloud Loki. The cluster OTel collector only handles traces + metrics. There is no `lokiEndpoint` or `lokiUsername` field in `digest-pipeline/{env}/grafana-cloud` — the forwarder carries its own upstream auth — and if you see one here it's a leftover from an earlier iteration and can be removed. Query logs in Grafana with e.g. `{service="digest-pipeline-pipeline"}`; `trace_id` rides on every line, so the Tempo ↔ Loki join is one click. See [`troubleshooting.md`](troubleshooting.md) § "Logs not in Grafana" for the cluster-side wiring.
 
 ## Seed all secrets in one shot (recommended)
 

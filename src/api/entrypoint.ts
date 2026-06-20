@@ -11,10 +11,13 @@ import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
 import { WebClient as SlackWebClient } from '@slack/web-api';
 import { z } from 'zod';
 import { loadApiConfig } from './config.js';
-import { buildServer, registerShutdownHandlers, type EmailSender, type SlackConfirmer } from './server.js';
+import { buildServer, registerShutdownHandlers } from './server.js';
+import type { EmailSender, SlackConfirmer } from '../ports.js';
 import { createDbPool } from '../data/pool.js';
 import { createPostgresDraftRepository } from '../data/drafts.js';
 import { createPostgresAuditWriter } from '../data/audit.js';
+import { getLogger } from '../common/logger.js';
+import { awsRequestHandler } from '../common/aws.js';
 
 const DbSecretSchema = z.object({
   host: z.string().min(1),
@@ -50,7 +53,11 @@ async function resolveDatabaseUrl(config: ReturnType<typeof loadApiConfig>, env:
 }
 
 function createSesEmailSender(region: string, env: RuntimeEnv): EmailSender {
-  const client = new SESClient({ region });
+  // SES SendEmail is not idempotent — a blind retry could double-send a
+  // company-wide email — so bound the socket and keep the SDK to a single
+  // attempt rather than wrapping in withRetry. A timed-out send surfaces to
+  // the approver, who can retry deliberately.
+  const client = new SESClient({ region, requestHandler: awsRequestHandler(15_000), maxAttempts: 1 });
   const recipients = env.NEWSLETTER_RECIPIENT_LIST.split(',')
     .map((r) => r.trim())
     .filter(Boolean);
@@ -97,16 +104,7 @@ function createSlackConfirmerFromBot(botToken: string, channelId: string): Slack
         // Slack posting is observability, not critical path. Log and
         // swallow so a transient Slack outage doesn't mask a successful
         // send from the approver or the audit trail.
-        console.error(
-          JSON.stringify({
-            level: 'error',
-            event: 'slack.confirm-sent.failed',
-            runId,
-            draftId,
-            recipientCount,
-            error: err instanceof Error ? err.message : String(err),
-          })
-        );
+        getLogger().error({ runId, draftId, recipientCount, err }, 'slack.confirm-sent.failed');
       }
     },
   };

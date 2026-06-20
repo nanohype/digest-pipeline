@@ -8,6 +8,7 @@
 
 import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
 import { z } from 'zod';
+import { awsRequestHandler } from './aws.js';
 
 export interface SecretsClient {
   getJson<S extends z.ZodType>(secretId: string, schema: S): Promise<z.infer<S>>;
@@ -44,7 +45,10 @@ export function createSecretsClient(options?: {
 }
 
 function defaultFetcher(region?: string): (secretId: string) => Promise<string> {
-  const client = new SecretsManagerClient({ region: region ?? process.env.AWS_REGION });
+  const client = new SecretsManagerClient({
+    region: region ?? process.env.AWS_REGION,
+    requestHandler: awsRequestHandler(8_000),
+  });
   return async (secretId) => {
     const response = await client.send(new GetSecretValueCommand({ SecretId: secretId }));
     if (!response.SecretString) {

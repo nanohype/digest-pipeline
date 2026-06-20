@@ -3,9 +3,9 @@
 Every concrete error DigestPipeline has surfaced during bring-up and operation, with root cause and fix. Keyed on the exact error text where possible so you (or the next operator) can grep-find the answer instead of re-diagnosing.
 
 Sections:
-- [CloudFormation / CDK deploy errors](#cloudformation--cdk-deploy-errors)
+- [ArgoCD sync / Platform-CR reconcile errors](#argocd-sync--platform-cr-reconcile-errors)
 - [Build / TypeScript errors](#build--typescript-errors)
-- [ECS task startup errors](#ecs-task-startup-errors)
+- [Pod startup errors](#pod-startup-errors)
 - [Pipeline runtime errors](#pipeline-runtime-errors)
 - [API runtime errors](#api-runtime-errors)
 - [Web / Next.js errors](#web--nextjs-errors)
@@ -16,71 +16,75 @@ Sections:
 - [Observability errors](#observability-errors)
 - [Database / migration errors](#database--migration-errors)
 
-## CloudFormation / CDK deploy errors
+## ArgoCD sync / Platform-CR reconcile errors
 
-### `ResourceNotFoundException: Secrets Manager can't find the specified secret. (digest-pipeline/{env}/...)`
+All commands below assume the tenant namespace `tenants-protohype` (the Platform reconciler owns it; the chart renders the three workloads into it).
 
-**Cause:** The secret referenced by `Secret.fromSecretNameV2(...)` doesn't exist yet. CDK resolves the ARN at deploy time via the SDK, and missing secrets fail the synth-to-CloudFormation transition.
+### ArgoCD shows the Application `OutOfSync` / `SyncFailed` with `secret "digest-pipeline" not found` on a pod
 
-**Fix:** Create the missing secret before retrying the deploy. See [`secrets.md`](secrets.md) § "Seeding every secret" for the full per-secret commands. `digest-pipeline/{env}/db-credentials` is the exception — CDK owns it; don't create by hand.
+**Cause:** The `ExternalSecret` hasn't materialised the in-cluster Secret yet, so the pods that consume it via `envFrom` can't start. The secret referenced in `chart/templates/externalsecret.yaml` points at `digest-pipeline/{env}/*` entries that don't exist in AWS Secrets Manager, or the external-secrets operator can't read them (IRSA misconfigured).
 
-### `cdk deploy` stuck at `UPDATE_IN_PROGRESS` → ECS task never becomes healthy → CloudFormation rolls back after ~60 min
-
-**Cause:** The task starts but Zod-validates its config and exits non-zero because a JSON secret has a missing or mistyped field. ECS retries on the deployment circuit breaker until CloudFormation times out.
-
-**Fix:** Tail the task logs while the deploy is in progress (CloudWatch starts accepting records the moment the task starts, even if CFN still shows `UPDATE_IN_PROGRESS`):
+**Fix:** Create the missing AWS secrets first — see [`secrets.md`](secrets.md) § "Seed all secrets in one shot" for the full per-secret commands (`digest-pipeline/{env}/db-credentials` is the exception — the landing-zone `digest-pipeline-platform` rds-aurora module owns it; don't create by hand). Then force a resync of the ExternalSecret and confirm the Secret lands:
 
 ```bash
-aws logs tail /digest-pipeline/{env}/pipeline --follow --since 10m
-# or .../api, .../web
+kubectl -n tenants-protohype annotate externalsecret digest-pipeline \
+  force-sync="$(date +%s)" --overwrite
+kubectl -n tenants-protohype get externalsecret digest-pipeline \
+  -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'
+# Expect: True
+kubectl -n tenants-protohype get secret digest-pipeline
 ```
 
-Look for `ZodError: … required` or `ZodError: expected string`. `put-secret-value` the fix, then `aws ecs update-service --force-new-deployment` on the affected service — the task will re-pull the secret at container start and succeed.
+### Pods crash-loop on a config field; ArgoCD stays `Progressing` and never reaches `Healthy`
 
-### `Resource handler returned message: "DatabaseName <name> cannot be used. It is a reserved word for this engine"` on the RDS cluster
+**Cause:** A pod starts but Zod-validates its config and exits non-zero because a JSON secret has a missing or mistyped field. The Deployment never reaches its ready replica count; the CronJob's Job fails and backs off.
+
+**Fix:** Read the pod logs in the tenant namespace (Loki carries the same stream — `{service="digest-pipeline-pipeline"}` / `digest-pipeline-api` / `digest-pipeline-web`):
+
+```bash
+kubectl -n tenants-protohype logs deploy/digest-pipeline-api --tail=100
+# or: deploy/digest-pipeline-web, job/<the failed pipeline job>
+```
+
+Look for `ZodError: … required` or `ZodError: expected string`. `put-secret-value` the fix, re-sync the ExternalSecret (above), then `kubectl -n tenants-protohype rollout restart deploy/digest-pipeline-api` (and `deploy/digest-pipeline-web`) so the pods re-read the refreshed Secret at container start.
+
+### `DatabaseName <name> cannot be used. It is a reserved word for this engine` from the landing-zone Aurora apply
 
 **Cause:** Aurora PostgreSQL reserves a fixed list of identifiers that cannot be used as the default database name (the list is engine-specific and grows over major versions). On Aurora PostgreSQL 16, `digest-pipeline` is reserved.
 
-**Fix:** The stack uses `defaultDatabaseName: 'digest_pipeline'` (`infra/lib/digest-pipeline-stack.ts`). If you fork and pick a new project name, also rename the database in:
-- `infra/lib/digest-pipeline-stack.ts` → `defaultDatabaseName`
+**Fix:** The landing-zone `digest-pipeline-platform` component provisions the database as `digest_pipeline` (underscore, not reserved). The cluster Aurora is owned there, not in this repo. If you fork and pick a new project name, rename the database in:
+- landing-zone `components/aws/digest-pipeline-platform/` → the rds-aurora module's `database_name`
 - `.env.example`, `docs/local-development.md`, `README.md` → the local `DATABASE_URL` and `POSTGRES_DB` examples
-- The pipeline + API resolve the database name from the secret (`secret.dbname`), so no source code change is needed when you rename the default.
+- The pipeline + API resolve the database name from `DATABASE_URL` (composed by the chart's ExternalSecret from the `db-credentials` secret), so no source code change is needed when you rename the default.
 
-### `Resource of type 'AWS::S3::Bucket' with identifier 'digest-pipeline-voice-baseline-{account}-production' already exists`
+### Platform CR stuck — Namespace `tenants-protohype` / ResourceQuota / AppProject never appears
 
-**Cause:** The voice-baseline bucket has `RemovalPolicy.RETAIN` in production. A previous failed deploy rolled back but left the bucket behind. CFN tries to create a new bucket with the same name and S3 rejects the collision (bucket names are globally unique).
+**Cause:** The `eks-agent-platform` operator hasn't reconciled the Platform CR (`platform.yaml`), so none of the tenant-boundary objects the chart depends on exist yet. The ApplicationSet entry has `CreateNamespace=false` on purpose — the Platform reconciler owns the Namespace — so the chart sync blocks until the operator gets there first.
 
-**Fix:** Verify the bucket is empty or its contents are safe to keep, then either delete it or adopt it into the new stack:
-
-```bash
-# Delete path (dev/staging only — never for production voice-baseline):
-aws s3 rm --recursive s3://digest-pipeline-voice-baseline-${CDK_DEFAULT_ACCOUNT}-production/
-aws s3api delete-bucket --bucket digest-pipeline-voice-baseline-${CDK_DEFAULT_ACCOUNT}-production
-
-# Adopt path (production): use CloudFormation Import to bring the existing
-# bucket under the new stack's management. See AWS docs → CloudFormation
-# → Import existing resources.
-```
-
-RETAIN is deliberate for `voice-baseline` — the few-shot corpus is weeks of hand-curation work. Double-check the delete path before running it on production.
-
-### `Resource of type 'AWS::RDS::DBCluster' ... cannot be deleted because deletion protection is enabled`
-
-**Cause:** Production Aurora has `deletionProtection: true`. `cdk destroy DigestPipelineProduction` fails before it can remove the cluster.
-
-**Fix:** Disable deletion protection via the console/CLI, then retry `cdk destroy`:
+**Fix:** Confirm the Platform (and its required BudgetPolicy) reconciled cleanly, then re-sync the Application:
 
 ```bash
-CLUSTER_ID=$(aws rds describe-db-clusters --region us-west-2 \
-  --query 'DBClusters[?DBClusterIdentifier==`digest-pipelineproduction-digest_pipeline-...`].DBClusterIdentifier' \
-  --output text)
-aws rds modify-db-cluster --region us-west-2 \
-  --db-cluster-identifier "$CLUSTER_ID" \
-  --no-deletion-protection --apply-immediately
-
-# Wait a minute for the modify to settle, then:
-cd digest-pipeline/infra && npx cdk destroy DigestPipelineProduction
+kubectl -n tenants-protohype get platform digest-pipeline \
+  -o jsonpath='{.status.phase}'        # Expect: Ready
+kubectl -n tenants-protohype get budgetpolicy digest-pipeline
+kubectl get ns tenants-protohype resourcequota -n tenants-protohype
+kubectl -n tenants-protohype describe platform digest-pipeline  # for reconcile errors
 ```
+
+If the operator reports an error reconciling the IRSA role or AppProject, fix it at the operator/landing-zone layer first — the chart's pods can't schedule into a quota-less namespace.
+
+### ApplicationSet didn't generate an Application for this cluster
+
+**Cause:** The matrix generator in `gitops/applicationset-entry.yaml` (clusters × `[digest-pipeline]`) only emits an Application for clusters the cluster generator selects. If the target cluster isn't labelled into the generator's selector, no Application is produced.
+
+**Fix:** Confirm the generated Application exists and check the ApplicationSet controller's view:
+
+```bash
+kubectl -n argocd get applications.argoproj.io | grep digest-pipeline
+kubectl -n argocd describe applicationset apps-tenants | tail -40
+```
+
+If the Application is missing, the cluster label/selector mismatch is the first suspect; the entry syncs at wave 100, so it also won't appear until earlier waves on that cluster settle.
 
 ## Build / TypeScript errors
 
@@ -104,9 +108,9 @@ Commit the refreshed `package-lock.json`. The digest-pipeline CI workflow uses `
 
 **Fix:** Let `npm install` resolve the platform deps instead of `npm ci`. The CI workflow already does this (`.github/workflows/digest-pipeline-ci.yml:34,62`). Locally, if you need to validate the Linux build, use `docker build -f Dockerfile.web .` rather than wrestling with the lockfile.
 
-### `cdk deploy` fails to build a Docker asset with `npm error EUSAGE … Missing: @img/sharp-linux-x64@… from lock file` (or `@unrs/resolver-binding-*`, `@emnapi/*`)
+### Image build fails with `npm error EUSAGE … Missing: @img/sharp-linux-x64@… from lock file` (or `@unrs/resolver-binding-*`, `@emnapi/*`)
 
-**Cause:** Same lockfile-vs-platform mismatch that bites CI, now in the Docker build CDK runs to push the `pipeline` / `api` / `web` images. The lockfile is generated on macOS; sharp (Next.js image processing), `@unrs/resolver-binding-*` (eslint-import resolver pulled in by `eslint-config-next`), and `@emnapi/*` (Emscripten napi runtime) are platform-conditional and only get recorded for the host you ran `npm install` on. `npm ci` inside the Linux Alpine image then refuses because the lockfile has no Linux entries.
+**Cause:** Same lockfile-vs-platform mismatch that bites CI, now in the `docker build` that `release.yml` runs to push the `pipeline` / `api` / `web` images to `ghcr.io/nanohype/digest-pipeline`. The lockfile is generated on macOS; sharp (Next.js image processing), `@unrs/resolver-binding-*` (eslint-import resolver pulled in by `eslint-config-next`), and `@emnapi/*` (Emscripten napi runtime) are platform-conditional and only get recorded for the host you ran `npm install` on. `npm ci` inside the Linux Alpine image then refuses because the lockfile has no Linux entries.
 
 **Fix:** All three `Dockerfile.{pipeline,api,web}` use `npm install --prefer-offline --no-audit --no-fund` instead of `npm ci`. Version pinning still comes from the lockfile; the install resolves the missing platform deps on the build platform. If you regenerated `package-lock.json` and saw this error, the Dockerfile already handles it — make sure you didn't manually swap back to `npm ci`.
 
@@ -119,80 +123,60 @@ docker run --rm -v "$PWD:/app" -w /app node:24-alpine \
 
 Commit the regenerated `package-lock.json`. Reverse: same trick on macOS to repopulate the local node_modules.
 
-### `cdk deploy` web build fails at the runtime stage with `failed to compute cache key … "/app/public": not found`
+### Web image build fails at the runtime stage with `failed to compute cache key … "/app/public": not found`
 
 **Cause:** Next.js's standalone output treats `public/` as optional, but `Dockerfile.web`'s runtime stage `COPY --from=build /app/public ./public` requires the directory. DigestPipeline ships without static assets, so a fresh checkout has no `web/public/`.
 
 **Fix:** `Dockerfile.web` pre-creates the directory in the build stage (`RUN mkdir -p public`), so the runtime COPY always finds an empty dir. If you add static assets to `web/public/`, the existing `COPY web/ ./` in the build stage pulls them in and the runtime layer carries them through — no Dockerfile change needed.
 
-## ECS task startup errors
+## Pod startup errors
 
-### `ResourceInitializationError: unable to retrieve secret from asm: … AccessDeniedException … is not authorized to perform: secretsmanager:GetSecretValue`
+### Pod `CrashLoopBackOff` with `AccessDeniedException … is not authorized to perform: secretsmanager:GetSecretValue`
 
-**Cause:** The **task execution role** lacks `secretsmanager:GetSecretValue` on the secret ARN, or the ARN in the policy doesn't match the resource being requested.
+**Cause:** The app code (`src/common/secrets.ts` → `GetSecretValue`) ran but the pod's IRSA role lacks `secretsmanager:GetSecretValue` on the requested ARN, or the ARN prefix doesn't match. The chart's shared ServiceAccount assumes the landing-zone `digest-pipeline-platform` IRSA role; its inline policy scopes Secrets Manager read to `arn:aws:secretsmanager:…:secret:digest-pipeline/{env}/*`.
 
-**Fix:** `infra/lib/digest-pipeline-stack.ts:183,259` grants `secretsmanager:GetSecretValue` on `arn:aws:secretsmanager:…:secret:digest-pipeline/{env}/*` to both the task role AND the execution role via CDK's `.grantRead()` helpers. If you see this after a manual edit, confirm the inline policy still covers the env-scoped prefix.
-
-### `ResourceInitializationError: … ResourceNotFoundException: Secrets Manager can't find the specified secret` with a partial ARN in the error
-
-**Cause:** The ECS task def's `valueFrom` field carries a partial ARN like `arn:aws:secretsmanager:us-west-2:…:secret:digest-pipeline/staging/runtime-config` (no 6-char random suffix). `GetSecretValue` accepts either the full suffixed ARN or just the friendly name (no `arn:…` prefix) — a partial ARN looks ARN-shaped but matches nothing, and Secrets Manager returns `ResourceNotFoundException`.
-
-`secretsmanager.Secret.fromSecretNameV2(this, id, name)` returns an `ISecret` whose `secretArn` is the partial form. `ecs.Secret.fromSecretsManager(...)` then puts that partial ARN into the task def's `secrets:` block — and ECS dies on first task start.
-
-**Fix (in the digest-pipeline stack):** `infra/lib/digest-pipeline-stack.ts` defines `refSecret(id, name)` which uses an `AwsCustomResource` to call `DescribeSecret` at deploy time, then imports the result via `secretsmanager.Secret.fromSecretCompleteArn(this, id, lookup.getResponseField('ARN'))`. The full suffixed ARN ends up in `valueFrom`. CDK auto-creates one `*Lookup` resource per imported secret.
-
-**Verify the lookup resources are present:**
+**Fix:** Confirm the ServiceAccount carries the role annotation and the role's policy covers the env-scoped prefix:
 
 ```bash
-AWS_PROFILE=stxkxs aws cloudformation describe-stack-resources --region us-west-2 \
-  --stack-name DigestPipelineStaging \
-  --query "StackResources[?contains(LogicalResourceId, 'Lookup')].LogicalResourceId" \
-  --output text
+kubectl -n tenants-protohype get sa digest-pipeline \
+  -o jsonpath='{.metadata.annotations.eks\.amazonaws\.com/role-arn}'
 ```
 
-Expect one `*Lookup` per operator-seeded secret: `ApproversSecretLookup`, `WorkOsDirectorySecretLookup`, `GitHubSecretLookup`, `LinearSecretLookup`, `SlackSecretLookup`, `NotionSecretLookup`, `WebConfigSecretLookup`, `RuntimeConfigLookup`, `GrafanaCloudSecretLookup`.
+If the annotation is empty, `aws.platformRoleArn` wasn't wired into the per-env values — pull it from the landing-zone output (`tofu … output -raw irsa_role_arn`) into `chart/values-{env}.yaml`, re-sync, and `kubectl -n tenants-protohype rollout restart deploy/digest-pipeline-api deploy/digest-pipeline-web`. If the annotation is present but the policy is wrong, fix it in the landing-zone `digest-pipeline-platform` component.
 
-If the lookup resources exist but you still hit `ResourceNotFoundException`, the underlying secret really doesn't exist in Secrets Manager — re-run `npm run seed:{env}` and re-check via `docs/secrets.md` § "Verification".
+### Pod stuck `ContainerCreating` / `CreateContainerConfigError`: `secret "digest-pipeline" not found`
 
-### `digest-pipeline API failed to start: ResourceNotFoundException` from inside the running container
+**Cause:** The pods consume the in-cluster Secret via `envFrom`, but the `ExternalSecret` hasn't synced it yet (the AWS secret is missing, or external-secrets can't read it). The kubelet can't create the container without the referenced Secret.
 
-**Cause:** Different from the ECS-startup variant above. This one fires when the **app code** (`src/common/secrets.ts` → `GetSecretValue`) is given a `SecretId` that includes Secrets Manager's 6-char random suffix as if it were part of the friendly name — e.g. `digest-pipeline/staging/approvers-mBkByn`. Secrets Manager treats that as a different secret name and returns `ResourceNotFoundException`.
+**Fix:** Force the ExternalSecret to resync and confirm the Secret materialises (see [ArgoCD sync / Platform-CR reconcile errors](#argocd-sync--platform-cr-reconcile-errors) above for the full sequence):
 
-The trap: for an `ISecret` returned by `secretsmanager.Secret.fromSecretCompleteArn(scope, id, completeArn)`, CDK's `.secretName` getter returns the raw post-`:secret:` portion of the ARN with the suffix still attached, because friendly names can themselves contain hyphens and CDK can't reliably strip the suffix at synth time. So `approversSecret.secretName` resolves to `digest-pipeline/staging/approvers-mBkByn` instead of `digest-pipeline/staging/approvers`.
-
-**Fix (in the digest-pipeline stack):** for any imported secret (anything passing through `refSecret`), pass `.secretArn` to env vars instead of `.secretName`. `GetSecretValue` accepts either a friendly name OR a full ARN, so the ARN form works without app changes. CDK-owned secrets created with an explicit `secretName` (e.g. `dbSecret`) keep `.secretName` — that getter returns the literal value you passed at construction.
-
-```typescript
-// Imported (refSecret → fromSecretCompleteArn): pass ARN
-WORKOS_DIRECTORY_SECRET_ID: workosDirectorySecret.secretArn,
-GITHUB_SECRET_ID:           githubSecret.secretArn,
-
-// CDK-owned with explicit secretName: pass name
-DATABASE_SECRET_ID: dbSecret.secretName,
+```bash
+kubectl -n tenants-protohype annotate externalsecret digest-pipeline \
+  force-sync="$(date +%s)" --overwrite
+kubectl -n tenants-protohype get secret digest-pipeline
 ```
 
-If you add a new secret env var to the stack, default to `.secretArn` unless the secret is created in-stack with `new secretsmanager.Secret(this, ..., { secretName: ... })`.
+If the Secret still doesn't appear, the underlying AWS secret really doesn't exist — re-run `npm run seed:{env}` and re-check via `docs/secrets.md` § "Verification".
 
-### `Essential container in task exited` / `exec /usr/local/bin/docker-entrypoint.sh: exec format error`
+### Pod `ImagePullBackOff` / `ErrImagePull` on a pipeline / api / web pod
 
-**Cause:** Docker architecture mismatch. The image was built for one architecture (typically arm64 on Apple Silicon), Fargate launched on another. ECS's task scheduler pulls the platform manifest matching the task def's `runtimePlatform.cpuArchitecture`; if the image only carries a single-arch manifest for the wrong arch, the container can't `exec` the entrypoint binary.
+**Cause:** The image tag the chart references doesn't exist in `ghcr.io/nanohype/digest-pipeline`, or the node can't pull it. `release.yml` builds and pushes all three images by tag; the chart resolves them at pull time.
 
-**Fix (already in the stack):** `infra/lib/digest-pipeline-stack.ts` pins both sides to ARM64:
+**Fix:** Describe the pod to see the exact pull error, then confirm the tag exists:
 
-- Each `FargateTaskDefinition` carries `runtimePlatform: { cpuArchitecture: ARM64, operatingSystemFamily: LINUX }` via the shared `fargateRuntimePlatform` constant.
-- Each `ContainerImage.fromAsset(...)` passes `platform: ecr_assets.Platform.LINUX_ARM64` so the local Docker build emits an arm64 image (no QEMU cross-compile on Apple Silicon; on x86 builders, Docker Buildx invokes QEMU).
+```bash
+kubectl -n tenants-protohype describe pod <pod> | sed -n '/Events:/,$p'
+```
 
-ARM64 was chosen because it's ~20% cheaper on Fargate (Graviton) and matches the Apple Silicon build hosts used by most contributors.
+If the tag is missing, the image build/push hasn't completed for this revision — check the `release.yml` run. Image resolution is by tag, so multi-arch falls out of the build matrix; there's no per-platform pin to mismatch.
 
-If you switch a deploy host to x86 and hit slower builds, that's expected — the build invokes QEMU under the hood. To switch the whole stack to amd64 instead: change `cpuArchitecture: ARM64` → `X86_64` and `Platform.LINUX_ARM64` → `Platform.LINUX_AMD64` in `digest-pipeline-stack.ts`. The collector sidecar image (`public.ecr.aws/aws-observability/aws-otel-collector:latest`) is a multi-arch manifest and works for either.
+### API / web pod fails its readiness probe and never becomes `Ready`
 
-### `Task failed container health checks` on the API or web service — ALB target marked unhealthy
+**Cause:** The probe path isn't returning `200`. The API's `/health` is unauthenticated and should return immediately; the web's `/api/health` is likewise unauthenticated. If either returns 5xx, the pod is starting but the app is crashing inside, so the Deployment never reaches its ready replica count and ingress-nginx keeps the pod out of the endpoints.
 
-**Cause:** The health-check path isn't responding `200`. The API's `/health` is unauthenticated and should return immediately; the web's `/api/health` is likewise unauthenticated. If either is returning 5xx, the task is starting but the app is crashing inside.
+**Fix:** `kubectl -n tenants-protohype logs deploy/digest-pipeline-api --tail=100` (or `deploy/digest-pipeline-web`) — or query Loki for `{service="digest-pipeline-api"}` — and look for the stack trace. Most common causes:
 
-**Fix:** `aws logs tail /digest-pipeline/{env}/{api,web} --follow` and look for the stack trace. Most common causes:
-
-- API: Zod validation failure on `loadApiConfig()` at startup — a missing env or malformed `WORKOS_ISSUER` URL. The `EnvSchema` in `src/api/config.ts:10-21` throws before the server even binds, so the task dies within the first second.
+- API: Zod validation failure on `loadApiConfig()` at startup — a missing env or malformed `WORKOS_ISSUER` URL. The `EnvSchema` in `src/api/config.ts:10-21` throws before the server even binds, so the pod dies within the first second.
 - Web: WorkOS `cookiePassword` shorter than 32 chars. AuthKit hard-fails at middleware init.
 
 ## Pipeline runtime errors
@@ -201,7 +185,7 @@ If you switch a deploy host to x86 and hit slower builds, that's expected — th
 
 **Cause:** `phase.generate` threw — Bedrock returned a non-JSON response, an access-denied, or a throttle. The orchestrator catches it in `src/pipeline/index.ts:104-127`, audits `PIPELINE_FAILURE`, falls back to a skeleton draft built from the ranked items, and still notifies Slack.
 
-**Fix:** The skeleton is legible and approvable — the CoS can edit + send. Diagnose the underlying Bedrock error via `aws logs tail /digest-pipeline/{env}/pipeline` — look for the `phase.generate` span error message. If it's `AccessDeniedException`, enable model access (console) or switch to an inference-profile model ID (see [Bedrock errors](#bedrock-errors) below).
+**Fix:** The skeleton is legible and approvable — the CoS can edit + send. Diagnose the underlying Bedrock error from the pipeline Job's logs (`kubectl -n tenants-protohype logs job/<the pipeline job>`, or query Loki for `{service="digest-pipeline-pipeline"}`) — look for the `phase.generate` span error message. If it's `AccessDeniedException`, enable model access (console) or switch to an inference-profile model ID (see [Bedrock errors](#bedrock-errors) below).
 
 ### Pipeline status `PARTIAL` with `slack.history-failed: not_in_channel`
 
@@ -213,22 +197,29 @@ If you switch a deploy host to x86 and hit slower builds, that's expected — th
 
 **Cause:** WorkOS Directory users don't have the GitHub / Linear / Slack external-ID custom attributes populated. The resolver falls back to raw author strings; the newsletter attribution is unparsed usernames rather than display names.
 
-**Fix:** In the WorkOS dashboard → Directory → pick each user → set the custom attributes `githubLogin`, `slackUserId`, `linearUserId`. These are standard WorkOS Directory custom-attribute fields; if your IdP doesn't push them, you can mirror them via the WorkOS API or by editing each user manually. Clear the pipeline's 4-hour resolver cache by restarting the task.
+**Fix:** In the WorkOS dashboard → Directory → pick each user → set the custom attributes `githubLogin`, `slackUserId`, `linearUserId`. These are standard WorkOS Directory custom-attribute fields; if your IdP doesn't push them, you can mirror them via the WorkOS API or by editing each user manually. The resolver's 4-hour cache is per-process — the next weekly CronJob run starts a fresh pod and picks up the new attributes; to force an immediate refresh, trigger an ad-hoc run (`kubectl -n tenants-protohype create job --from=cronjob/digest-pipeline digest-pipeline-manual`).
 
 ### `TimeoutError` wrapping every external call in one phase
 
-**Cause:** A specific provider is saturated or unreachable from the VPC. `withTimeout(8_000)` (15_000 for Slack history) fires the `TimeoutError` branch, `withRetry(3, jitter)` exhausts all three attempts, and the aggregator returns an error-marked `AggregationResult`.
+**Cause:** A specific provider is saturated or unreachable from the cluster's egress path. `withTimeout(8_000)` (15_000 for Slack history) fires the `TimeoutError` branch, `withRetry(3, jitter)` exhausts all three attempts, and the aggregator returns an error-marked `AggregationResult`.
 
 **Fix:** Most often a transient provider issue — the next weekly run clears it. If persistent:
-- Confirm the NAT gateway is healthy (`aws ec2 describe-nat-gateways`).
+- Confirm the pod's egress isn't being dropped — the chart's `networkpolicy.yaml` allows DNS + HTTPS egress; an over-tight cluster default-deny or a NAT/egress-gateway outage on the node's path is the first suspect (`kubectl -n tenants-protohype describe networkpolicy`).
 - Confirm the provider's status page (GitHub, Linear, Notion, Slack).
-- If only one provider is affected, temporarily remove it from the registry (`src/pipeline/entrypoint.ts`) and redeploy; the pipeline keeps running with the remaining sources and status `PARTIAL`.
+- If only one provider is affected, temporarily remove it from the registry (`src/pipeline/entrypoint.ts`), rebuild the image, and let the next sync roll it out; the pipeline keeps running with the remaining sources and status `PARTIAL`.
 
-### Pipeline task hangs in `RUNNING` after the app exits
+### Pipeline Job stays `Active` after the app exits
 
-**Cause:** The collector sidecar is `essential: false` on the pipeline task (`infra/lib/digest-pipeline-stack.ts:199`), so the app's exit should terminate the run. If ECS still lists the task as `RUNNING`, the collector's batch processor is flushing on shutdown and hasn't finished yet (batch `timeout: 10s` in the collector config).
+**Cause:** The pipeline runs as a single-container Job — no sidecars — so when the orchestrator process exits, the container exits and the Job should complete (`concurrencyPolicy: Forbid`, 30-min `activeDeadlineSeconds`). If the Job still shows as `Active`, the container is in its terminationGracePeriod while the OTel SDK flushes its last batch to the cluster collector on shutdown.
 
-**Fix:** Wait up to 30 seconds. If it persists beyond that, `aws ecs describe-tasks` and check each container's `lastStatus` + `exitCode`. A lingering collector with no app container is safe to `stop-task` manually.
+**Fix:** Wait a few seconds. If it persists, inspect the Job's pod:
+
+```bash
+kubectl -n tenants-protohype get jobs -l app.kubernetes.io/component=pipeline
+kubectl -n tenants-protohype describe pod <the job's pod>   # check container State + exit code
+```
+
+A pod past its `activeDeadlineSeconds` is reaped by the Job controller automatically; you can `kubectl delete pod` it manually if needed.
 
 ## API runtime errors
 
@@ -240,7 +231,7 @@ If you switch a deploy host to x86 and hit slower builds, that's expected — th
 
 Pre-v5 accepted a Pino instance via `logger`. v5 rejects that with `FST_ERR_LOG_INVALID_LOGGER_CONFIG` at boot.
 
-**Fix (in the digest-pipeline stack):** `src/api/server.ts` uses `loggerInstance: getLogger()` so Fastify reuses the shared Pino instance from `src/common/logger.ts` (carrying the `service` field, OTel trace-context injection, and stdout transport). The return statement casts to `FastifyInstance` because `loggerInstance` types the instance with Pino's `Logger` (which has `msgPrefix`) while `FastifyInstance`'s default generic uses `FastifyBaseLogger` (which doesn't) — the two are call-compatible at runtime.
+**Fix (in `src/api/server.ts`):** the server uses `loggerInstance: getLogger()` so Fastify reuses the shared Pino instance from `src/common/logger.ts` (carrying the `service` field, OTel trace-context injection, and stdout transport). The return statement casts to `FastifyInstance` because `loggerInstance` types the instance with Pino's `Logger` (which has `msgPrefix`) while `FastifyInstance`'s default generic uses `FastifyBaseLogger` (which doesn't) — the two are call-compatible at runtime.
 
 ### `Invalid or expired token` (401) from `/drafts/:id/approve` (or any JWT-gated route) right after a fresh sign-in
 
@@ -262,7 +253,7 @@ const expectedIssuer = `${issuer}/user_management/${options.clientId}`;
 const { payload } = await jwtVerify(token, jwks, { issuer: expectedIssuer });
 ```
 
-The preHandler also logs the failure with the token's `iss`/`aud`/`exp`/`sub` (no secrets) so future verification failures are diagnosable from CloudWatch directly. To inspect a failure, grep CloudWatch for `auth.verify-failed`.
+The preHandler also logs the failure with the token's `iss`/`aud`/`exp`/`sub` (no secrets) so future verification failures are diagnosable from the logs directly. To inspect a failure, query Loki for `{service="digest-pipeline-api"} |= "auth.verify-failed"` (or `kubectl -n tenants-protohype logs deploy/digest-pipeline-api | grep auth.verify-failed`).
 
 Authorization (who can do what) lives in `isApprover()` against the explicit allow-list in the `approvers` secret, not in JWT claims.
 
@@ -270,16 +261,17 @@ Authorization (who can do what) lives in `isApprover()` against the explicit all
 
 **Cause:** WorkOS JWT verification is failing. Possible roots: wrong issuer, wrong `aud` claim, expired token, JWKS endpoint unreachable.
 
-**Fix:** Hit the WorkOS JWKS endpoint directly to confirm the API can reach it from the VPC:
+**Fix:** Hit the WorkOS JWKS endpoint directly from inside the api pod to confirm cluster egress can reach it:
 
 ```bash
-# From an ECS exec session on the api task:
-curl -sS https://api.workos.com/.well-known/jwks.json | jq '.keys | length'
+# From an exec session on the api pod:
+kubectl -n tenants-protohype exec deploy/digest-pipeline-api -- \
+  sh -c 'curl -sS https://api.workos.com/.well-known/jwks.json' | jq '.keys | length'
 ```
 
-Expected: `>0`. If zero or unreachable, the NAT gateway is the first suspect.
+Expected: `>0`. If zero or unreachable, the pod's HTTPS egress is the first suspect — check the chart's `networkpolicy.yaml` and the node's egress path.
 
-Verify the `aud` claim on a real token: decode it at jwt.io, check that `aud === WORKOS_CLIENT_ID`. A mismatch means the web is signing tokens with a different Client ID than the API is validating against. Both should use the same `workosClientId` context value at `cdk deploy`.
+Verify the `aud` claim on a real token: decode it at jwt.io, check that `aud === WORKOS_CLIENT_ID`. A mismatch means the web is signing tokens with a different Client ID than the API is validating against. Both should resolve the same `workosClientId` from the `web-config` / `runtime-config` secret synced into the cluster.
 
 ### `ValidationError: Invalid UUID` on `GET /drafts/:id`
 
@@ -339,25 +331,19 @@ The API's `SecretsClient` caches approvers with a 5-minute TTL, so the new value
 
 **Cause:** You're invoking a bare foundation-model ID (no `us.`/`eu.`/`ap.` prefix). Claude 4.x bare IDs only work with provisioned-throughput commitments. On-demand invocation requires a cross-region inference profile.
 
-**Fix (already in the stack defaults):** the stack defaults `BEDROCK_MODEL_ID` to `us.anthropic.claude-sonnet-4-6` and grants IAM on both the profile ARN and the underlying foundation-model ARNs (cross-region):
+**Fix (already in the defaults):** `BEDROCK_MODEL_ID` defaults to `us.anthropic.claude-sonnet-4-6`, and the landing-zone `digest-pipeline-platform` IRSA role grants `bedrock:InvokeModel` on both the profile ARN and the underlying foundation-model ARNs (cross-region):
 
-```typescript
-// infra/lib/digest-pipeline-stack.ts
-bedrockModelId = 'us.anthropic.claude-sonnet-4-6',
-// ...
-new iam.PolicyStatement({
-  effect: iam.Effect.ALLOW,
-  actions: ['bedrock:InvokeModel'],
-  resources: [
-    `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/*.anthropic.claude-*`,
-    `arn:aws:bedrock:*::foundation-model/anthropic.claude-*`,
-  ],
-}),
+```jsonc
+// digest-pipeline-platform IRSA inline policy (resources for bedrock:InvokeModel)
+[
+  "arn:aws:bedrock:<region>:<account>:inference-profile/*.anthropic.claude-*",
+  "arn:aws:bedrock:*::foundation-model/anthropic.claude-*"
+]
 ```
 
-If you see this error after deploy, your task picked up an older revision with a bare model ID. Force a rollover: `aws ecs update-service --force-new-deployment`.
+If you see this error after a sync, the pods picked up an older revision with a bare model ID. Force a fresh roll: `kubectl -n tenants-protohype rollout restart deploy/digest-pipeline-api` (and re-run the pipeline CronJob).
 
-Outside the US, override the profile prefix at deploy time: `cdk deploy ... -c bedrockModelId=eu.anthropic.claude-sonnet-4-6` (or `ap.`). The IAM policy's `*.anthropic.claude-*` wildcard covers all three prefixes.
+Outside the US, override the profile prefix per env: set `BEDROCK_MODEL_ID=eu.anthropic.claude-sonnet-4-6` (or `ap.`) in `chart/values-{env}.yaml` and re-sync. The IRSA policy's `*.anthropic.claude-*` wildcard covers all three prefixes.
 
 If you have a provisioned-throughput commitment and want to skip the profile, set `BEDROCK_MODEL_ID=anthropic.claude-sonnet-4-6` (no prefix) — the IAM still allows it via the foundation-model ARN.
 
@@ -373,20 +359,17 @@ If you have a provisioned-throughput commitment and want to skip the profile, se
 
 **Cause:** SES `SendEmail` requires `ses:SendEmail` permission on **both** the verified identity AND any configuration set attached to it. If your SES account has a default configuration set (or the identity has one), every `SendEmail` call implicitly references the config set — and the IAM policy needs to allow it. Granting permission only on `identity/*` is insufficient.
 
-**Fix (in `infra/lib/digest-pipeline-stack.ts`):** the API task role's SES policy includes both resource ARN patterns:
+**Fix (in the landing-zone `digest-pipeline-platform` IRSA policy):** the SES statement includes both resource ARN patterns:
 
-```typescript
-new iam.PolicyStatement({
-  effect: iam.Effect.ALLOW,
-  actions: ['ses:SendEmail', 'ses:SendRawEmail'],
-  resources: [
-    `arn:aws:ses:${this.region}:${this.account}:identity/*`,
-    `arn:aws:ses:${this.region}:${this.account}:configuration-set/*`,
-  ],
-}),
+```jsonc
+// digest-pipeline-platform IRSA inline policy (ses:SendEmail / ses:SendRawEmail)
+[
+  "arn:aws:ses:<region>:<account>:identity/*",
+  "arn:aws:ses:<region>:<account>:configuration-set/*"
+]
 ```
 
-Wildcard on `configuration-set/*` covers the default and any future named ones. The fix is IAM-only — no Docker rebuild required.
+Wildcard on `configuration-set/*` covers the default and any future named ones. The fix is IAM-only (landing-zone) — no image rebuild required.
 
 ### `MessageRejected: Email address is not verified`
 
@@ -437,9 +420,9 @@ export const config = {
 
 After fix, `curl -i https://<host>/api/auth/sign-in` should show exactly one `Set-Cookie: wos-auth-verifier=...` header.
 
-### After successful sign-in, browser shows `DNS_PROBE_FINISHED_NXDOMAIN` for `ip-10-0-X-Y.us-west-2.compute.internal`
+### After successful sign-in, browser shows `DNS_PROBE_FINISHED_NXDOMAIN` for an internal pod hostname
 
-**Cause:** AuthKit's `handleAuth()` (in `app/callback/route.ts`) constructs the post-sign-in redirect from `request.url` when no `baseURL` option is passed. Behind an ALB on Fargate, Next.js's `request.url` sometimes resolves the host to the container's internal VPC DNS name (`ip-10-0-X-Y.us-west-2.compute.internal`) instead of the public hostname the browser used. The 302 sends the browser to the internal name, which obviously isn't publicly resolvable.
+**Cause:** AuthKit's `handleAuth()` (in `app/callback/route.ts`) constructs the post-sign-in redirect from `request.url` when no `baseURL` option is passed. Behind ingress-nginx, Next.js's `request.url` sometimes resolves the host to the pod's in-cluster identity (the pod IP or the Service's `.svc.cluster.local` name) instead of the public hostname the browser used. The 302 sends the browser to the internal name, which obviously isn't publicly resolvable.
 
 **Fix (in the digest-pipeline web):** `app/callback/route.ts` derives `baseURL` from `WORKOS_REDIRECT_URI` (already set on the container as the public callback URL) and passes it to `handleAuth({ baseURL })`. Once set, AuthKit uses it as the redirect base instead of `request.url`.
 
@@ -467,13 +450,13 @@ The `NEXT_PUBLIC_` prefix is required because Next.js inlines values with that p
 - `handleAuth()` falls back to `request.url` for the post-sign-in redirect
 - Cookie security flags are computed against an empty URL → defaults that may be wrong
 
-**Fix (in the digest-pipeline stack):** every reference uses the `NEXT_PUBLIC_` name:
+**Fix (in the digest-pipeline web):** every reference uses the `NEXT_PUBLIC_` name:
 
 - `Dockerfile.web` — `ARG NEXT_PUBLIC_WORKOS_REDIRECT_URI` + `ENV NEXT_PUBLIC_WORKOS_REDIRECT_URI=...` before `npm run build`.
-- `infra/lib/digest-pipeline-stack.ts` — `buildArgs: { NEXT_PUBLIC_WORKOS_REDIRECT_URI: ... }` on the web's `ContainerImage.fromAsset(...)`, and `NEXT_PUBLIC_WORKOS_REDIRECT_URI` as the runtime ECS secret env name (defense-in-depth, though the build-arg is the load-bearing source).
+- `release.yml` passes `NEXT_PUBLIC_WORKOS_REDIRECT_URI` as a build arg to the web image build (the load-bearing source, since the value is baked at build time), and the chart also sets `NEXT_PUBLIC_WORKOS_REDIRECT_URI` as a runtime env on the web Deployment for defense-in-depth.
 - `web/middleware.ts` and `web/app/callback/route.ts` read `process.env.NEXT_PUBLIC_WORKOS_REDIRECT_URI` directly.
 
-Verify after deploy:
+Verify against a running web pod:
 
 ```bash
 curl -sS -i https://<host>/api/auth/sign-in 2>&1 | grep -i '^location' | grep -oE 'redirect_uri=[^&]*'
@@ -495,21 +478,19 @@ The page server component just imports `<AuthStatus />` and renders.
 
 ### `Internal Server Error` on every page; web logs show `Error: You must provide a redirect URI in the AuthKit middleware or in the environment variables`
 
-**Cause:** AuthKit's `authkitMiddleware()` reads `process.env.WORKOS_REDIRECT_URI` at **module-load time**, not at request time. Next.js bundles the middleware for the Edge runtime via static analysis — `process.env.X` references are resolved at `next build` time, not at runtime in the running container. Setting `WORKOS_REDIRECT_URI` as a runtime ECS secret makes it visible to Node code at request time, but AuthKit has already thrown by then.
+**Cause:** AuthKit's `authkitMiddleware()` reads `process.env.WORKOS_REDIRECT_URI` at **module-load time**, not at request time. Next.js bundles the middleware for the Edge runtime via static analysis — `process.env.X` references are resolved at `next build` time, not at runtime in the running container. Setting `WORKOS_REDIRECT_URI` as a runtime env on the web Deployment makes it visible to Node code at request time, but AuthKit has already thrown by then.
 
-**Fix (in the digest-pipeline stack):** `Dockerfile.web` accepts `WORKOS_REDIRECT_URI` as a Docker build arg and exports it as `ENV` before `npm run build`, so the value is present when Next.js bundles the middleware. CDK passes it from the deploy-time `domainName`:
+**Fix (in the digest-pipeline web image build):** `Dockerfile.web` accepts `WORKOS_REDIRECT_URI` as a Docker build arg and exports it as `ENV` before `npm run build`, so the value is present when Next.js bundles the middleware. `release.yml` passes it as a build arg from the per-env public hostname:
 
-```typescript
-// infra/lib/digest-pipeline-stack.ts
-image: ecs.ContainerImage.fromAsset('../', {
-  file: 'Dockerfile.web',
-  buildArgs: { WORKOS_REDIRECT_URI: `https://${domainName}/callback` },
-});
+```yaml
+# release.yml (web image build)
+build-args: |
+  WORKOS_REDIRECT_URI=https://<env public hostname>/callback
 ```
 
-The redirect URI is a public OAuth callback (the WorkOS dashboard literally exposes it to anyone with read access on the application), so baking it into the image is fine. The other AuthKit values (`workosApiKey`, `workosClientId`, `cookiePassword`) stay as runtime secrets — those are read inside request handlers via `getEnvVariable`, not at module load, so runtime injection works for them.
+The redirect URI is a public OAuth callback (the WorkOS dashboard literally exposes it to anyone with read access on the application), so baking it into the image is fine. The other AuthKit values (`workosApiKey`, `workosClientId`, `cookiePassword`) stay as runtime secrets synced via the ExternalSecret — those are read inside request handlers via `getEnvVariable`, not at module load, so runtime injection works for them.
 
-If you fork digest-pipeline and the redirect URI ever needs to differ between environments, vary `domainName` per stack (already the case for staging vs production) and the build arg follows.
+If you fork digest-pipeline and the redirect URI ever needs to differ between environments, vary the per-env public hostname (already the case for staging vs production) and the build arg follows.
 
 ### AuthKit callback: `invalid_client`
 
@@ -541,26 +522,26 @@ If you fork digest-pipeline and the redirect URI ever needs to differ between en
 
 ### Traces missing from Grafana Cloud Tempo
 
-**Cause:** ADOT collector authentication failing against `otlpEndpoint`.
+**Cause:** The pods export OTLP to the shared cluster collector (`otel-collector.observability.svc.cluster.local:4318`); the collector then authenticates upstream against `otlpEndpoint`. The break is usually in the collector's upstream auth (it owns the Grafana Cloud credentials, not the app), or the app can't reach the collector Service.
 
-**Fix:** Check the collector container log for each task:
+**Fix:** The collector is a cluster addon owned by `eks-gitops`, in the `observability` namespace. Check its logs (it's shared across all tenants, so filter for the digest-pipeline resource attrs `agents.tenant=protohype` / `agents.platform=digest-pipeline`):
 
 ```bash
-aws logs tail /digest-pipeline/{env}/otel-collector-pipeline --follow
-aws logs tail /digest-pipeline/{env}/otel-collector-api --follow
-aws logs tail /digest-pipeline/{env}/otel-collector-web --follow
+kubectl -n observability logs deploy/otel-collector --tail=200 | grep -Ei 'digest-pipeline|protohype|error'
 ```
 
 Common errors:
-- `401 Unauthorized` — `authHeader` is malformed. Verify it's `Basic ` + base64 of `instanceId:apiToken` with no trailing newline.
+- `401 Unauthorized` — the collector's `authHeader` is malformed. Verify it's `Basic ` + base64 of `instanceId:apiToken` with no trailing newline in `digest-pipeline/{env}/grafana-cloud`.
 - `404 Not Found` — wrong region in `otlpEndpoint` (e.g. `prod-us-west-0` when your stack is `prod-us-east-0`).
 - `403 Forbidden` — the Cloud Access Policy doesn't include `metrics:write` + `traces:write`.
 
+If the collector logs show no digest-pipeline spans arriving at all, the app-side export is failing — confirm `OTEL_EXPORTER_OTLP_ENDPOINT` resolves to the collector Service from inside the pod and that the chart's `networkpolicy.yaml` allows egress to it.
+
 ### Logs not in Grafana
 
-**Cause:** DigestPipeline does NOT ship logs through OTel. Logs go directly from stdout → ECS awslogs driver → CloudWatch.
+**Cause:** DigestPipeline does NOT ship logs through OTel. Logs go directly from pod stdout → the eks-gitops cluster log forwarder → Grafana Cloud Loki. If logs are missing, either the forwarder isn't scraping the namespace or the pods aren't emitting to stdout.
 
-**Fix:** Add CloudWatch as a Grafana data source (one-time UI step: Grafana → Connections → Data sources → Add new → CloudWatch). Logs become queryable in Grafana; `trace_id` is present on every line, so the Tempo ↔ CloudWatch join is one click.
+**Fix:** Query Loki in Grafana with the service label — e.g. `{service="digest-pipeline-pipeline"}` (or `digest-pipeline-api` / `digest-pipeline-web`); `trace_id` is present on every line, so the Tempo ↔ Loki join is one click. If nothing returns, confirm the pods are logging (`kubectl -n tenants-protohype logs deploy/digest-pipeline-api` shows JSON lines) and that the cluster log forwarder (an `eks-gitops` addon) is healthy and watching `tenants-protohype`.
 
 ### Pino records missing `trace_id` / `span_id` fields
 
@@ -570,9 +551,9 @@ Common errors:
 
 ### `OTEL_SDK_DISABLED=true` left set in production by accident → every metric + trace is dropped
 
-**Cause:** The env var was set during local testing and slipped into a deployed task def.
+**Cause:** The env var was set during local testing and slipped into the chart's rendered env.
 
-**Fix:** Search the CDK stack and every `.env*` file for `OTEL_SDK_DISABLED`. It should be absent in production; only tests and local runs set it. Redeploy with it unset.
+**Fix:** Search the chart values (`chart/values*.yaml`, the `digest-pipeline.env` helper) and every `.env*` file for `OTEL_SDK_DISABLED`. It should be absent in production; only tests and local runs set it. Re-sync with it unset.
 
 ## Database / migration errors
 
@@ -597,6 +578,6 @@ docker run -d --name digest-pipeline-pg -p 5432:5432 \
 
 ### Aurora connection throttled with `too many clients already`
 
-**Cause:** Aurora Serverless v2 at 0.5 ACU caps active connections aggressively. If the pipeline task and API tasks open connections simultaneously during a scheduled run, you can transiently exceed the pool.
+**Cause:** Aurora Serverless v2 at 0.5 ACU caps active connections aggressively. If the pipeline CronJob pod and the api pods open connections simultaneously during a scheduled run, you can transiently exceed the pool.
 
-**Fix:** `src/data/pool.ts` creates a single `pg.Pool` per task with default sizing (10 connections). If you see persistent throttling, raise the pool's `max` or scale up Aurora's min ACU to 1.
+**Fix:** `src/data/pool.ts` creates a single `pg.Pool` per pod with default sizing (10 connections). If you see persistent throttling, raise the pool's `max`, or scale up Aurora's min ACU to 1 in the landing-zone `digest-pipeline-platform` component.

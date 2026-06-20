@@ -3,9 +3,9 @@
  * registers before any instrumented module is required.
  *
  * Traces and metrics only — logs go to stdout via Pino and are
- * shipped by the ECS awslogs driver to CloudWatch (the universal
- * interface). The OTel pino instrumentation still injects trace
- * context into log records so CloudWatch lines carry trace_id /
+ * shipped by the eks-gitops cluster log forwarder to Grafana Cloud
+ * Loki (the universal interface). The OTel pino instrumentation still
+ * injects trace context into log records so Loki lines carry trace_id /
  * span_id for correlation back to Tempo.
  *
  * Skip the whole SDK when `OTEL_SDK_DISABLED=true` (tests, local dev

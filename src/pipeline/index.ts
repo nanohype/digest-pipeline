@@ -1,6 +1,6 @@
 /**
  * DigestPipeline Pipeline — Main Orchestrator
- * Entry point for ECS Fargate task
+ * Entry point for the weekly pipeline CronJob (k8s)
  * Agent: eng-backend
  */
 

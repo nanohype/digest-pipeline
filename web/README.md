@@ -30,7 +30,11 @@ app/
   review/[draftId]/
     page.tsx            The review + approve screen
   api/
-    health/route.ts           GET /api/health (ALB)
+    health/route.ts                          GET /api/health (K8s probe)
+    auth/me/route.ts                         Session check (withAuth)
+    auth/sign-in/route.ts                    AuthKit sign-in (sets cookies)
+    auth/sign-out/route.ts                   AuthKit sign-out (clears cookies)
+    otel/v1/[...path]/route.ts               Browser OTLP → collector proxy
     drafts/[id]/route.ts                     GET proxy
     drafts/[id]/edits/route.ts               POST proxy
     drafts/[id]/approve/route.ts             POST proxy

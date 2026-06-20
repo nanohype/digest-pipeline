@@ -7,6 +7,14 @@ describe('piiFilter', () => {
     expect(piiFilter('annual comp is confidential')).toContain('[REDACTED]');
   });
 
+  it('redacts non-USD and bare-number compensation', () => {
+    expect(piiFilter('£80,000 salary for the new hire')).toContain('[REDACTED]');
+    expect(piiFilter('salary of £80,000 confirmed')).toContain('[REDACTED]');
+    expect(piiFilter('Moved them to base 95k this cycle')).toContain('[REDACTED]');
+    expect(piiFilter('Offer is 120k annually')).toContain('[REDACTED]');
+    expect(piiFilter('€90k bonus approved')).toContain('[REDACTED]');
+  });
+
   it('redacts performance-management vocabulary', () => {
     expect(piiFilter('Placed on PIP last quarter')).toContain('[REDACTED]');
     expect(piiFilter('Sent written warning to the team')).toContain('[REDACTED]');
@@ -19,9 +27,29 @@ describe('piiFilter', () => {
     expect(piiFilter('Mail to 1600 Pennsylvania Ave today')).toContain('[REDACTED]');
   });
 
+  it('redacts international / E.164 phone numbers', () => {
+    expect(piiFilter('Reach the London office on +44 20 7946 0958')).not.toContain('7946');
+    expect(piiFilter('Reach the London office on +44 20 7946 0958')).toContain('[REDACTED]');
+    expect(piiFilter('Direct line +1-415-555-1234 works too')).toContain('[REDACTED]');
+    expect(piiFilter('Mobile +919876543210 on file')).toContain('[REDACTED]');
+  });
+
   it('redacts health/FMLA references', () => {
     expect(piiFilter('Approved FMLA leave extension')).toContain('[REDACTED]');
     expect(piiFilter('Shared a new diagnosis with HR')).toContain('[REDACTED]');
+  });
+
+  it('redacts paraphrased medical / HR-health phrasing', () => {
+    expect(piiFilter('She is on medical leave this month')).toContain('[REDACTED]');
+    expect(piiFilter('Discussing mental health resources with the team')).toContain('[REDACTED]');
+    expect(piiFilter('Filed a disability accommodation request')).toContain('[REDACTED]');
+    expect(piiFilter('Approved a leave of absence starting Monday')).toContain('[REDACTED]');
+  });
+
+  it('does not redact benign uses of common health/comp words', () => {
+    expect(piiFilter('The team is in good health and morale is high.')).not.toContain('[REDACTED]');
+    expect(piiFilter('Base your decision on the data.')).not.toContain('[REDACTED]');
+    expect(piiFilter('We are taking the lead on this project.')).not.toContain('[REDACTED]');
   });
 
   it('redacts HR case and ticket IDs', () => {

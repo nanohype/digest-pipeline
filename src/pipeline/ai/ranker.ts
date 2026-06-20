@@ -1,21 +1,12 @@
 /**
- * Section Classifier & Ranker
- * Assigns items to canonical sections and scores by significance
+ * Section grouping & significance ranking
+ * Groups items into their pre-assigned canonical sections and scores by significance
  * Agent: eng-ai
  */
 
 import { levenshteinDistance } from '../../common/string.js';
+import { SECTION_ORDER, SECTION_DISPLAY_NAMES } from '../sections.js';
 import type { SanitizedSourceItem, RankedSection, SectionName } from '../types.js';
-
-const SECTION_ORDER: SectionName[] = ['what_shipped', 'whats_coming', 'new_joiners', 'wins_recognition', 'the_ask'];
-
-const SECTION_DISPLAY_NAMES: Record<SectionName, string> = {
-  what_shipped: '\ud83d\ude80 What Shipped',
-  whats_coming: "\ud83d\udcc5 What's Coming",
-  new_joiners: '\ud83d\udc4b New Joiners',
-  wins_recognition: '\ud83c\udfc6 Wins & Recognition',
-  the_ask: '\ud83d\udce3 The Ask',
-};
 
 export function rankAndSection(allItems: SanitizedSourceItem[], now: Date = new Date()): RankedSection[] {
   const grouped = new Map<SectionName, SanitizedSourceItem[]>();

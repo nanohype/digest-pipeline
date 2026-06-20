@@ -9,7 +9,7 @@
 
 import type { Pool } from 'pg';
 import { levenshteinDistance } from '../common/string.js';
-import type { AuditWriterPort } from '../api/server.js';
+import type { AuditWriterPort } from '../ports.js';
 import type { DatabaseClient } from '../pipeline/audit.js';
 
 export function createPostgresAuditDatabase(pool: Pool): DatabaseClient {

@@ -7,23 +7,22 @@
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { assertNoPii } from '../filters/pii.js';
-import { withRetry } from '../utils/resilience.js';
+import { withRetry, withTimeout } from '../utils/resilience.js';
+import { awsRequestHandler } from '../../common/aws.js';
 import { getLogger } from '../../common/logger.js';
 import { getTracer } from '../../common/tracer.js';
 import { bedrockTokens, type BedrockTokenKind } from '../../common/metrics.js';
 import type { VoiceBaselineService } from '../services/voice-baseline.js';
+import { SECTION_DISPLAY_NAMES } from '../sections.js';
 import type { RankedSection, PipelineConfig } from '../types.js';
 
 const tracer = getTracer('digest-pipeline.generator');
 
 const MAX_ITEMS_PER_SECTION = 5;
-const SECTION_DISPLAY_NAMES: Record<string, string> = {
-  what_shipped: '\ud83d\ude80 What Shipped',
-  whats_coming: "\ud83d\udcc5 What's Coming",
-  new_joiners: '\ud83d\udc4b New Joiners',
-  wins_recognition: '\ud83c\udfc6 Wins & Recognition',
-  the_ask: '\ud83d\udce3 The Ask',
-};
+// Bedrock model inference is slower than the aggregator calls; S3 voice-baseline
+// reads are quick. Each bounds the AWS SDK socket and backs the withTimeout wrap.
+const BEDROCK_TIMEOUT_MS = 60_000;
+const S3_TIMEOUT_MS = 8_000;
 
 export interface NewsletterGeneratorDeps {
   config: PipelineConfig;
@@ -41,8 +40,17 @@ export class NewsletterGenerator {
   constructor(deps: NewsletterGeneratorDeps) {
     this.config = deps.config;
     this.voiceBaseline = deps.voiceBaseline;
-    this.bedrock = deps.bedrock ?? new BedrockRuntimeClient({ region: deps.config.llm.region });
-    this.s3 = deps.s3 ?? new S3Client({ region: deps.config.llm.region });
+    this.bedrock =
+      deps.bedrock ??
+      new BedrockRuntimeClient({
+        region: deps.config.llm.region,
+        requestHandler: awsRequestHandler(BEDROCK_TIMEOUT_MS),
+        // withRetry owns retries; keep the SDK to a single attempt so the two
+        // layers don't multiply (3 x 3 = 9 calls).
+        maxAttempts: 1,
+      });
+    this.s3 =
+      deps.s3 ?? new S3Client({ region: deps.config.llm.region, requestHandler: awsRequestHandler(S3_TIMEOUT_MS) });
   }
 
   async generate(runId: string, sections: RankedSection[]): Promise<{ fullText: string; sections: RankedSection[] }> {
@@ -140,7 +148,7 @@ export class NewsletterGenerator {
               accept: 'application/json',
               body,
             });
-            const response = await this.bedrock.send(command);
+            const response = await withTimeout(this.bedrock.send(command), BEDROCK_TIMEOUT_MS);
             const decoded = JSON.parse(new TextDecoder().decode(response.body));
             const usage = decoded.usage as
               | {
@@ -207,7 +215,10 @@ export class NewsletterGenerator {
 
   private async readS3Text(key: string): Promise<string | null> {
     try {
-      const response = await this.s3.send(new GetObjectCommand({ Bucket: this.config.voiceBaselineBucket, Key: key }));
+      const response = await withTimeout(
+        this.s3.send(new GetObjectCommand({ Bucket: this.config.voiceBaselineBucket, Key: key })),
+        S3_TIMEOUT_MS
+      );
       return (await response.Body?.transformToString()) ?? null;
     } catch {
       return null;

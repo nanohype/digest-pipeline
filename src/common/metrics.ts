@@ -6,7 +6,9 @@
  * Naming follows OTel conventions: `digest-pipeline.<area>.<unit>` with
  * dot-separated segments. Cardinality is intentionally low — sources
  * are a fixed set (github/linear/slack/notion); status is one of
- * SUCCESS/PARTIAL/FAILED; draft_id is omitted from histograms.
+ * SUCCESS/PARTIAL/FAILED. Per-run identifiers (run_id, draft_id) are
+ * deliberately kept OFF metric labels — they live on the trace and in
+ * audit_events — so the series count stays bounded.
  */
 
 import { metrics, type Counter, type Histogram } from '@opentelemetry/api';

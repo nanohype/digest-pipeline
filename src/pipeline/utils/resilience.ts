@@ -2,7 +2,11 @@
  * Resilience utilities: timeout, retry-with-jitter
  * Agent: eng-backend
  *
- * Contract: every external client call — timeout ≤10s, retry ≤3 attempts, exponential backoff with jitter
+ * Contract: every external client call is bounded by a timeout (≈8s for the
+ * aggregators, up to 60s for Bedrock model inference) and, where the call is
+ * idempotent, retried ≤3 attempts with jittered exponential backoff. AWS SDK
+ * clients additionally carry a socket-level requestHandler timeout (see
+ * common/aws.ts) so a stalled connection is aborted, not just abandoned.
  */
 
 export interface RetryOptions {

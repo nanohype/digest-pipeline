@@ -1,7 +1,8 @@
 # syntax=docker/dockerfile:1.9
 
-# Build context is the digest-pipeline/ directory (matches the CDK asset
-# reference `ecs.ContainerImage.fromAsset('../', { file: 'Dockerfile.web' })`).
+# Build context is the digest-pipeline/ directory (release.yml builds and
+# pushes this image to ghcr.io/nanohype/digest-pipeline; the chart
+# references it by tag).
 
 # ─── deps ───
 FROM node:24-alpine AS deps
@@ -28,7 +29,8 @@ RUN mkdir -p public
 # `WORKOS_REDIRECT_URI` — see authkit-nextjs/dist/esm/env-variables.js). The
 # `NEXT_PUBLIC_` prefix is required because Next.js inlines values with that
 # prefix into bundles at build time. The URL is a public OAuth callback, not
-# a secret — safe to bake. CDK passes this from the deploy-time `domainName`.
+# a secret — safe to bake. release.yml passes this as a build arg from the
+# per-env public hostname.
 ARG NEXT_PUBLIC_WORKOS_REDIRECT_URI
 ENV NEXT_PUBLIC_WORKOS_REDIRECT_URI=$NEXT_PUBLIC_WORKOS_REDIRECT_URI
 RUN npm run build
