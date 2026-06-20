@@ -3,7 +3,7 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: ['dist/', 'cdk.out/', 'infra/cdk.out/', '**/cdk.out/**', '.next/', 'web/', 'node_modules/'],
+    ignores: ['dist/', '.next/', 'web/', 'node_modules/'],
   },
   eslint.configs.recommended,
   ...tseslint.configs.recommended,

@@ -9,6 +9,7 @@
 
 import type { ResolvedIdentity } from '../types.js';
 import { withRetry, withTimeout } from '../utils/resilience.js';
+import { getLogger } from '../../common/logger.js';
 import type { DirectoryUser, ExternalIdType, WorkOsDirectoryClient } from '../services/workos-directory.js';
 
 const TIMEOUT_MS = 10_000;
@@ -80,7 +81,7 @@ export class WorkOsIdentityResolver {
       this.cache.set(cacheKey, { identity, expiresAt: Date.now() + CACHE_TTL_MS });
       return identity;
     } catch (error) {
-      console.warn(`Could not resolve ${type} user:`, error instanceof Error ? error.message : 'unknown');
+      getLogger().warn({ source: type, externalId: value, err: error }, 'identity.resolve-failed');
       return null;
     }
   }

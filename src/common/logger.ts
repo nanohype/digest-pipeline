@@ -1,12 +1,12 @@
 /**
  * Pino logger. Apps emit structured JSON to stdout — that's the
- * universal interface. The ECS awslogs driver ships stdout to
- * CloudWatch; log routing to other backends (Loki, Datadog, etc) is
- * an infrastructure concern, not an app concern.
+ * universal interface. The eks-gitops cluster log forwarder ships stdout
+ * to Grafana Cloud Loki; log routing to other backends is an
+ * infrastructure concern, not an app concern.
  *
  * Trace context (`trace_id`, `span_id`, `trace_flags`) is auto-injected
  * by `@opentelemetry/instrumentation-pino` whenever a Pino call happens
- * inside an active span — so a CloudWatch line carries the trace_id you
+ * inside an active span — so a Loki line carries the trace_id you
  * need to jump into Tempo.
  *
  * `LOG_LEVEL=silent` muffles all output (used by the test environment).

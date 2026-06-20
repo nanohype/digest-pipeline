@@ -1,8 +1,8 @@
 /**
  * Pipeline composition root. Wires real Postgres / WorkOS / Bedrock /
  * GitHub / Linear / Slack / Notion adapters and invokes runPipeline.
- * Intended to be the container CMD for the Dockerfile.pipeline image
- * triggered by the EventBridge schedule.
+ * Intended to be the container CMD for the Dockerfile.pipeline image,
+ * run by the k8s CronJob (weekly Friday 09:00 UTC).
  */
 
 import 'dotenv/config';
@@ -18,6 +18,7 @@ import { createDbPool } from '../data/pool.js';
 import { createPostgresDraftRepository } from '../data/drafts.js';
 import { createPostgresAuditDatabase } from '../data/audit.js';
 import { createSecretsClient } from '../common/secrets.js';
+import { awsRequestHandler } from '../common/aws.js';
 import type { PipelineConfig } from './types.js';
 import { createOctokitGitHubService } from './services/github.js';
 import { createLinearService } from './services/linear.js';
@@ -133,7 +134,7 @@ async function buildDeps(): Promise<PipelineDeps> {
     },
   };
 
-  const s3 = new S3Client({ region: env.AWS_REGION });
+  const s3 = new S3Client({ region: env.AWS_REGION, requestHandler: awsRequestHandler(8_000) });
   const voiceBaseline = createS3VoiceBaselineService({ bucket: env.VOICE_BASELINE_BUCKET, s3 });
   const generator = new NewsletterGenerator({ config: pipelineConfig, voiceBaseline, s3 });
 

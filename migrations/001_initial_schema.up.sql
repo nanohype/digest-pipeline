@@ -7,6 +7,11 @@
 -- draft text.
 -- email_analytics stores SES feedback (opens, clicks) once SES
 -- webhooks are wired.
+--
+-- run_id correlates a draft with its audit_events, but it is intentionally
+-- NOT a foreign key: PIPELINE_FAILURE events are written when no draft row
+-- exists, so that relationship is enforced in the application layer rather
+-- than by the database.
 
 CREATE TABLE IF NOT EXISTS drafts (
   id             UUID         PRIMARY KEY DEFAULT gen_random_uuid(),

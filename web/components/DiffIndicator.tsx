@@ -12,13 +12,11 @@ interface DiffIndicatorProps {
 
 export function DiffIndicator({ editRate, isSaving }: DiffIndicatorProps) {
   const pct = Math.round(editRate * 1000) / 10;
-  const color = pct < 5 ? '#22c55e' : pct < 10 ? '#eab308' : pct < 20 ? '#f97316' : '#ef4444';
+  const tone = pct < 5 ? 'good' : pct < 10 ? 'warn' : pct < 20 ? 'amber' : 'danger';
   return (
     <div className="diff-indicator" aria-label={`Edit rate: ${pct}%`}>
       <span className="diff-label">Edit rate</span>
-      <span className="diff-value" style={{ color, fontWeight: 700, fontSize: '1.15rem' }}>
-        {pct}%
-      </span>
+      <span className={`diff-value diff-value--${tone}`}>{pct}%</span>
       <span className="diff-target">target ≤10%</span>
       {isSaving ? (
         <span className="saving-indicator" aria-live="polite">

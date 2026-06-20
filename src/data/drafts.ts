@@ -8,7 +8,7 @@
 
 import type { Pool } from 'pg';
 import type { Draft, DigestPipelineStatus, RankedSection } from '../pipeline/types.js';
-import type { DraftRepository } from '../api/server.js';
+import type { DraftRepository } from '../ports.js';
 
 interface DraftRow {
   id: string;

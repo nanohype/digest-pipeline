@@ -23,7 +23,7 @@ FROM node:24-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 
-# Non-root user for Fargate hygiene.
+# Non-root user.
 RUN addgroup -S digest-pipeline && adduser -S digest-pipeline -G digest-pipeline
 
 COPY --from=build --chown=digest-pipeline:digest-pipeline /app/node_modules ./node_modules

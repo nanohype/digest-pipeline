@@ -12,57 +12,21 @@
 
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import cors from '@fastify/cors';
-import { createAuthenticator, extractBearerToken, isApprover, unsafeDecodeClaims, type SessionClaims } from './auth.js';
+import rateLimit from '@fastify/rate-limit';
+import {
+  createAuthenticator,
+  extractBearerToken,
+  isApprover,
+  unsafeDecodeClaims,
+  type Authenticator,
+  type SessionClaims,
+} from './auth.js';
 import type { ApiConfig, Approvers } from './config.js';
 import { DraftIdParamSchema, EditsBodySchema, ValidationError, parseOrThrow } from './schemas.js';
 import { getLogger } from '../common/logger.js';
 import { draftEditRate, emailSent } from '../common/metrics.js';
 import type { Draft } from '../pipeline/types.js';
-
-export interface NewDraftInput {
-  runId: string;
-  weekOf: Date;
-  sections: Draft['sections'];
-  fullText: string;
-}
-
-export interface DraftRepository {
-  create(input: NewDraftInput): Promise<string>;
-  findById(id: string): Promise<Draft | null>;
-  saveEditCheckpoint(id: string, editedText: string, editorUserId: string): Promise<void>;
-  approve(id: string, approverUserId: string): Promise<void>;
-  markSent(id: string): Promise<void>;
-}
-
-export interface EditStats {
-  distanceChars: number;
-  editRate: number;
-}
-
-export interface AuditWriterPort {
-  humanEdit(
-    runId: string,
-    draftId: string,
-    editorUserId: string,
-    originalText: string,
-    editedText: string
-  ): Promise<EditStats>;
-  approved(runId: string, draftId: string, approverUserId: string): Promise<void>;
-  sent(runId: string, draftId: string, sesMessageId: string, recipientCount: number): Promise<void>;
-}
-
-export interface EmailSender {
-  send(input: {
-    draftId: string;
-    subject: string;
-    htmlBody: string;
-    textBody: string;
-  }): Promise<{ messageId: string; recipientCount: number }>;
-}
-
-export interface SlackConfirmer {
-  confirmSent(runId: string, draftId: string, recipientCount: number): Promise<void>;
-}
+import type { DraftRepository, AuditWriterPort, EmailSender, SlackConfirmer } from '../ports.js';
 
 export interface ServerDeps {
   config: ApiConfig;
@@ -70,6 +34,9 @@ export interface ServerDeps {
   auditWriter: AuditWriterPort;
   emailSender: EmailSender;
   slackConfirmer: SlackConfirmer;
+  /** Optional override so tests can inject a fake verifier instead of
+   * reaching the real WorkOS JWKS. Defaults to the WorkOS authenticator. */
+  authenticator?: Authenticator;
 }
 
 declare module 'fastify' {
@@ -88,11 +55,17 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     loggerInstance: getLogger(),
     requestTimeout: 30_000,
     connectionTimeout: 10_000,
+    // ingress-nginx terminates the client connection and forwards
+    // X-Forwarded-For; only the ingress can reach this pod (NetworkPolicy),
+    // so the proxy header is trusted for the per-client rate-limit key.
+    trustProxy: true,
   });
-  const authenticator = createAuthenticator({
-    issuer: config.env.WORKOS_ISSUER,
-    clientId: config.env.WORKOS_CLIENT_ID,
-  });
+  const authenticator =
+    deps.authenticator ??
+    createAuthenticator({
+      issuer: config.env.WORKOS_ISSUER,
+      clientId: config.env.WORKOS_CLIENT_ID,
+    });
 
   await app.register(cors, {
     origin: config.env.WEB_ORIGIN,
@@ -102,7 +75,19 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     maxAge: 600,
   });
 
-  app.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }));
+  // Defense-in-depth against approval/edit abuse: a global per-client ceiling,
+  // with tighter per-route limits on the mutating endpoints below. /health
+  // opts out so kubelet probes never trip it.
+  await app.register(rateLimit, {
+    global: true,
+    max: 100,
+    timeWindow: '1 minute',
+  });
+
+  app.get('/health', { config: { rateLimit: false } }, async () => ({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+  }));
 
   app.addHook('preHandler', async (req, reply) => {
     if (req.url === '/health') return;
@@ -147,7 +132,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     return replyWithDraft(reply, draft);
   });
 
-  app.post('/drafts/:id/edits', async (req, reply) => {
+  app.post('/drafts/:id/edits', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (req, reply) => {
     const { id } = parseOrThrow(DraftIdParamSchema, req.params);
     const { editedText } = parseOrThrow(EditsBodySchema, req.body);
     const user = requireUser(req);
@@ -157,12 +142,12 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     if (draft.status !== 'PENDING') return reply.code(409).send({ error: `Draft is ${draft.status}` });
 
     const stats = await auditWriter.humanEdit(draft.runId, draft.id, user.sub, draft.fullText, editedText);
-    draftEditRate.record(stats.editRate, { run_id: draft.runId });
+    draftEditRate.record(stats.editRate);
     await draftRepository.saveEditCheckpoint(draft.id, editedText, user.sub);
     reply.header('X-Run-Id', draft.runId).send({ status: 'saved' });
   });
 
-  app.post('/drafts/:id/approve', async (req, reply) => {
+  app.post('/drafts/:id/approve', { config: { rateLimit: { max: 5, timeWindow: '1 minute' } } }, async (req, reply) => {
     const { id } = parseOrThrow(DraftIdParamSchema, req.params);
     const user = requireUser(req);
 
@@ -186,7 +171,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     });
 
     await auditWriter.sent(draft.runId, draft.id, sesResult.messageId, sesResult.recipientCount);
-    emailSent.add(sesResult.recipientCount, { run_id: draft.runId });
+    emailSent.add(sesResult.recipientCount);
     await draftRepository.markSent(draft.id);
     await slackConfirmer.confirmSent(draft.runId, draft.id, sesResult.recipientCount);
 
