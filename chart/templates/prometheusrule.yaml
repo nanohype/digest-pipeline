@@ -30,7 +30,7 @@ spec:
           # 4 weekly runs (28 days) is suspicious — sources are degraded
           # or the generator is regressing.
           expr: |
-            (sum(increase(digest_pipeline_run_duration_ms_count{status!="ok"}[28d]))
+            (sum(increase(digest_pipeline_run_duration_ms_count{status!="SUCCESS"}[28d]))
              / sum(increase(digest_pipeline_run_duration_ms_count[28d]))) > 0.5
           for: 1h
           labels:
@@ -96,25 +96,4 @@ spec:
               Output quality is degraded — verify model availability + prompt validity.
               Runbook: docs/runbook.md § "Bedrock fallback"
 
-    - name: digest-pipeline.email
-      interval: 5m
-      rules:
-        - alert: DigestPipelineEmailUnsentAfterApproval
-          # After a successful approval, the email should send. The cosUserId
-          # approves and the SES SendEmail follows immediately. Approvals with
-          # no corresponding email send within 5 minutes mean the SES path
-          # is broken.
-          expr: |
-            (sum(increase(digest_pipeline_draft_approved_total[1h]))
-             - sum(increase(digest_pipeline_email_sent_total[1h]))) > 0
-          for: 5m
-          labels:
-            severity: page
-            service: digest-pipeline
-          annotations:
-            summary: DigestPipeline approved drafts without a corresponding SES send
-            description: |
-              {{ "{{" }} $value | printf "%.0f" {{ "}}" }} approval(s) in the last hour without an email_sent counter increment.
-              Likely SES failure or IRSA policy regression.
-              Runbook: docs/runbook.md § "Email not sending after approval"
 {{- end }}

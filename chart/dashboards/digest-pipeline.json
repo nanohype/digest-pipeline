@@ -1,7 +1,10 @@
 {
   "uid": "digest-pipeline",
   "title": "DigestPipeline",
-  "tags": ["protohype", "digest-pipeline"],
+  "tags": [
+    "protohype",
+    "digest-pipeline"
+  ],
   "timezone": "browser",
   "schemaVersion": 39,
   "refresh": "1m",
@@ -37,10 +40,175 @@
   },
   "panels": [
     {
-      "id": 1,
-      "title": "Pipeline run — outcomes (last 4 weeks)",
+      "type": "row",
+      "title": "SLO \u2014 pipeline run success (99% over 30d)",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
       "type": "stat",
-      "gridPos": {"x": 0, "y": 0, "w": 8, "h": 6},
+      "title": "Run success (30d)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$datasource"
+      },
+      "description": "Successful runs / total over 30d vs the 99% objective. status SUCCESS vs PARTIAL|FAILED.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "decimals": 4,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.99
+              },
+              {
+                "color": "green",
+                "value": 0.999
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$datasource"
+          },
+          "expr": "sum(increase(digest_pipeline_run_duration_ms_count{status=\"SUCCESS\",deployment_environment=\"$environment\"}[30d])) / clamp_min(sum(increase(digest_pipeline_run_duration_ms_count{deployment_environment=\"$environment\"}[30d])), 1)"
+        }
+      ],
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 1
+      }
+    },
+    {
+      "type": "gauge",
+      "title": "Error budget remaining (30d)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$datasource"
+      },
+      "description": "Fraction of the 30-day 1% run-failure budget still unspent.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.25
+              },
+              {
+                "color": "green",
+                "value": 0.5
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$datasource"
+          },
+          "expr": "clamp_min(1 - ((sum(increase(digest_pipeline_run_duration_ms_count{status=~\"PARTIAL|FAILED\",deployment_environment=\"$environment\"}[30d])) / clamp_min(sum(increase(digest_pipeline_run_duration_ms_count{deployment_environment=\"$environment\"}[30d])), 1)) / 0.01), 0)"
+        }
+      ],
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 8,
+        "y": 1
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Failed/partial runs (30d)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$datasource"
+      },
+      "description": "Count of non-SUCCESS runs in the window.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 3
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$datasource"
+          },
+          "expr": "sum(increase(digest_pipeline_run_duration_ms_count{status=~\"PARTIAL|FAILED\",deployment_environment=\"$environment\"}[30d]))"
+        }
+      ],
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 16,
+        "y": 1
+      }
+    },
+    {
+      "id": 1,
+      "title": "Pipeline run \u2014 outcomes (last 4 weeks)",
+      "type": "stat",
+      "gridPos": {
+        "x": 0,
+        "y": 7,
+        "w": 8,
+        "h": 6
+      },
       "targets": [
         {
           "expr": "sum by (status) (increase(digest_pipeline_run_duration_ms_count{deployment_environment=\"$environment\"}[28d]))",
@@ -48,13 +216,22 @@
           "refId": "A"
         }
       ],
-      "fieldConfig": {"defaults": {"unit": "short"}}
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      }
     },
     {
       "id": 2,
-      "title": "Pipeline run — duration p50 / p95",
+      "title": "Pipeline run \u2014 duration p50 / p95",
       "type": "timeseries",
-      "gridPos": {"x": 8, "y": 0, "w": 16, "h": 6},
+      "gridPos": {
+        "x": 8,
+        "y": 7,
+        "w": 16,
+        "h": 6
+      },
       "targets": [
         {
           "expr": "histogram_quantile(0.50, sum by (le) (rate(digest_pipeline_run_duration_ms_bucket{deployment_environment=\"$environment\"}[28d])))",
@@ -67,13 +244,22 @@
           "refId": "B"
         }
       ],
-      "fieldConfig": {"defaults": {"unit": "ms"}}
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        }
+      }
     },
     {
       "id": 3,
-      "title": "Sources — items per run",
+      "title": "Sources \u2014 items per run",
       "type": "timeseries",
-      "gridPos": {"x": 0, "y": 6, "w": 12, "h": 8},
+      "gridPos": {
+        "x": 0,
+        "y": 13,
+        "w": 12,
+        "h": 8
+      },
       "targets": [
         {
           "expr": "sum by (source) (increase(digest_pipeline_source_items_total{deployment_environment=\"$environment\"}[7d]))",
@@ -81,13 +267,22 @@
           "refId": "A"
         }
       ],
-      "fieldConfig": {"defaults": {"unit": "short"}}
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      }
     },
     {
       "id": 4,
-      "title": "Sources — failures per run",
+      "title": "Sources \u2014 failures per run",
       "type": "timeseries",
-      "gridPos": {"x": 12, "y": 6, "w": 12, "h": 8},
+      "gridPos": {
+        "x": 12,
+        "y": 13,
+        "w": 12,
+        "h": 8
+      },
       "targets": [
         {
           "expr": "sum by (source) (increase(digest_pipeline_source_failure_total{deployment_environment=\"$environment\"}[7d]))",
@@ -95,13 +290,35 @@
           "refId": "A"
         }
       ],
-      "fieldConfig": {"defaults": {"unit": "short", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}}}
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        }
+      }
     },
     {
       "id": 5,
-      "title": "Bedrock — tokens per run",
+      "title": "Bedrock \u2014 tokens per run",
       "type": "timeseries",
-      "gridPos": {"x": 0, "y": 14, "w": 12, "h": 8},
+      "gridPos": {
+        "x": 0,
+        "y": 21,
+        "w": 12,
+        "h": 8
+      },
       "targets": [
         {
           "expr": "sum by (kind, model) (increase(digest_pipeline_bedrock_tokens_total{deployment_environment=\"$environment\"}[28d]))",
@@ -109,13 +326,22 @@
           "refId": "A"
         }
       ],
-      "fieldConfig": {"defaults": {"unit": "short"}}
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      }
     },
     {
       "id": 6,
-      "title": "Bedrock — fallbacks (any value >0 is bad)",
+      "title": "Bedrock \u2014 fallbacks (any value >0 is bad)",
       "type": "stat",
-      "gridPos": {"x": 12, "y": 14, "w": 12, "h": 8},
+      "gridPos": {
+        "x": 12,
+        "y": 21,
+        "w": 12,
+        "h": 8
+      },
       "targets": [
         {
           "expr": "sum(increase(digest_pipeline_bedrock_fallback_total{deployment_environment=\"$environment\"}[28d]))",
@@ -123,13 +349,35 @@
           "refId": "A"
         }
       ],
-      "fieldConfig": {"defaults": {"unit": "short", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}}}
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        }
+      }
     },
     {
       "id": 7,
       "title": "Edit rate per run (Levenshtein vs auto-baseline)",
       "type": "timeseries",
-      "gridPos": {"x": 0, "y": 22, "w": 12, "h": 8},
+      "gridPos": {
+        "x": 0,
+        "y": 29,
+        "w": 12,
+        "h": 8
+      },
       "targets": [
         {
           "expr": "sum by (run_id) (digest_pipeline_draft_edit_rate{deployment_environment=\"$environment\"})",
@@ -137,13 +385,22 @@
           "refId": "A"
         }
       ],
-      "fieldConfig": {"defaults": {"unit": "percentunit"}}
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit"
+        }
+      }
     },
     {
       "id": 8,
       "title": "Email sends per run",
       "type": "timeseries",
-      "gridPos": {"x": 12, "y": 22, "w": 12, "h": 8},
+      "gridPos": {
+        "x": 12,
+        "y": 29,
+        "w": 12,
+        "h": 8
+      },
       "targets": [
         {
           "expr": "sum(increase(digest_pipeline_email_sent_total{deployment_environment=\"$environment\"}[28d]))",
@@ -151,7 +408,11 @@
           "refId": "A"
         }
       ],
-      "fieldConfig": {"defaults": {"unit": "short"}}
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      }
     }
   ]
 }
