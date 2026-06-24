@@ -22,7 +22,7 @@ Plus a `migrate-job` Helm pre-install/pre-upgrade hook that runs the SQL migrati
   - `externalsecret.yaml` — aggregates four AWS Secrets Manager entries into one Secret consumed via envFrom; composes `DATABASE_URL` via the External Secrets template engine
   - `migrate-job.yaml` — Helm pre-install/pre-upgrade hook running `npm run migrate:up`
   - `prometheusrule.yaml` — alerts on the digest-pipeline metrics (`digest-pipeline.run.duration_ms`, `digest-pipeline.source.failure`, `digest-pipeline.bedrock.fallback`, `digest-pipeline.email.sent`)
-  - `grafana-dashboard.yaml` — ConfigMap labeled `grafana_dashboard: "1"` loading the dashboard from `dashboards/digest-pipeline.json`
+  - `grafana-dashboard.yaml` — GrafanaDashboard CR (instanceSelector `dashboards: external`) loading the dashboard from `dashboards/digest-pipeline.json`, reconciled by the grafana-operator onto Amazon Managed Grafana
 
 ## Per-tenant infra (from landing-zone)
 

@@ -164,7 +164,13 @@ prometheusRule:
     release: kube-prometheus-stack
 
 grafanaDashboard:
+  # GrafanaDashboard CR reconciled by the grafana-operator onto the external
+  # Amazon Managed Grafana (works on both EKS and the local kx cluster).
   enabled: true
+  instanceSelector:
+    dashboards: external
+  allowCrossNamespaceImport: true
+  resyncPeriod: 24h
 
 networkPolicy:
   enabled: true
@@ -197,6 +203,14 @@ networkPolicy:
       ports:
         - protocol: TCP
           port: 5432
+    # OTLP traces + metrics + logs to the grafana-agent OTLP receiver
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 4318
 
 env:
   # Non-secret config shared by all three services.
@@ -205,7 +219,7 @@ env:
   LOG_LEVEL: info
   NODE_ENV: production
   # OTel — exports to cluster-level Collector (no per-pod sidecar)
-  OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector.observability.svc.cluster.local:4318
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://grafana-agent.monitoring.svc.cluster.local:4318
   OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
   OTEL_TRACES_SAMPLER: always_on
   OTEL_METRICS_EXPORTER: otlp

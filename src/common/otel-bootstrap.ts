@@ -25,7 +25,7 @@ if (process.env.OTEL_SDK_DISABLED !== 'true') {
     resource: resourceFromAttributes({
       'service.name': process.env.OTEL_SERVICE_NAME ?? 'digest-pipeline',
       'service.version': process.env.npm_package_version ?? '0.0.0',
-      'deployment.environment.name': process.env.NODE_ENV ?? 'development',
+      'deployment.environment': process.env.NODE_ENV ?? 'development',
       'service.namespace': 'digest-pipeline',
     }),
     traceExporter: new OTLPTraceExporter({ url: `${endpoint}/v1/traces` }),
