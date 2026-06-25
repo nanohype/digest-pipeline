@@ -41,7 +41,7 @@ spec:
             description: |
               {{ "{{" }} $value | humanizePercentage {{ "}}" }} of the last 4 weekly runs ended in PARTIAL or FAILED status.
               Either a source is broken or the generator is regressing — check the latest run's logs.
-              Runbook: docs/runbook.md § "Pipeline run failures"
+              Runbook: docs/troubleshooting.md § "Pipeline run failures"
 
         - alert: DigestPipelineRunDurationP95Breach
           expr: histogram_quantile(0.95, sum by (le) (rate(digest_pipeline_run_duration_ms_bucket[28d]))) > 600000
@@ -55,7 +55,7 @@ spec:
             description: |
               P95 run duration over the last 28 days is {{ "{{" }} $value | printf "%.0f" {{ "}}" }} ms (>600000 ms = 10 min).
               Bedrock or an aggregator is degrading — review the slowest stage in the trace.
-              Runbook: docs/runbook.md § "Run duration SLO"
+              Runbook: docs/troubleshooting.md § "Run duration SLO"
 
     - name: digest-pipeline.sources
       interval: 5m
@@ -75,7 +75,7 @@ spec:
             description: |
               {{ "{{" }} $labels.source {{ "}}" }} failure rate over the last 14 days is {{ "{{" }} $value | humanizePercentage {{ "}}" }}.
               Likely causes: third-party API token expired, schema changed, rate-limit ban.
-              Runbook: docs/runbook.md § "Source failures"
+              Runbook: docs/troubleshooting.md § "Source failures"
 
     - name: digest-pipeline.bedrock-ai
       interval: 5m
@@ -94,6 +94,6 @@ spec:
             description: |
               {{ "{{" }} $value | printf "%.0f" {{ "}}" }} fallback(s) used across the last 4 runs.
               Output quality is degraded — verify model availability + prompt validity.
-              Runbook: docs/runbook.md § "Bedrock fallback"
+              Runbook: docs/troubleshooting.md § "Bedrock fallback"
 
 {{- end }}

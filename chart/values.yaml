@@ -154,7 +154,11 @@ migrate:
       memory: 512Mi
 
 prometheusRule:
-  enabled: true
+  # Ships SLO recording rules + burn-rate alerts to a Prometheus Operator
+  # (kube-prometheus-stack). Off by default — inert without an operator, which
+  # the managed-Prometheus stack (grafana-agent + AMP, alerts in Amazon Managed
+  # Grafana) doesn't run. Set `enabled: true` on a cluster that runs one.
+  enabled: false
   selector:
     release: kube-prometheus-stack
 
