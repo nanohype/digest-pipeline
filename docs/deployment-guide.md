@@ -8,7 +8,7 @@ If you're rotating credentials on an already-running tenant, jump to [`secrets.m
 
 ### AWS side
 
-The slow-moving, per-tenant AWS substrate is owned by the landing-zone `digest-pipeline-platform` component (Aurora Serverless v2, the two S3 buckets, the SES identity + configuration set, the IRSA role, and Secrets Manager wiring). You provision it with terragrunt before deploying the chart — see [`landing-zone`](https://github.com/nanohype/landing-zone). Set the region that has Bedrock access enabled:
+The slow-moving, per-tenant AWS substrate is owned by the landing-zone `digest-pipeline-platform` component (Aurora Serverless v2, the two S3 buckets, the SES identity + configuration set, the IAM role, and Secrets Manager wiring). You provision it with terragrunt before deploying the chart — see [`landing-zone`](https://github.com/nanohype/landing-zone). Set the region that has Bedrock access enabled:
 
 ```bash
 export AWS_REGION=us-west-2
@@ -50,20 +50,20 @@ The rest of this walkthrough brings up the `staging` tenant. Once staging is liv
 
 ### 1. Provision the AWS substrate
 
-The landing-zone `digest-pipeline-platform` component creates Aurora Serverless v2 (and its `digest-pipeline/<env>/db-credentials` secret), the two S3 buckets, the SES identity + configuration set, and the IRSA role. Apply it via terragrunt:
+The landing-zone `digest-pipeline-platform` component creates Aurora Serverless v2 (and its `digest-pipeline/<env>/db-credentials` secret), the two S3 buckets, the SES identity + configuration set, and the IAM role. Apply it via terragrunt:
 
 ```bash
 cd landing-zone
 terragrunt apply --terragrunt-working-dir live/aws/workload-staging/us-west-2/staging/digest-pipeline-platform
 ```
 
-Record the IRSA role ARN — the chart needs it:
+Record the IAM role ARN — the chart needs it:
 
 ```bash
 tofu -chdir=live/aws/workload-staging/us-west-2/staging/digest-pipeline-platform output -raw irsa_role_arn
 ```
 
-Drop it into `chart/values-staging.yaml` under `aws.platformRoleArn`. (Production uses `live/aws/workload-prod/...`.) See [`../chart/README.md`](../chart/README.md) § "IRSA wiring".
+The IAM role is bound to the chart's ServiceAccount by the EKS Pod Identity association landing-zone creates — there is no chart value to set. See [`../chart/README.md`](../chart/README.md) § "Pod identity".
 
 ### 2. Seed every secret
 
@@ -104,7 +104,7 @@ The Platform CR declares digest-pipeline as a tenant of the `protohype` team. Ap
 kubectl apply -f platform.yaml
 ```
 
-The operator reconciles Namespace `tenants-protohype`, ResourceQuota, LimitRange, default-deny NetworkPolicy, ArgoCD AppProject `tenant-protohype`, the IRSA role, KMS grants, and the S3 bucket policy. Wait for the Platform to reach `Ready`:
+The operator reconciles Namespace `tenants-protohype`, ResourceQuota, LimitRange, default-deny NetworkPolicy, ArgoCD AppProject `tenant-protohype`, the IAM role, KMS grants, and the S3 bucket policy. Wait for the Platform to reach `Ready`:
 
 ```bash
 kubectl get platform digest-pipeline -n tenants-protohype -o jsonpath='{.status.phase}'
@@ -219,7 +219,7 @@ terragrunt apply --terragrunt-working-dir live/aws/workload-prod/us-west-2/produ
 cd ../digest-pipeline
 npm run seed:production
 
-# 3. Set image.tag + aws.platformRoleArn in chart/values-production.yaml, commit,
+# 3. Set image.tag in chart/values-production.yaml, commit,
 #    push — the ApplicationSet renders the production Application and ArgoCD syncs it.
 ```
 
@@ -234,7 +234,7 @@ Production uses completely separate resources:
 | api / web replicas | 1 / 1 | 2 / 2 |
 | IRSA policy scope | `digest-pipeline/staging/*` only | `digest-pipeline/production/*` only |
 
-The staging IRSA role **cannot** read production secrets (and vice versa) — each environment's `digest-pipeline-platform` instance scopes its IRSA policy to its own `digest-pipeline/<env>/*` secret-ARN prefix.
+The staging IAM role **cannot** read production secrets (and vice versa) — each environment's `digest-pipeline-platform` instance scopes its IRSA policy to its own `digest-pipeline/<env>/*` secret-ARN prefix.
 
 The weekly `CronJob` runs in both environments. If you want staging to skip the auto-run while you iterate, set `pipeline.suspend: true` in `chart/values-staging.yaml` (`spec.suspend` on the CronJob) and trigger manual runs via step 11.
 

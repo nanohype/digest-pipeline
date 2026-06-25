@@ -44,9 +44,9 @@ backupApproverIds[]}`) — it is not hardcoded and not editable from the UI.
 
 ### Identity & secrets
 
-- No long-lived credentials in the app. Pods get AWS access via IRSA (Workload Identity); there
+- No long-lived credentials in the app. Pods get AWS access via EKS Pod Identity; there
   are no static keys anywhere in the repo or image. Bedrock, S3, SES, and Secrets Manager calls
-  AssumeRoleWithWebIdentity into the landing-zone `digest-pipeline-platform` IRSA role.
+  AssumeRoleWithWebIdentity into the landing-zone `digest-pipeline-platform` IAM role.
 - App-level secrets are projected at deploy time by External Secrets Operator from AWS Secrets
   Manager (`digest-pipeline/<env>/*`) into a Kubernetes Secret consumed `envFrom` — never committed.
 - Inference runs on-account via Amazon Bedrock — source content is not sent to third parties.
@@ -71,7 +71,7 @@ backupApproverIds[]}`) — it is not hardcoded and not editable from the UI.
 
 ## Compliance
 
-digest-pipeline exposes the controls needed for **SOC 2 Type II** — IRSA-only access with no
+digest-pipeline exposes the controls needed for **SOC 2 Type II** — Pod-Identity-only access with no
 static credentials, secrets sourced from AWS Secrets Manager (never committed), PII scrubbing
 enforced at the type boundary before inference, a complete per-run audit trail in the
 immutable `audit_events` ledger, and a human approval gate before any external send. Substrate-

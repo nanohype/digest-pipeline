@@ -71,7 +71,7 @@ kubectl get ns tenants-protohype resourcequota -n tenants-protohype
 kubectl -n tenants-protohype describe platform digest-pipeline  # for reconcile errors
 ```
 
-If the operator reports an error reconciling the IRSA role or AppProject, fix it at the operator/landing-zone layer first — the chart's pods can't schedule into a quota-less namespace.
+If the operator reports an error reconciling the IAM role or AppProject, fix it at the operator/landing-zone layer first — the chart's pods can't schedule into a quota-less namespace.
 
 ### ApplicationSet didn't generate an Application for this cluster
 
@@ -133,7 +133,7 @@ Commit the regenerated `package-lock.json`. Reverse: same trick on macOS to repo
 
 ### Pod `CrashLoopBackOff` with `AccessDeniedException … is not authorized to perform: secretsmanager:GetSecretValue`
 
-**Cause:** The app code (`src/common/secrets.ts` → `GetSecretValue`) ran but the pod's IRSA role lacks `secretsmanager:GetSecretValue` on the requested ARN, or the ARN prefix doesn't match. The chart's shared ServiceAccount assumes the landing-zone `digest-pipeline-platform` IRSA role; its inline policy scopes Secrets Manager read to `arn:aws:secretsmanager:…:secret:digest-pipeline/{env}/*`.
+**Cause:** The app code (`src/common/secrets.ts` → `GetSecretValue`) ran but the pod's IAM role lacks `secretsmanager:GetSecretValue` on the requested ARN, or the ARN prefix doesn't match. The chart's shared ServiceAccount assumes the landing-zone `digest-pipeline-platform` IAM role; its inline policy scopes Secrets Manager read to `arn:aws:secretsmanager:…:secret:digest-pipeline/{env}/*`.
 
 **Fix:** Confirm the ServiceAccount carries the role annotation and the role's policy covers the env-scoped prefix:
 
@@ -142,7 +142,7 @@ kubectl -n tenants-protohype get sa digest-pipeline \
   -o jsonpath='{.metadata.annotations.eks\.amazonaws\.com/role-arn}'
 ```
 
-If the annotation is empty, `aws.platformRoleArn` wasn't wired into the per-env values — pull it from the landing-zone output (`tofu … output -raw irsa_role_arn`) into `chart/values-{env}.yaml`, re-sync, and `kubectl -n tenants-protohype rollout restart deploy/digest-pipeline-api deploy/digest-pipeline-web`. If the annotation is present but the policy is wrong, fix it in the landing-zone `digest-pipeline-platform` component.
+If the pod can't reach AWS, confirm the EKS Pod Identity association exists for the `digest-pipeline` ServiceAccount (`aws eks list-pod-identity-associations --cluster-name <cluster>`); landing-zone's `digest-pipeline-platform` component creates it. If the association is present but the policy is wrong, fix it in that component.
 
 ### Pod stuck `ContainerCreating` / `CreateContainerConfigError`: `secret "digest-pipeline" not found`
 
@@ -331,7 +331,7 @@ The API's `SecretsClient` caches approvers with a 5-minute TTL, so the new value
 
 **Cause:** You're invoking a bare foundation-model ID (no `us.`/`eu.`/`ap.` prefix). Claude 4.x bare IDs only work with provisioned-throughput commitments. On-demand invocation requires a cross-region inference profile.
 
-**Fix (already in the defaults):** `BEDROCK_MODEL_ID` defaults to `us.anthropic.claude-sonnet-4-6`, and the landing-zone `digest-pipeline-platform` IRSA role grants `bedrock:InvokeModel` on both the profile ARN and the underlying foundation-model ARNs (cross-region):
+**Fix (already in the defaults):** `BEDROCK_MODEL_ID` defaults to `us.anthropic.claude-sonnet-4-6`, and the landing-zone `digest-pipeline-platform` IAM role grants `bedrock:InvokeModel` on both the profile ARN and the underlying foundation-model ARNs (cross-region):
 
 ```jsonc
 // digest-pipeline-platform IRSA inline policy (resources for bedrock:InvokeModel)
