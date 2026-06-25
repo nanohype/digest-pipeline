@@ -38,8 +38,8 @@ DigestPipeline is an automated weekly newsletter pipeline for a Chief of Staff. 
 - **ArgoCD ApplicationSet entry** (`gitops/applicationset-entry.yaml`) for `nanohype/eks-gitops`: matrix generator (clusters × `[digest-pipeline]`), Helm multi-source `$values` pattern, sync wave 100, automated + selfHeal, ServerSideApply, `CreateNamespace=false` (the Platform reconciler owns the Namespace).
 - **Platform CR + BudgetPolicy** (`platform.yaml`) declaring digest-pipeline as a tenant of the `protohype` team on the `eks-agent-platform` operator. The operator reconciles the Namespace, ResourceQuota (8 CPU / 16Gi across pipeline + api + web), LimitRange, default-deny NetworkPolicy, and the ArgoCD AppProject.
 - **Ingress + secrets + migrations.** `ingress.yaml` (ingress-nginx + cert-manager: `/api/*` → api with rewrite-target, `/` → web); `externalsecret.yaml` aggregates four AWS Secrets Manager entries into one Secret consumed via envFrom and composes `DATABASE_URL` via the External Secrets template engine; `migrate-job.yaml` is a Helm pre-install/pre-upgrade hook running `npm run migrate:up` before the new pods roll out.
-- **Per-tenant AWS substrate** lives in the landing-zone `digest-pipeline-platform` component: Aurora Serverless v2 Postgres, the voice-baseline (versioned, retained) + raw-aggregations (90-day lifecycle) S3 buckets, the SES verified identity + configuration set, and the IRSA role. The chart's shared ServiceAccount carries the `eks.amazonaws.com/role-arn` annotation from that component's `irsa_role_arn` output via `aws.platformRoleArn`.
-- **IAM least privilege.** The IRSA role can read only `digest-pipeline/{env}/*` secrets, invoke `anthropic.claude-*` foundation models, read the voice-baseline bucket, write the raw-aggregations bucket, and `ses:SendEmail` on the verified identity. Staging and production roles do not cross-read.
+- **Per-tenant AWS substrate** lives in the landing-zone `digest-pipeline-platform` component: Aurora Serverless v2 Postgres, the voice-baseline (versioned, retained) + raw-aggregations (90-day lifecycle) S3 buckets, the SES verified identity + configuration set, and the IAM role. The chart's shared ServiceAccount carries the `eks.amazonaws.com/role-arn` annotation from that component's `irsa_role_arn` output via `aws.platformRoleArn`.
+- **IAM least privilege.** The IAM role can read only `digest-pipeline/{env}/*` secrets, invoke `anthropic.claude-*` foundation models, read the voice-baseline bucket, write the raw-aggregations bucket, and `ses:SendEmail` on the verified identity. Staging and production roles do not cross-read.
 
 #### Operator surface
 
@@ -71,7 +71,7 @@ DigestPipeline is an automated weekly newsletter pipeline for a Chief of Staff. 
 - PII filter at two checkpoints (pre-LLM and post-LLM) enforced by type-level brand.
 - `@fastify/cors` with explicit `WEB_ORIGIN` allow-list, `credentials: false`.
 - HTML output in the API is entity-escaped; no `dangerouslySetInnerHTML` in the web.
-- Secret values never embedded in cluster manifests: the External Secrets operator syncs them from AWS Secrets Manager into an in-cluster Secret at runtime, authorized by the IRSA role's scoped `secretsmanager:GetSecretValue` permission on `digest-pipeline/{env}/*`.
+- Secret values never embedded in cluster manifests: the External Secrets operator syncs them from AWS Secrets Manager into an in-cluster Secret at runtime, authorized by the IAM role's scoped `secretsmanager:GetSecretValue` permission on `digest-pipeline/{env}/*`.
 
 [Unreleased]: https://github.com/nanohype/protohype/compare/feature/digest-pipeline-v1...HEAD
 [0.1.0]: https://github.com/nanohype/protohype/releases/tag/digest-pipeline-v0.1.0

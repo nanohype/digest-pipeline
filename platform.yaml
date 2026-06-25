@@ -17,9 +17,9 @@
 #
 # What digest-pipeline's chart owns separately (NOT operator-reconciled):
 #   - The chart's own ServiceAccount (`digest-pipeline`) — used by all three workloads
-#     (pipeline CronJob + api + web). Its `eks.amazonaws.com/role-arn`
-#     annotation comes from landing-zone's digest-pipeline-platform component
-#     (output: irsa_role_arn) via per-env Helm values (aws.platformRoleArn).
+#     (pipeline CronJob + api + web). It is bound to landing-zone's
+#     digest-pipeline-platform IAM role by an EKS Pod Identity association that
+#     component creates — no role-arn annotation.
 #     The operator's `<env>-digest-pipeline-tenant` role trusts the `tenant-runtime`
 #     SA, not digest-pipeline's `digest-pipeline` SA — different SA, different trust, two
 #     roles serving two workload classes (AgentFleet pods vs digest-pipeline's
@@ -30,7 +30,7 @@
 # invoke policy, Secrets Manager seeding) — see landing-zone's
 # components/aws/digest-pipeline-platform/. Once that component's per-env entry
 # applies, the outputs are wired into the chart's per-env values
-# (`tenantInfra.*` + `aws.platformRoleArn`). SES DKIM CNAME records are
+# (`tenantInfra.*`). SES DKIM CNAME records are
 # emitted as outputs for the operator to publish to the apex DNS zone.
 
 ---
@@ -62,9 +62,9 @@ spec:
     name: digest-pipeline
   identity:
     # Bedrock model access for AgentFleet pods (tenant-runtime SA on the
-    # operator-reconciled IRSA role). digest-pipeline's own app pods don't use this
-    # role; they assume the landing-zone-owned `digest-pipeline-platform` IRSA role
-    # (via aws.platformRoleArn in the chart). The operator's role still
+    # operator-reconciled IAM role). digest-pipeline's own app pods don't use this
+    # role; they assume the landing-zone-owned `digest-pipeline-platform` IAM role
+    # (via the Pod Identity association). The operator's role still
     # exists for AgentFleet workloads in this namespace if/when they land.
     allowedModelFamilies:
       - anthropic

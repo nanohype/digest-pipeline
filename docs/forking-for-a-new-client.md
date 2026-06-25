@@ -98,13 +98,13 @@ The seeder blocks if any `REPLACE_ME` slips through. `digest-pipeline-secrets.{e
 
 ## 4. Provision the substrate, then deploy staging
 
-The per-tenant AWS substrate (Aurora, the two S3 buckets, the SES identity, the IRSA role, `db-credentials`) is the landing-zone `digest-pipeline-platform` component. Apply it, then plumb its IRSA output into the chart:
+The per-tenant AWS substrate (Aurora, the two S3 buckets, the SES identity, the IAM role, `db-credentials`) is the landing-zone `digest-pipeline-platform` component. Apply it, then plumb its IRSA output into the chart:
 
 ```bash
 cd landing-zone
 terragrunt apply --terragrunt-working-dir live/aws/workload-staging/us-west-2/staging/digest-pipeline-platform
 tofu -chdir=live/aws/workload-staging/us-west-2/staging/digest-pipeline-platform output -raw irsa_role_arn
-# → paste into chart/values-staging.yaml: aws.platformRoleArn
+# the IAM role is bound by landing-zone's Pod Identity association — nothing to paste
 ```
 
 Set `web.workosClientId` (and the API `WORKOS_CLIENT_ID`) and `image.tag` in `chart/values-staging.yaml`. Then bring the tenant up:
@@ -174,7 +174,7 @@ terragrunt apply --terragrunt-working-dir live/aws/workload-prod/us-west-2/produ
 
 cd ../digest-pipeline
 npm run seed:production
-# Set image.tag + aws.platformRoleArn + web.workosClientId in
+# Set image.tag + web.workosClientId in
 # chart/values-production.yaml, commit, push — the ApplicationSet renders
 # the production Application and ArgoCD syncs it.
 ```

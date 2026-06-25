@@ -14,11 +14,6 @@ externalSecret:
 env:
   OTEL_RESOURCE_ATTRIBUTES: 'service.namespace=digest-pipeline,service.version=0.1.0,deployment.environment=staging,agents.tenant=protohype,agents.platform=digest-pipeline'
 
-aws:
-  # Fill from landing-zone `digest-pipeline-platform` (staging) output: irsa_role_arn.
-  # `tofu -chdir=live/aws/workload-staging/us-west-2/staging/digest-pipeline-platform output -raw irsa_role_arn`
-  platformRoleArn: ''
-
 tenantInfra:
   # Bucket names match landing-zone digest-pipeline-platform outputs 1:1
   # (voice_baseline_bucket_name, raw_aggregations_bucket_name). The Slack

@@ -72,7 +72,7 @@ spec:
   isolation: namespace
 ```
 
-The operator reconciles the namespace `tenants-protohype`, ResourceQuota, LimitRange, default-deny NetworkPolicy, ArgoCD AppProject, and a per-Platform IRSA role trusting the `tenant-runtime` SA. **digest-pipeline's own app pods don't use that operator role** — all three workloads assume the landing-zone `digest-pipeline-platform` IRSA role directly via the chart's `aws.platformRoleArn` Helm value. `extraPolicyArns` stays empty for that reason.
+The operator reconciles the namespace `tenants-protohype`, ResourceQuota, LimitRange, default-deny NetworkPolicy, ArgoCD AppProject, and a per-Platform IRSA role trusting the `tenant-runtime` SA. **digest-pipeline's own app pods don't use that operator role** — all three workloads assume the landing-zone `digest-pipeline-platform` IRSA role directly via the EKS Pod Identity association. `extraPolicyArns` stays empty for that reason.
 
 ### The Helm chart (`chart/`)
 
@@ -84,14 +84,14 @@ Three workloads in one chart — the weekly pipeline, the review API, and the re
 | `api-deployment.yaml` + `api-service.yaml` | The Fastify API (JWT-gated review backend, ClusterIP :3001)                                                                                                                                                            |
 | `web-deployment.yaml` + `web-service.yaml` | The Next.js review app (WorkOS AuthKit, ClusterIP :3000; `DIGEST_PIPELINE_API_URL` wired to the api Service DNS)                                                                                                       |
 | `ingress.yaml`                             | ingress-nginx + cert-manager TLS — `/api/*` → api (rewrite-target), `/` → web                                                                                                                                          |
-| `serviceaccount.yaml`                      | Shared SA across all three workloads; `eks.amazonaws.com/role-arn` rendered from `aws.platformRoleArn`                                                                                                                 |
+| `serviceaccount.yaml`                      | Shared SA across all three workloads, name pinned to the app; bound to the landing-zone IAM role by a Pod Identity association                                                                                         |
 | `externalsecret.yaml`                      | ESO aggregates four Secrets Manager entries (`digest-pipeline/<env>/{approvers,workos-directory,db-credentials,grafana-cloud}`) into one Secret consumed via `envFrom`; composes `DATABASE_URL` in the template engine |
 | `migrate-job.yaml`                         | Helm pre-install/pre-upgrade hook running `npm run migrate:up` on the api image so schema lands before new pods roll                                                                                                   |
 | `networkpolicy.yaml`                       | Default-deny + egress allow-list (DNS, HTTPS for AWS + all aggregator sources, Postgres on the VPC CIDR) + intra-pod ingress                                                                                           |
 | `prometheusrule.yaml`                      | Pipeline/Bedrock/send alerts                                                                                                                                                                                           |
 | `grafana-dashboard.yaml`                   | ConfigMap loading `chart/dashboards/digest-pipeline.json`                                                                                                                                                              |
 
-`values.yaml` is the base; `values-staging.yaml` / `values-production.yaml` carry the per-env deltas (image tags, `aws.platformRoleArn`, `tenantInfra.*` from the landing-zone outputs, ingress host). The image is `ghcr.io/nanohype/digest-pipeline`, built per workload (`:<tag>-pipeline`, `:<tag>-api`, `:<tag>-web`). OTel attrs `agents.tenant=protohype` + `agents.platform=digest-pipeline` are set in every values file (required by the platform-tenant contract).
+`values.yaml` is the base; `values-staging.yaml` / `values-production.yaml` carry the per-env deltas (image tags, `tenantInfra.*` from the landing-zone outputs, ingress host). The image is `ghcr.io/nanohype/digest-pipeline`, built per workload (`:<tag>-pipeline`, `:<tag>-api`, `:<tag>-web`). OTel attrs `agents.tenant=protohype` + `agents.platform=digest-pipeline` are set in every values file (required by the platform-tenant contract).
 
 ### Required tenant files
 
@@ -138,4 +138,4 @@ The newsletter generator (`src/pipeline/ai/generator.ts`) calls Claude via `Invo
 - [`docs/`](docs/) — local development, deployment guide, fork-for-a-new-client recipe
 - [Platform Reference](../nanohype/docs/platform-reference.md) — the stack-wide view
 - [`eks-agent-platform`](https://github.com/nanohype/eks-agent-platform) — the operator that reconciles the Platform CR
-- [`landing-zone`](https://github.com/nanohype/landing-zone) — the `digest-pipeline-platform` substrate the chart's IRSA role and data stores live in
+- [`landing-zone`](https://github.com/nanohype/landing-zone) — the `digest-pipeline-platform` substrate the chart's IAM role and data stores live in
