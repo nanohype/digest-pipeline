@@ -146,19 +146,6 @@ Unit tests per module with Vitest. Integration tests exercise the pipeline orche
 
 Target: ≥ 42 passing assertions. Run with `npm test`.
 
-## Not Yet Implemented
-
-The following are planned but not in this revision. Each is tracked as a stub or planned feature:
-
-- Real Notion MCP fetch (currently `fetchRecentPages` stub) — scoped to the all-hands database ID, validated per-page
-- Real Slack MCP fetch (currently `fetchChannelHistory` stub)
-- Real GitHub MCP fetch (currently `fetchMergedPRs` stub)
-- Real Linear MCP fetch (currently `fetchClosedEpics` / `fetchUpcomingMilestones` / `fetchAskLabeledIssues` stubs)
-- Voice baseline S3 listing (currently `listBaselineKeys` stub)
-- (None currently — all MCP stubs are closed.)
-
-These sit behind the resilience + registry layer, so swapping them in is a change to one module each, not the orchestrator.
-
 ## Dependencies
 
 - `fastify` — API server
