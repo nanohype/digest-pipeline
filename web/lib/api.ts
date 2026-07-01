@@ -40,7 +40,7 @@ export async function proxyRequest(method: 'GET' | 'POST', path: string, body?: 
     const timedOut = err instanceof Error && err.name === 'TimeoutError';
     return NextResponse.json(
       { error: timedOut ? 'Upstream API timed out' : 'Upstream API unreachable' },
-      { status: timedOut ? 504 : 502 },
+      { status: timedOut ? 504 : 502 }
     );
   }
 
