@@ -88,7 +88,9 @@ jobs:
         with:
           repository: nanohype/nanohype
           path: .nanohype
-          sparse-checkout: library/runtime/src
+          sparse-checkout: |
+            library/runtime/src
+            library/config
 
       - uses: actions/setup-node@v4
         with:
