@@ -102,7 +102,9 @@ describe('API server', () => {
   });
 
   it('rejects edits on a non-PENDING draft with 409', async () => {
-    const app = await buildServer(buildDeps({ draft: sampleDraft({ status: 'SENT' }), sub: COS_USER }));
+    const app = await buildServer(
+      buildDeps({ draft: sampleDraft({ status: 'SENT' }), sub: COS_USER })
+    );
     const res = await app.inject({
       method: 'POST',
       url: `/drafts/${DRAFT_ID}/edits`,
@@ -115,7 +117,11 @@ describe('API server', () => {
 
   it('rejects approval from a non-approver with 403', async () => {
     const app = await buildServer(buildDeps({ sub: 'user_not_cos' }));
-    const res = await app.inject({ method: 'POST', url: `/drafts/${DRAFT_ID}/approve`, headers: auth });
+    const res = await app.inject({
+      method: 'POST',
+      url: `/drafts/${DRAFT_ID}/approve`,
+      headers: auth,
+    });
     expect(res.statusCode).toBe(403);
     await app.close();
   });
@@ -123,9 +129,17 @@ describe('API server', () => {
   it('approves, sends via SES, and audits in order for an approver', async () => {
     const deps = buildDeps({ sub: COS_USER });
     const app = await buildServer(deps);
-    const res = await app.inject({ method: 'POST', url: `/drafts/${DRAFT_ID}/approve`, headers: auth });
+    const res = await app.inject({
+      method: 'POST',
+      url: `/drafts/${DRAFT_ID}/approve`,
+      headers: auth,
+    });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toMatchObject({ status: 'sent', sesMessageId: 'ses_msg_1', recipientCount: 42 });
+    expect(res.json()).toMatchObject({
+      status: 'sent',
+      sesMessageId: 'ses_msg_1',
+      recipientCount: 42,
+    });
     expect(deps.draftRepository.approve).toHaveBeenCalledTimes(1);
     expect(deps.emailSender.send).toHaveBeenCalledTimes(1);
     expect(deps.auditWriter.sent).toHaveBeenCalledTimes(1);

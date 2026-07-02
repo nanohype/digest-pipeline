@@ -15,7 +15,9 @@ interface User {
 }
 
 export function AuthStatus() {
-  const [state, setState] = useState<{ status: 'loading' } | { status: 'in'; user: User } | { status: 'out' }>({
+  const [state, setState] = useState<
+    { status: 'loading' } | { status: 'in'; user: User } | { status: 'out' }
+  >({
     status: 'loading',
   });
 

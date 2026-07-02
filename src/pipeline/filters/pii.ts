@@ -17,7 +17,12 @@
  * the Bedrock call and on the LLM output.
  */
 
-import { redact, scan, assertNoPii as assertNoPiiAgainstCatalog, type PiiFinding } from '../../runtime/pii.js';
+import {
+  redact,
+  scan,
+  assertNoPii as assertNoPiiAgainstCatalog,
+  type PiiFinding,
+} from '../../runtime/pii.js';
 import type { SourceItem, SanitizedSourceItem } from '../types.js';
 
 /** Replace every match of the org-wide catalog with its typed token. */

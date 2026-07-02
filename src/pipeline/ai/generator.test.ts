@@ -115,9 +115,9 @@ describe('NewsletterGenerator', () => {
     const send = vi.fn().mockResolvedValue(bedrockReply(FULL_DRAFT));
     const deps = makeDeps({ send, baselineKeys: ['2026-15.md'] });
     // s3.send resolves a GetObject-shaped body for the one baseline key.
-    (deps.s3 as unknown as { send: ReturnType<typeof vi.fn> }).send = vi
-      .fn()
-      .mockResolvedValue({ Body: { transformToString: async () => 'PRIOR APPROVED NEWSLETTER TEXT' } });
+    (deps.s3 as unknown as { send: ReturnType<typeof vi.fn> }).send = vi.fn().mockResolvedValue({
+      Body: { transformToString: async () => 'PRIOR APPROVED NEWSLETTER TEXT' },
+    });
     const generator = new NewsletterGenerator(deps);
 
     const result = await generator.generate('run-3', SECTIONS);

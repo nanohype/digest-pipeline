@@ -11,7 +11,8 @@
   --danger: #ef4444;
   --border: #222b3d;
   --radius: 10px;
-  --font-stack: ui-sans-serif, -apple-system, 'SF Pro Text', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-stack:
+    ui-sans-serif, -apple-system, 'SF Pro Text', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 }
 
 * {

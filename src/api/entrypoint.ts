@@ -42,7 +42,10 @@ const RuntimeEnvSchema = z.object({
 
 type RuntimeEnv = z.infer<typeof RuntimeEnvSchema>;
 
-async function resolveDatabaseUrl(config: ReturnType<typeof loadApiConfig>, env: RuntimeEnv): Promise<string> {
+async function resolveDatabaseUrl(
+  config: ReturnType<typeof loadApiConfig>,
+  env: RuntimeEnv
+): Promise<string> {
   if (env.DATABASE_URL) return env.DATABASE_URL;
   if (!env.DATABASE_SECRET_ID) {
     throw new Error('Either DATABASE_URL or DATABASE_SECRET_ID must be set');
@@ -57,7 +60,11 @@ function createSesEmailSender(region: string, env: RuntimeEnv): EmailSender {
   // company-wide email — so bound the socket and keep the SDK to a single
   // attempt rather than wrapping in withRetry. A timed-out send surfaces to
   // the approver, who can retry deliberately.
-  const client = new SESClient({ region, requestHandler: awsRequestHandler(15_000), maxAttempts: 1 });
+  const client = new SESClient({
+    region,
+    requestHandler: awsRequestHandler(15_000),
+    maxAttempts: 1,
+  });
   const recipients = env.NEWSLETTER_RECIPIENT_LIST.split(',')
     .map((r) => r.trim())
     .filter(Boolean);

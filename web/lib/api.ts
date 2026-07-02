@@ -19,7 +19,11 @@ function apiBaseUrl(): string {
 // handler can never hang on a wedged upstream.
 const UPSTREAM_TIMEOUT_MS = 15_000;
 
-export async function proxyRequest(method: 'GET' | 'POST', path: string, body?: unknown): Promise<NextResponse> {
+export async function proxyRequest(
+  method: 'GET' | 'POST',
+  path: string,
+  body?: unknown
+): Promise<NextResponse> {
   const accessToken = await getAccessToken();
   if (!accessToken) {
     return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });

@@ -17,5 +17,7 @@ export const config = {
   // withAuth() in that route reads a stale (un-refreshed) session and
   // returns user: null — the AuthStatus header then shows "Sign in" even
   // when the user is signed in.
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|callback|api/health|api/auth/sign-in|api/auth/sign-out).*)'],
+  matcher: [
+    '/((?!_next/static|_next/image|favicon.ico|callback|api/health|api/auth/sign-in|api/auth/sign-out).*)',
+  ],
 };

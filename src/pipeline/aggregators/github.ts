@@ -15,12 +15,19 @@ const TIMEOUT_MS = 8_000;
 const MAX_ITEMS = 20;
 const SKIP_LABELS = new Set(['chore', 'skip-digest-pipeline', 'internal', 'dependencies']);
 
-export const aggregateGitHub: Aggregator = async (ctx: AggregatorContext): Promise<AggregationResult> => {
+export const aggregateGitHub: Aggregator = async (
+  ctx: AggregatorContext
+): Promise<AggregationResult> => {
   const { runId, since, resolveIdentity, services } = ctx;
   const start = Date.now();
   try {
     const prs = await withRetry(
-      () => withTimeout(services.github.listMergedPRsSince(since), TIMEOUT_MS, 'github.listMergedPRsSince'),
+      () =>
+        withTimeout(
+          services.github.listMergedPRsSince(since),
+          TIMEOUT_MS,
+          'github.listMergedPRsSince'
+        ),
       {
         attempts: 3,
         initialDelayMs: 200,
@@ -42,7 +49,12 @@ export const aggregateGitHub: Aggregator = async (ctx: AggregatorContext): Promi
           url: pr.htmlUrl,
           author: author ?? undefined,
           publishedAt: new Date(pr.mergedAt),
-          rawSignals: { prNumber: pr.number, repo: pr.repo, labels: pr.labels, hasDescription: Boolean(pr.body) },
+          rawSignals: {
+            prNumber: pr.number,
+            repo: pr.repo,
+            labels: pr.labels,
+            hasDescription: Boolean(pr.body),
+          },
         })
       );
     }

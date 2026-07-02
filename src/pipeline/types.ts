@@ -5,7 +5,12 @@
 
 export type DigestPipelineStatus = 'PENDING' | 'APPROVED' | 'EXPIRED' | 'SENT' | 'FAILED';
 
-export type SectionName = 'what_shipped' | 'whats_coming' | 'new_joiners' | 'wins_recognition' | 'the_ask';
+export type SectionName =
+  | 'what_shipped'
+  | 'whats_coming'
+  | 'new_joiners'
+  | 'wins_recognition'
+  | 'the_ask';
 
 export interface SourceItem {
   id: string;

@@ -14,7 +14,10 @@ export function levenshteinDistance(a: string, b: string): number {
   );
   for (let i = 1; i <= m; i++) {
     for (let j = 1; j <= n; j++) {
-      dp[i][j] = a[i - 1] === b[j - 1] ? dp[i - 1][j - 1] : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+      dp[i][j] =
+        a[i - 1] === b[j - 1]
+          ? dp[i - 1][j - 1]
+          : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
     }
   }
   return dp[m][n];
@@ -31,6 +34,9 @@ function approximateDistance(a: string, b: string): number {
     [a.slice(-SAMPLE), b.slice(-SAMPLE)],
   ];
   const sampleRate =
-    samples.reduce((sum, [sa, sb]) => sum + levenshteinDistance(sa, sb) / Math.max(sa.length, 1), 0) / samples.length;
+    samples.reduce(
+      (sum, [sa, sb]) => sum + levenshteinDistance(sa, sb) / Math.max(sa.length, 1),
+      0
+    ) / samples.length;
   return Math.round(sampleRate * Math.max(a.length, b.length));
 }

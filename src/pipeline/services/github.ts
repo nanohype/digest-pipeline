@@ -59,7 +59,9 @@ export function createOctokitGitHubService(config: GitHubServiceConfig): GitHubS
             mergedAt: pr.merged_at,
             authorLogin: pr.user?.login ?? 'unknown',
             body: pr.body ?? undefined,
-            labels: pr.labels.map((l) => (typeof l === 'string' ? l : (l.name ?? ''))).filter(Boolean),
+            labels: pr.labels
+              .map((l) => (typeof l === 'string' ? l : (l.name ?? '')))
+              .filter(Boolean),
             repo: `${owner}/${repo}`,
           });
         }

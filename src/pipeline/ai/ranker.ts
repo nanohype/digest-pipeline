@@ -8,7 +8,10 @@ import { levenshteinDistance } from '../../common/string.js';
 import { SECTION_ORDER, SECTION_DISPLAY_NAMES } from '../sections.js';
 import type { SanitizedSourceItem, RankedSection, SectionName } from '../types.js';
 
-export function rankAndSection(allItems: SanitizedSourceItem[], now: Date = new Date()): RankedSection[] {
+export function rankAndSection(
+  allItems: SanitizedSourceItem[],
+  now: Date = new Date()
+): RankedSection[] {
   const grouped = new Map<SectionName, SanitizedSourceItem[]>();
   for (const section of SECTION_ORDER) grouped.set(section, []);
   for (const item of allItems) {
@@ -22,7 +25,12 @@ export function rankAndSection(allItems: SanitizedSourceItem[], now: Date = new 
       .map((item) => ({ item, score: scoreItem(item, now) }))
       .sort((a, b) => b.score - a.score)
       .map(({ item }) => item);
-    return { name: sectionName, displayName: SECTION_DISPLAY_NAMES[sectionName], items: scored, truncatedCount: 0 };
+    return {
+      name: sectionName,
+      displayName: SECTION_DISPLAY_NAMES[sectionName],
+      items: scored,
+      truncatedCount: 0,
+    };
   });
 }
 
@@ -31,8 +39,10 @@ function scoreItem(item: SanitizedSourceItem, now: Date): number {
   const ageHours = (now.getTime() - item.publishedAt.getTime()) / (1000 * 60 * 60);
   score += Math.max(0, 40 - ageHours * 0.5);
   const signals = item.rawSignals;
-  if (typeof signals['reactionCount'] === 'number') score += Math.min(30, signals['reactionCount'] * 3);
-  if (typeof signals['threadReplies'] === 'number') score += Math.min(15, signals['threadReplies'] * 2);
+  if (typeof signals['reactionCount'] === 'number')
+    score += Math.min(30, signals['reactionCount'] * 3);
+  if (typeof signals['threadReplies'] === 'number')
+    score += Math.min(15, signals['threadReplies'] * 2);
   if (typeof signals['priority'] === 'number') score += Math.max(0, (5 - signals['priority']) * 5);
   if (item.author) score += 5;
   if (item.description) score += 5;

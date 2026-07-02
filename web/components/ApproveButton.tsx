@@ -12,7 +12,9 @@ interface ApproveButtonProps {
 
 export function ApproveButton({ onApprove, isApproving, disabled }: ApproveButtonProps) {
   const handleClick = async () => {
-    const confirmed = window.confirm('Send this newsletter to the entire company?\n\nThis action cannot be undone.');
+    const confirmed = window.confirm(
+      'Send this newsletter to the entire company?\n\nThis action cannot be undone.'
+    );
     if (!confirmed) return;
     await onApprove();
   };

@@ -59,7 +59,12 @@ export class AuditWriter {
     await this.write(runId, 'APPROVED', approverUserId, { draftId });
   }
 
-  async sent(runId: string, draftId: string, sesMessageId: string, recipientCount: number): Promise<void> {
+  async sent(
+    runId: string,
+    draftId: string,
+    sesMessageId: string,
+    recipientCount: number
+  ): Promise<void> {
     await this.write(runId, 'SENT', 'system', { draftId, sesMessageId, recipientCount });
   }
 

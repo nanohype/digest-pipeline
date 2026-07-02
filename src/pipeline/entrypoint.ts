@@ -13,7 +13,12 @@ import { WorkOsIdentityResolver } from './identity/workos.js';
 import { NewsletterGenerator } from './ai/generator.js';
 import { AuditWriter } from './audit.js';
 import { getLogger } from '../common/logger.js';
-import { runPipeline, type PipelineDeps, type PipelineDraftStore, type PipelineNotifier } from './index.js';
+import {
+  runPipeline,
+  type PipelineDeps,
+  type PipelineDraftStore,
+  type PipelineNotifier,
+} from './index.js';
 import { createDbPool } from '../data/pool.js';
 import { createPostgresDraftRepository } from '../data/drafts.js';
 import { createPostgresAuditDatabase } from '../data/audit.js';

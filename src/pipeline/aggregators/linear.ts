@@ -13,13 +13,20 @@ import type { Aggregator, AggregatorContext } from './types.js';
 const TIMEOUT_MS = 8_000;
 const MAX_ASKS = 5;
 
-export const aggregateLinear: Aggregator = async (ctx: AggregatorContext): Promise<AggregationResult> => {
+export const aggregateLinear: Aggregator = async (
+  ctx: AggregatorContext
+): Promise<AggregationResult> => {
   const { runId, since, resolveIdentity, services } = ctx;
   const start = Date.now();
   try {
     const [closedEpics, upcomingMilestones, askItems] = await Promise.all([
       withRetry(
-        () => withTimeout(services.linear.listClosedEpicsSince(since), TIMEOUT_MS, 'linear.listClosedEpicsSince'),
+        () =>
+          withTimeout(
+            services.linear.listClosedEpicsSince(since),
+            TIMEOUT_MS,
+            'linear.listClosedEpicsSince'
+          ),
         {
           attempts: 3,
           initialDelayMs: 200,
@@ -27,18 +34,31 @@ export const aggregateLinear: Aggregator = async (ctx: AggregatorContext): Promi
         }
       ),
       withRetry(
-        () => withTimeout(services.linear.listUpcomingMilestones(), TIMEOUT_MS, 'linear.listUpcomingMilestones'),
+        () =>
+          withTimeout(
+            services.linear.listUpcomingMilestones(),
+            TIMEOUT_MS,
+            'linear.listUpcomingMilestones'
+          ),
         {
           attempts: 3,
           initialDelayMs: 200,
           jitter: true,
         }
       ),
-      withRetry(() => withTimeout(services.linear.listAskLabeledIssues(), TIMEOUT_MS, 'linear.listAskLabeledIssues'), {
-        attempts: 3,
-        initialDelayMs: 200,
-        jitter: true,
-      }),
+      withRetry(
+        () =>
+          withTimeout(
+            services.linear.listAskLabeledIssues(),
+            TIMEOUT_MS,
+            'linear.listAskLabeledIssues'
+          ),
+        {
+          attempts: 3,
+          initialDelayMs: 200,
+          jitter: true,
+        }
+      ),
     ]);
 
     const items: SanitizedSourceItem[] = [];
@@ -56,7 +76,11 @@ export const aggregateLinear: Aggregator = async (ctx: AggregatorContext): Promi
           url: epic.url,
           author: author ?? undefined,
           publishedAt: new Date(epic.completedAt),
-          rawSignals: { identifier: epic.identifier, teamName: epic.teamName, priority: epic.priority },
+          rawSignals: {
+            identifier: epic.identifier,
+            teamName: epic.teamName,
+            priority: epic.priority,
+          },
         })
       );
     }

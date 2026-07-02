@@ -45,7 +45,8 @@ export function createNotionService(config: NotionServiceConfig): NotionService 
       const pages: NotionPage[] = [];
       for (const result of response.results) {
         if (!isFullPage(result)) continue;
-        if (result.parent.type !== 'database_id' || result.parent.database_id !== config.databaseId) continue;
+        if (result.parent.type !== 'database_id' || result.parent.database_id !== config.databaseId)
+          continue;
 
         const title = extractTitle(result.properties);
         if (!title) continue;
@@ -83,7 +84,8 @@ function extractAuthorName(properties: Record<string, unknown>): string | undefi
       rich_text?: Array<{ plain_text?: string }>;
     };
     if (prop.type === 'people' && prop.people?.[0]?.name) return prop.people[0].name;
-    if (prop.type === 'rich_text' && prop.rich_text?.[0]?.plain_text) return prop.rich_text[0].plain_text;
+    if (prop.type === 'rich_text' && prop.rich_text?.[0]?.plain_text)
+      return prop.rich_text[0].plain_text;
   }
   return undefined;
 }
