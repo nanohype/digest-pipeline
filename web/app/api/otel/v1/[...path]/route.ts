@@ -16,7 +16,7 @@ const COLLECTOR_TIMEOUT_MS = 5_000;
 
 export async function POST(
   req: Request,
-  { params }: { params: Promise<{ path: string[] }> }
+  { params }: { params: Promise<{ path: string[] }> },
 ): Promise<NextResponse> {
   const { path } = await params;
   const body = await req.arrayBuffer();

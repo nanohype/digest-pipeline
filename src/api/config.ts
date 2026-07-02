@@ -21,7 +21,7 @@ const EnvSchema = z.object({
       s
         .split(',')
         .map((o) => o.trim())
-        .filter(Boolean)
+        .filter(Boolean),
     ),
 });
 

@@ -47,7 +47,7 @@ export function createPostgresDraftRepository(pool: Pool): DraftRepository {
         `INSERT INTO drafts (run_id, week_of, status, sections, full_text)
          VALUES ($1, $2, 'PENDING', $3::jsonb, $4)
          RETURNING id`,
-        [runId, weekOf, JSON.stringify(sections), fullText]
+        [runId, weekOf, JSON.stringify(sections), fullText],
       );
       return rows[0].id;
     },
@@ -58,7 +58,7 @@ export function createPostgresDraftRepository(pool: Pool): DraftRepository {
                 created_at, approved_by, approved_at, sent_at, ses_message_id
          FROM drafts
          WHERE id = $1`,
-        [id]
+        [id],
       );
       const row = rows[0];
       return row ? rowToDraft(row) : null;
@@ -70,7 +70,7 @@ export function createPostgresDraftRepository(pool: Pool): DraftRepository {
          SET edited_text = $2,
              updated_at = NOW()
          WHERE id = $1 AND status = 'PENDING'`,
-        [id, editedText]
+        [id, editedText],
       );
     },
 
@@ -82,7 +82,7 @@ export function createPostgresDraftRepository(pool: Pool): DraftRepository {
              approved_at = NOW(),
              updated_at = NOW()
          WHERE id = $1 AND status = 'PENDING'`,
-        [id, approverUserId]
+        [id, approverUserId],
       );
       if (result.rowCount === 0) {
         throw new Error(`Draft ${id} could not be approved (not PENDING)`);
@@ -96,7 +96,7 @@ export function createPostgresDraftRepository(pool: Pool): DraftRepository {
              sent_at = NOW(),
              updated_at = NOW()
          WHERE id = $1 AND status IN ('APPROVED', 'PENDING')`,
-        [id]
+        [id],
       );
     },
   };

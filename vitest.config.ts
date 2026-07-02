@@ -18,9 +18,10 @@ export default defineConfig({
       exclude: [
         'src/**/*.test.ts',
         'src/**/entrypoint.ts',
-        // Thin SDK adapters + composition wiring — exercised against live
-        // services / in integration, not unit-tested by design (several are
-        // documented stubs). The gate measures behavioral logic, not plumbing.
+        // Thin per-service SDK adapters (real, complete implementations) —
+        // exercised through the pipeline integration test with fakes at their
+        // ports, not unit-tested per adapter. The gate measures behavioral
+        // logic, not plumbing.
         'src/pipeline/services/**',
         'src/common/otel-bootstrap.ts',
         'src/common/metrics.ts',

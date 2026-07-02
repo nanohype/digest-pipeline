@@ -103,7 +103,7 @@ describe('API server', () => {
 
   it('rejects edits on a non-PENDING draft with 409', async () => {
     const app = await buildServer(
-      buildDeps({ draft: sampleDraft({ status: 'SENT' }), sub: COS_USER })
+      buildDeps({ draft: sampleDraft({ status: 'SENT' }), sub: COS_USER }),
     );
     const res = await app.inject({
       method: 'POST',

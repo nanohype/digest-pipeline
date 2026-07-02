@@ -85,7 +85,7 @@ describe('aggregateGitHub', () => {
       team: 'Billing',
     };
     const result = await aggregateGitHub(
-      buildContext({ services: { github }, identities: { github: identity } })
+      buildContext({ services: { github }, identities: { github: identity } }),
     );
     expect(result.source).toBe('github');
     expect(result.items).toHaveLength(1);
@@ -198,7 +198,7 @@ describe('aggregateSlack', () => {
     ];
     const slack: SlackService = {
       listChannelHistory: vi.fn(async (channel) =>
-        channel === 'C_ANN' ? announcements : teamMessages
+        channel === 'C_ANN' ? announcements : teamMessages,
       ),
     };
     const result = await aggregateSlack(
@@ -211,7 +211,7 @@ describe('aggregateSlack', () => {
             hrBotUserIds: ['U_HR_BOT'],
           },
         },
-      })
+      }),
     );
     const sections = result.items.map((i) => ({ section: i.section, text: i.title }));
     expect(sections).toHaveLength(2);

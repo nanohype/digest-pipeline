@@ -27,7 +27,17 @@ const DEST = join(ROOT, 'src', 'runtime');
 
 // The modules this app consumes. Tests stay upstream with the library —
 // this repo tests its own wiring, not library internals.
-const MODULES = ['resilience.ts', 'registry.ts', 'pii.ts', 'workos-directory.ts'];
+const MODULES = ['metrics.ts', 'pii.ts', 'registry.ts', 'resilience.ts', 'workos-directory.ts'];
+
+// Org-canonical configs carried the same way: byte-identical, drift-gated.
+// Resolved relative to the runtime source (library/runtime/src → library/config).
+const CONFIGS = [
+  {
+    src: join(SRC, '..', '..', 'config', 'prettierrc.json'),
+    dest: join(ROOT, '.prettierrc.json'),
+    name: '.prettierrc.json',
+  },
+];
 
 const CHECK = process.argv.includes('--check');
 
@@ -56,6 +66,18 @@ async function main() {
         drift++;
       }
     }
+    for (const cfg of CONFIGS) {
+      const [source, copy] = await Promise.all([
+        readFile(cfg.src, 'utf8'),
+        readFile(cfg.dest, 'utf8').catch(() => null),
+      ]);
+      if (copy === source) {
+        console.log(`ok  ${cfg.name}`);
+      } else {
+        console.error(`DRIFT  ${cfg.name} — run \`npm run sync:runtime\``);
+        drift++;
+      }
+    }
     if (drift > 0) process.exit(1);
     return;
   }
@@ -64,6 +86,10 @@ async function main() {
   for (const module of MODULES) {
     await copyFile(join(SRC, module), join(DEST, module));
     console.log(`vendored ${module} -> src/runtime/${module}`);
+  }
+  for (const cfg of CONFIGS) {
+    await copyFile(cfg.src, cfg.dest);
+    console.log(`vendored ${cfg.name}`);
   }
 }
 

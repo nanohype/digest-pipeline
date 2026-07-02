@@ -59,7 +59,7 @@ export class NewsletterGenerator {
 
   async generate(
     runId: string,
-    sections: RankedSection[]
+    sections: RankedSection[],
   ): Promise<{ fullText: string; sections: RankedSection[] }> {
     const cappedSections = sections.map((s) => ({
       ...s,
@@ -76,7 +76,7 @@ export class NewsletterGenerator {
         } finally {
           span.end();
         }
-      }
+      },
     );
     const systemPrompt = this.buildSystemPrompt(voiceExamples);
     const userPrompt = this.buildUserPrompt(runId, cappedSections);
@@ -134,7 +134,7 @@ export class NewsletterGenerator {
   private async callBedrock(
     _runId: string,
     systemPrompt: string,
-    userPrompt: string
+    userPrompt: string,
   ): Promise<string> {
     // Transient Bedrock errors (throttling, 5xx) are retried with jittered
     // exponential backoff. A validation error will still exhaust the budget
@@ -167,7 +167,7 @@ export class NewsletterGenerator {
             const response = await withTimeout(
               this.bedrock.send(command),
               BEDROCK_TIMEOUT_MS,
-              'bedrock.invoke_model'
+              'bedrock.invoke_model',
             );
             const decoded = JSON.parse(new TextDecoder().decode(response.body));
             const usage = decoded.usage as
@@ -181,7 +181,7 @@ export class NewsletterGenerator {
             const recordTokens = (
               kind: BedrockTokenKind,
               count: number | undefined,
-              attribute: string
+              attribute: string,
             ) => {
               if (count) {
                 bedrockTokens.add(count, { kind, model: this.config.llm.modelId });
@@ -194,7 +194,7 @@ export class NewsletterGenerator {
             recordTokens('cache_write', usage?.cache_creation_input_tokens, 'tokens.cache_write');
             return decoded.content?.[0]?.text ?? '';
           },
-          { attempts: 3, initialDelayMs: 500, maxDelayMs: 5_000, jitter: true }
+          { attempts: 3, initialDelayMs: 500, maxDelayMs: 5_000, jitter: true },
         );
       } finally {
         span.end();
@@ -208,7 +208,7 @@ export class NewsletterGenerator {
     // ("No new joiners this week") and inflates draft length; letting it omit
     // empty sections keeps the newsletter tight on sparse weeks.
     const populatedSectionNames = new Set<keyof typeof SECTION_DISPLAY_NAMES>(
-      expectedSections.filter((s) => s.items.length > 0).map((s) => s.name)
+      expectedSections.filter((s) => s.items.length > 0).map((s) => s.name),
     );
     const requiredHeaders = (
       Object.keys(SECTION_DISPLAY_NAMES) as Array<keyof typeof SECTION_DISPLAY_NAMES>
@@ -244,7 +244,7 @@ export class NewsletterGenerator {
       const response = await withTimeout(
         this.s3.send(new GetObjectCommand({ Bucket: this.config.voiceBaselineBucket, Key: key })),
         S3_TIMEOUT_MS,
-        'bedrock.load_voice_baseline'
+        'bedrock.load_voice_baseline',
       );
       return (await response.Body?.transformToString()) ?? null;
     } catch {

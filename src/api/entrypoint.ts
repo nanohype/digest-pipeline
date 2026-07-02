@@ -44,7 +44,7 @@ type RuntimeEnv = z.infer<typeof RuntimeEnvSchema>;
 
 async function resolveDatabaseUrl(
   config: ReturnType<typeof loadApiConfig>,
-  env: RuntimeEnv
+  env: RuntimeEnv,
 ): Promise<string> {
   if (env.DATABASE_URL) return env.DATABASE_URL;
   if (!env.DATABASE_SECRET_ID) {
