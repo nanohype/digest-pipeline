@@ -16,7 +16,7 @@ const MAX_ITEMS = 20;
 const SKIP_LABELS = new Set(['chore', 'skip-digest-pipeline', 'internal', 'dependencies']);
 
 export const aggregateGitHub: Aggregator = async (
-  ctx: AggregatorContext
+  ctx: AggregatorContext,
 ): Promise<AggregationResult> => {
   const { runId, since, resolveIdentity, services } = ctx;
   const start = Date.now();
@@ -26,13 +26,13 @@ export const aggregateGitHub: Aggregator = async (
         withTimeout(
           services.github.listMergedPRsSince(since),
           TIMEOUT_MS,
-          'github.listMergedPRsSince'
+          'github.listMergedPRsSince',
         ),
       {
         attempts: 3,
         initialDelayMs: 200,
         jitter: true,
-      }
+      },
     );
 
     const items: SanitizedSourceItem[] = [];
@@ -55,7 +55,7 @@ export const aggregateGitHub: Aggregator = async (
             labels: pr.labels,
             hasDescription: Boolean(pr.body),
           },
-        })
+        }),
       );
     }
     return { source: 'github', items, durationMs: Date.now() - start };

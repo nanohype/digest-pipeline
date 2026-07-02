@@ -28,7 +28,7 @@ async function ensureMigrationsTable(pool: Pool): Promise<void> {
 
 async function getApplied(pool: Pool): Promise<string[]> {
   const { rows } = await pool.query<{ name: string }>(
-    'SELECT name FROM schema_migrations ORDER BY name ASC'
+    'SELECT name FROM schema_migrations ORDER BY name ASC',
   );
   return rows.map((r) => r.name);
 }
@@ -73,7 +73,7 @@ async function up(pool: Pool): Promise<void> {
 async function down(pool: Pool): Promise<void> {
   await ensureMigrationsTable(pool);
   const { rows } = await pool.query<{ name: string }>(
-    'SELECT name FROM schema_migrations ORDER BY name DESC LIMIT 1'
+    'SELECT name FROM schema_migrations ORDER BY name DESC LIMIT 1',
   );
   const last = rows[0]?.name;
   if (!last) {

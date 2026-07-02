@@ -37,7 +37,7 @@ export interface AuditWriterPort {
     draftId: string,
     editorUserId: string,
     originalText: string,
-    editedText: string
+    editedText: string,
   ): Promise<EditStats>;
   approved(runId: string, draftId: string, approverUserId: string): Promise<void>;
   sent(runId: string, draftId: string, sesMessageId: string, recipientCount: number): Promise<void>;

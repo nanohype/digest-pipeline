@@ -31,7 +31,7 @@ export function createS3VoiceBaselineService(config: VoiceBaselineConfig): Voice
             Prefix: config.prefix,
             MaxKeys: config.maxKeys ?? 100,
             ContinuationToken: continuationToken,
-          })
+          }),
         );
         for (const object of response.Contents ?? []) {
           if (object.Key) keys.push(object.Key);

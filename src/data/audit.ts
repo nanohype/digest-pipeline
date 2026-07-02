@@ -18,7 +18,7 @@ export function createPostgresAuditDatabase(pool: Pool): DatabaseClient {
       await pool.query(
         `INSERT INTO audit_events (run_id, event_type, actor, payload, created_at)
          VALUES ($1, $2, $3, $4, $5)`,
-        [event.runId, event.eventType, event.actor, event.payload, event.createdAt]
+        [event.runId, event.eventType, event.actor, event.payload, event.createdAt],
       );
     },
   };
@@ -29,12 +29,12 @@ export function createPostgresAuditWriter(pool: Pool): AuditWriterPort {
     runId: string,
     eventType: string,
     actor: string,
-    payload: Record<string, unknown>
+    payload: Record<string, unknown>,
   ): Promise<void> => {
     await pool.query(
       `INSERT INTO audit_events (run_id, event_type, actor, payload)
        VALUES ($1, $2, $3, $4)`,
-      [runId, eventType, actor, payload]
+      [runId, eventType, actor, payload],
     );
   };
 
@@ -63,7 +63,7 @@ export function createPostgresAuditWriter(pool: Pool): AuditWriterPort {
         `INSERT INTO email_analytics (draft_id, ses_message_id)
          VALUES ($1, $2)
          ON CONFLICT (ses_message_id) DO NOTHING`,
-        [draftId, sesMessageId]
+        [draftId, sesMessageId],
       );
     },
   };

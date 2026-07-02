@@ -80,7 +80,7 @@ export async function runPipeline(deps: PipelineDeps): Promise<PipelineRunResult
     const aggregatorRegistry = buildAggregatorRegistry();
     const resolveIdentity = async (
       source: IdentitySource,
-      externalId: string
+      externalId: string,
     ): Promise<ResolvedIdentity | null> => {
       if (source === 'github') return resolver.resolveGitHubUser(externalId);
       if (source === 'linear') return resolver.resolveLinearUser(externalId);
@@ -100,10 +100,10 @@ export async function runPipeline(deps: PipelineDeps): Promise<PipelineRunResult
       span.setAttribute('source.count', sourceNames.length);
       try {
         const settled = await Promise.allSettled(
-          sourceNames.map((name) => aggregatorRegistry.get(name)(ctx))
+          sourceNames.map((name) => aggregatorRegistry.get(name)(ctx)),
         );
         const results: AggregationResult[] = settled.map((r, i) =>
-          settledToResult(r, sourceNames[i])
+          settledToResult(r, sourceNames[i]),
         );
         for (const r of results) {
           sourceItems.add(r.items.length, { source: r.source });
@@ -156,7 +156,7 @@ export async function runPipeline(deps: PipelineDeps): Promise<PipelineRunResult
         const skeleton = buildSkeletonDraft(rankedSections);
         await notifier.alert(
           runId,
-          `Bedrock generation failed — raw skeleton draft posted for manual editing. Error: ${message}`
+          `Bedrock generation failed — raw skeleton draft posted for manual editing. Error: ${message}`,
         );
         return { draft: skeleton, usedSkeleton: true };
       } finally {
@@ -180,7 +180,7 @@ export async function runPipeline(deps: PipelineDeps): Promise<PipelineRunResult
             itemCount: r.items.length,
             error: r.error,
           })),
-          0
+          0,
         );
         await notifier.notifyDraftReady(runId, id, draft.fullText);
         span.setAttribute('draft.id', id);
@@ -204,7 +204,7 @@ export async function runPipeline(deps: PipelineDeps): Promise<PipelineRunResult
 
 function settledToResult(
   result: PromiseSettledResult<AggregationResult>,
-  source: string
+  source: string,
 ): AggregationResult {
   if (result.status === 'fulfilled') return result.value;
   return {

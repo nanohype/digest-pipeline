@@ -1,7 +1,9 @@
 /**
- * Custom digest-pipeline metrics. Created lazily on first access so the
- * MeterProvider has a chance to register before instruments are
- * created.
+ * Custom digest-pipeline metrics. The lazy-instrument core (namespace
+ * qualification, per-name caching, creation deferred so the MeterProvider
+ * registers first, no-op degradation without one) is the vendored
+ * `@nanohype/runtime` metrics module; this file declares the app's
+ * instruments over it.
  *
  * Naming follows OTel conventions: `digest-pipeline.<area>.<unit>` with
  * dot-separated segments. Cardinality is intentionally low — sources
@@ -11,20 +13,22 @@
  * audit_events — so the series count stays bounded.
  */
 
-import { metrics, type Counter, type Histogram } from '@opentelemetry/api';
+import type { Counter, Histogram } from '@opentelemetry/api';
 
-const meter = metrics.getMeter('digest-pipeline');
+import { createMetrics } from '../runtime/metrics.js';
 
-export const runDuration: Histogram = meter.createHistogram('digest-pipeline.run.duration_ms', {
+const metrics = createMetrics({ meterName: 'digest-pipeline', namespace: 'digest-pipeline' });
+
+export const runDuration: Histogram = metrics.histogramInstrument('run.duration_ms', {
   description: 'Pipeline run wall-clock time',
   unit: 'ms',
 });
 
-export const sourceItems: Counter = meter.createCounter('digest-pipeline.source.items', {
+export const sourceItems: Counter = metrics.counterInstrument('source.items', {
   description: 'Items returned by aggregator',
 });
 
-export const sourceFailure: Counter = meter.createCounter('digest-pipeline.source.failure', {
+export const sourceFailure: Counter = metrics.counterInstrument('source.failure', {
   description: 'Aggregator failures by source',
 });
 
@@ -35,20 +39,20 @@ export const sourceFailure: Counter = meter.createCounter('digest-pipeline.sourc
 // Grafana dashboard. Kept low-cardinality on purpose.
 export type BedrockTokenKind = 'input' | 'output' | 'cache_read' | 'cache_write';
 
-export const bedrockTokens: Counter = meter.createCounter('digest-pipeline.bedrock.tokens', {
+export const bedrockTokens: Counter = metrics.counterInstrument('bedrock.tokens', {
   description: 'Bedrock token usage',
   unit: 'tokens',
 });
 
-export const bedrockFallback: Counter = meter.createCounter('digest-pipeline.bedrock.fallback', {
+export const bedrockFallback: Counter = metrics.counterInstrument('bedrock.fallback', {
   description: 'Skeleton-fallback runs (Bedrock generation failed)',
 });
 
-export const draftEditRate: Histogram = meter.createHistogram('digest-pipeline.draft.edit_rate', {
+export const draftEditRate: Histogram = metrics.histogramInstrument('draft.edit_rate', {
   description: 'Per-draft Levenshtein edit rate (0-1)',
 });
 
-export const emailSent: Counter = meter.createCounter('digest-pipeline.email.sent', {
+export const emailSent: Counter = metrics.counterInstrument('email.sent', {
   description: 'Newsletter sends',
   unit: 'emails',
 });

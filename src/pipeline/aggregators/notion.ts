@@ -13,7 +13,7 @@ import type { Aggregator, AggregatorContext } from './types.js';
 const TIMEOUT_MS = 8_000;
 
 export const aggregateNotion: Aggregator = async (
-  ctx: AggregatorContext
+  ctx: AggregatorContext,
 ): Promise<AggregationResult> => {
   const { runId, since, services } = ctx;
   const start = Date.now();
@@ -23,13 +23,13 @@ export const aggregateNotion: Aggregator = async (
         withTimeout(
           services.notion.listRecentPagesSince(since),
           TIMEOUT_MS,
-          'notion.listRecentPagesSince'
+          'notion.listRecentPagesSince',
         ),
       {
         attempts: 3,
         initialDelayMs: 200,
         jitter: true,
-      }
+      },
     );
 
     const items: SanitizedSourceItem[] = pages.map((page) =>
@@ -42,7 +42,7 @@ export const aggregateNotion: Aggregator = async (
         url: page.url,
         publishedAt: new Date(page.createdTime),
         rawSignals: { authorName: page.authorName, hasContent: Boolean(page.summary) },
-      })
+      }),
     );
 
     return { source: 'notion', items, durationMs: Date.now() - start };

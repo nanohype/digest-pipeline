@@ -22,7 +22,7 @@ const UPSTREAM_TIMEOUT_MS = 15_000;
 export async function proxyRequest(
   method: 'GET' | 'POST',
   path: string,
-  body?: unknown
+  body?: unknown,
 ): Promise<NextResponse> {
   const accessToken = await getAccessToken();
   if (!accessToken) {
@@ -44,7 +44,7 @@ export async function proxyRequest(
     const timedOut = err instanceof Error && err.name === 'TimeoutError';
     return NextResponse.json(
       { error: timedOut ? 'Upstream API timed out' : 'Upstream API unreachable' },
-      { status: timedOut ? 504 : 502 }
+      { status: timedOut ? 504 : 502 },
     );
   }
 

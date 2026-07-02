@@ -87,7 +87,7 @@ export default function ReviewPage({ params }: { params: Promise<RouteParams> })
         }
       }, 2_000);
     },
-    [draft]
+    [draft],
   );
 
   const handleApprove = async () => {

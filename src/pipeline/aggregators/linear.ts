@@ -14,7 +14,7 @@ const TIMEOUT_MS = 8_000;
 const MAX_ASKS = 5;
 
 export const aggregateLinear: Aggregator = async (
-  ctx: AggregatorContext
+  ctx: AggregatorContext,
 ): Promise<AggregationResult> => {
   const { runId, since, resolveIdentity, services } = ctx;
   const start = Date.now();
@@ -25,39 +25,39 @@ export const aggregateLinear: Aggregator = async (
           withTimeout(
             services.linear.listClosedEpicsSince(since),
             TIMEOUT_MS,
-            'linear.listClosedEpicsSince'
+            'linear.listClosedEpicsSince',
           ),
         {
           attempts: 3,
           initialDelayMs: 200,
           jitter: true,
-        }
+        },
       ),
       withRetry(
         () =>
           withTimeout(
             services.linear.listUpcomingMilestones(),
             TIMEOUT_MS,
-            'linear.listUpcomingMilestones'
+            'linear.listUpcomingMilestones',
           ),
         {
           attempts: 3,
           initialDelayMs: 200,
           jitter: true,
-        }
+        },
       ),
       withRetry(
         () =>
           withTimeout(
             services.linear.listAskLabeledIssues(),
             TIMEOUT_MS,
-            'linear.listAskLabeledIssues'
+            'linear.listAskLabeledIssues',
           ),
         {
           attempts: 3,
           initialDelayMs: 200,
           jitter: true,
-        }
+        },
       ),
     ]);
 
@@ -81,7 +81,7 @@ export const aggregateLinear: Aggregator = async (
             teamName: epic.teamName,
             priority: epic.priority,
           },
-        })
+        }),
       );
     }
     for (const milestone of upcomingMilestones) {
@@ -95,7 +95,7 @@ export const aggregateLinear: Aggregator = async (
           url: milestone.url,
           publishedAt: new Date(),
           rawSignals: { targetDate: milestone.targetDate, issueCount: milestone.issueCount },
-        })
+        }),
       );
     }
     for (const issue of askItems.slice(0, MAX_ASKS)) {
@@ -109,7 +109,7 @@ export const aggregateLinear: Aggregator = async (
           url: issue.url,
           publishedAt: new Date(issue.createdAt),
           rawSignals: { priority: issue.priority },
-        })
+        }),
       );
     }
     return { source: 'linear', items, durationMs: Date.now() - start };

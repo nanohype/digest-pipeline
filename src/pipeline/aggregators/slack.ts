@@ -23,7 +23,7 @@ const NEW_HIRE_PATTERNS = [
 ];
 
 export const aggregateSlack: Aggregator = async (
-  ctx: AggregatorContext
+  ctx: AggregatorContext,
 ): Promise<AggregationResult> => {
   const { runId, since, resolveIdentity, services, config } = ctx;
   const { announcementsChannelId, teamChannelId, hrBotUserIds } = config.slack;
@@ -36,26 +36,26 @@ export const aggregateSlack: Aggregator = async (
           withTimeout(
             services.slack.listChannelHistory(announcementsChannelId, since),
             TIMEOUT_MS,
-            'slack.history.announcements'
+            'slack.history.announcements',
           ),
         {
           attempts: 3,
           initialDelayMs: 200,
           jitter: true,
-        }
+        },
       ),
       withRetry(
         () =>
           withTimeout(
             services.slack.listChannelHistory(teamChannelId, since),
             TIMEOUT_MS,
-            'slack.history.team'
+            'slack.history.team',
           ),
         {
           attempts: 3,
           initialDelayMs: 200,
           jitter: true,
-        }
+        },
       ),
     ]);
 
@@ -80,7 +80,7 @@ export const aggregateSlack: Aggregator = async (
           author: author ?? undefined,
           publishedAt: new Date(Number(msg.ts) * 1000),
           rawSignals: { reactionCount: msg.reactionCount, threadReplies: msg.replyCount },
-        })
+        }),
       );
     }
     for (const msg of teamMessages) {
@@ -95,7 +95,7 @@ export const aggregateSlack: Aggregator = async (
           description: msg.text.slice(0, 500),
           publishedAt: new Date(Number(msg.ts) * 1000),
           rawSignals: { isNewHireIntro: true },
-        })
+        }),
       );
     }
     return { source: 'slack', items, durationMs: Date.now() - start };

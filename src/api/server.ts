@@ -111,7 +111,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
             ? { sub: claims.sub, aud: claims.aud, iss: claims.iss, exp: claims.exp }
             : null,
         },
-        'auth.verify-failed'
+        'auth.verify-failed',
       );
       reply.code(401).send({ error: 'Invalid or expired token' });
       return reply;
@@ -152,12 +152,12 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
         draft.id,
         user.sub,
         draft.fullText,
-        editedText
+        editedText,
       );
       draftEditRate.record(stats.editRate);
       await draftRepository.saveEditCheckpoint(draft.id, editedText, user.sub);
       reply.header('X-Run-Id', draft.runId).send({ status: 'saved' });
-    }
+    },
   );
 
   app.post(
@@ -197,7 +197,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
         sesMessageId: sesResult.messageId,
         recipientCount: sesResult.recipientCount,
       });
-    }
+    },
   );
 
   // Cast: Fastify's `loggerInstance` option types the instance with Pino's

@@ -13,7 +13,7 @@ import type { SourceItem } from '../types.js';
 describe('piiFilter', () => {
   it('redacts with typed tokens, not a generic marker', () => {
     expect(piiFilter('Ping sarah.doe+digest-pipeline@example.com later')).toBe(
-      'Ping [EMAIL] later'
+      'Ping [EMAIL] later',
     );
     expect(piiFilter('Offer of $150,000 base salary')).toContain('[COMPENSATION]');
   });
@@ -36,10 +36,10 @@ describe('piiFilter', () => {
   it('redacts the union categories this app previously lacked (secrets, aws, customer/infra)', () => {
     expect(piiFilter('rotate key AKIAIOSFODNN7EXAMPLE now')).toBe('rotate key [AWS_KEY] now');
     expect(piiFilter('leaked ghp_abcdefghijklmnopqrstuvwxyz0123456789')).toBe(
-      'leaked [GITHUB_PAT]'
+      'leaked [GITHUB_PAT]',
     );
     expect(piiFilter('bot token xoxb-123456789012-abcdefGHIJKL revoked')).toBe(
-      'bot token [SLACK_TOKEN] revoked'
+      'bot token [SLACK_TOKEN] revoked',
     );
     expect(piiFilter('deployed to 123456789012 aws')).toBe('deployed to [AWS_ACCOUNT] aws');
     expect(piiFilter('affects cust-99231 only')).toBe('affects [CUSTOMER_ID] only');
@@ -49,11 +49,11 @@ describe('piiFilter', () => {
 
   it('does not redact benign uses of common health/comp words', () => {
     expect(piiFilter('The team is in good health and morale is high.')).toBe(
-      'The team is in good health and morale is high.'
+      'The team is in good health and morale is high.',
     );
     expect(piiFilter('Base your decision on the data.')).toBe('Base your decision on the data.');
     expect(piiFilter('We are taking the lead on this project.')).toBe(
-      'We are taking the lead on this project.'
+      'We are taking the lead on this project.',
     );
   });
 
@@ -91,7 +91,7 @@ describe('assertNoPii', () => {
 
   it('throws on the widened categories too (a leaked secret blocks the checkpoint)', () => {
     expect(() => assertNoPii('token xoxb-123456789012-abcdefGHIJKL', 'run-456')).toThrow(
-      /secrets\/slack_token/
+      /secrets\/slack_token/,
     );
   });
 
@@ -115,7 +115,7 @@ describe('sanitizeSourceItem', () => {
     expect(sanitized.title).toBe('Rotated [AWS_KEY] after the incident');
     expect(sanitized.description).toBe('Contact [EMAIL]; pod [INTERNAL_IP] recovered.');
     expect(() =>
-      assertNoPii(`${sanitized.title}\n${sanitized.description}`, 'run-sanitize')
+      assertNoPii(`${sanitized.title}\n${sanitized.description}`, 'run-sanitize'),
     ).not.toThrow();
   });
 });

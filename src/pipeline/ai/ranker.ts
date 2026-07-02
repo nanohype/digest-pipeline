@@ -10,7 +10,7 @@ import type { SanitizedSourceItem, RankedSection, SectionName } from '../types.j
 
 export function rankAndSection(
   allItems: SanitizedSourceItem[],
-  now: Date = new Date()
+  now: Date = new Date(),
 ): RankedSection[] {
   const grouped = new Map<SectionName, SanitizedSourceItem[]>();
   for (const section of SECTION_ORDER) grouped.set(section, []);

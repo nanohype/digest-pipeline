@@ -23,7 +23,7 @@ export class AuditWriter {
     runId: string,
     eventType: AuditEventType,
     actor: string,
-    payload: Record<string, unknown>
+    payload: Record<string, unknown>,
   ): Promise<void> {
     await this.db.insertAuditEvent({ runId, eventType, actor, payload, createdAt: new Date() });
   }
@@ -32,7 +32,7 @@ export class AuditWriter {
     runId: string,
     draftId: string,
     sourceResults: Array<{ source: string; itemCount: number; error?: string }>,
-    llmTokensUsed: number
+    llmTokensUsed: number,
   ): Promise<void> {
     await this.write(runId, 'DRAFT_GENERATED', 'system', { draftId, sourceResults, llmTokensUsed });
   }
@@ -42,7 +42,7 @@ export class AuditWriter {
     draftId: string,
     editorUserId: string,
     originalText: string,
-    editedText: string
+    editedText: string,
   ): Promise<void> {
     const editDistance = levenshteinDistance(originalText, editedText);
     const editRate = editDistance / Math.max(originalText.length, 1);
@@ -63,7 +63,7 @@ export class AuditWriter {
     runId: string,
     draftId: string,
     sesMessageId: string,
-    recipientCount: number
+    recipientCount: number,
   ): Promise<void> {
     await this.write(runId, 'SENT', 'system', { draftId, sesMessageId, recipientCount });
   }

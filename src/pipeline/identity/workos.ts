@@ -55,7 +55,7 @@ export class WorkOsIdentityResolver {
   }
 
   async batchResolve(
-    handles: Array<{ type: ExternalIdType; value: string }>
+    handles: Array<{ type: ExternalIdType; value: string }>,
   ): Promise<Map<string, ResolvedIdentity | null>> {
     const results = new Map<string, ResolvedIdentity | null>();
     const BATCH_SIZE = 10;
@@ -65,7 +65,7 @@ export class WorkOsIdentityResolver {
         batch.map(async ({ type, value }) => {
           const identity = await this.resolveByExternalId(type, value);
           results.set(`${type}:${value}`, identity);
-        })
+        }),
       );
     }
     return results;
@@ -78,14 +78,14 @@ export class WorkOsIdentityResolver {
         attempts: 3,
         initialDelayMs: 200,
         jitter: true,
-      }
+      },
     );
     return users.map((u) => this.toResolvedIdentity(u));
   }
 
   private async resolveByExternalId(
     type: ExternalIdType,
-    value: string
+    value: string,
   ): Promise<ResolvedIdentity | null> {
     const cacheKey = `${type}:${value}`;
     const cached = this.cache.get(cacheKey);
@@ -96,13 +96,13 @@ export class WorkOsIdentityResolver {
           withTimeout(
             this.directory.findByCustomAttribute(EXTERNAL_ID_ATTRIBUTE[type], value),
             TIMEOUT_MS,
-            'workos.findByCustomAttribute'
+            'workos.findByCustomAttribute',
           ),
         {
           attempts: 3,
           initialDelayMs: 200,
           jitter: true,
-        }
+        },
       );
       if (!user) return null;
       const identity = this.toResolvedIdentity(user);
