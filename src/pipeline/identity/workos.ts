@@ -2,18 +2,32 @@
  * WorkOS Directory Sync Identity Resolver
  *
  * Resolves GitHub/Linear/Slack handles to canonical employee records
- * against the injected WorkOsDirectoryClient. 4-hour in-process cache
- * keeps the weekly run inside rate limits and avoids re-walking the
- * directory for repeat lookups of the same handle within a run.
+ * against the injected WorkOsDirectoryClient (the vendored
+ * @nanohype/runtime client — see src/runtime/workos-directory.ts).
+ * The client is deliberately stateless, so the app-side concerns live
+ * here: the external-id → directory custom-attribute mapping, and a
+ * 4-hour in-process cache that keeps the weekly run inside rate limits
+ * and avoids re-walking the directory for repeat lookups of the same
+ * handle within a run.
  */
 
 import type { ResolvedIdentity } from '../types.js';
-import { withRetry, withTimeout } from '../utils/resilience.js';
+import { withRetry, withTimeout } from '../../runtime/resilience.js';
 import { getLogger } from '../../common/logger.js';
-import type { DirectoryUser, ExternalIdType, WorkOsDirectoryClient } from '../services/workos-directory.js';
+import type { DirectoryUser, WorkOsDirectoryClient } from '../../runtime/workos-directory.js';
 
 const TIMEOUT_MS = 10_000;
 const CACHE_TTL_MS = 4 * 60 * 60 * 1000;
+
+export type ExternalIdType = 'github' | 'slack' | 'linear';
+
+// Which directory-user custom attribute carries each upstream handle.
+// The custom attributes are populated by the IdP → WorkOS directory mapping.
+const EXTERNAL_ID_ATTRIBUTE: Record<ExternalIdType, string> = {
+  github: 'githubLogin',
+  slack: 'slackUserId',
+  linear: 'linearUserId',
+};
 
 interface CacheEntry {
   identity: ResolvedIdentity;
@@ -58,11 +72,14 @@ export class WorkOsIdentityResolver {
   }
 
   async getRecentJoiners(since: Date): Promise<ResolvedIdentity[]> {
-    const users = await withRetry(() => withTimeout(this.directory.listUsersSince(since), TIMEOUT_MS), {
-      attempts: 3,
-      initialDelay: 200,
-      jitter: true,
-    });
+    const users = await withRetry(
+      () => withTimeout(this.directory.listUsersSince(since), TIMEOUT_MS, 'workos.listUsersSince'),
+      {
+        attempts: 3,
+        initialDelayMs: 200,
+        jitter: true,
+      }
+    );
     return users.map((u) => this.toResolvedIdentity(u));
   }
 
@@ -71,11 +88,19 @@ export class WorkOsIdentityResolver {
     const cached = this.cache.get(cacheKey);
     if (cached && Date.now() < cached.expiresAt) return cached.identity;
     try {
-      const user = await withRetry(() => withTimeout(this.directory.findByExternalId(type, value), TIMEOUT_MS), {
-        attempts: 3,
-        initialDelay: 200,
-        jitter: true,
-      });
+      const user = await withRetry(
+        () =>
+          withTimeout(
+            this.directory.findByCustomAttribute(EXTERNAL_ID_ATTRIBUTE[type], value),
+            TIMEOUT_MS,
+            'workos.findByCustomAttribute'
+          ),
+        {
+          attempts: 3,
+          initialDelayMs: 200,
+          jitter: true,
+        }
+      );
       if (!user) return null;
       const identity = this.toResolvedIdentity(user);
       this.cache.set(cacheKey, { identity, expiresAt: Date.now() + CACHE_TTL_MS });

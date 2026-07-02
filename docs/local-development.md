@@ -121,12 +121,10 @@ Test files under `src/`:
 
 | File | Covers |
 |---|---|
-| `src/pipeline/filters/pii.test.ts` | Each PII regex category with positive + negative samples; `assertNoPii` behavior. |
+| `src/pipeline/filters/pii.test.ts` | The app's PII wiring over the vendored catalog: typed tokens, widened categories live at this boundary, `assertNoPii` run-id semantics, `sanitizeSourceItem`. (The full pattern matrix is tested upstream in `nanohype/library/runtime`.) |
 | `src/pipeline/ai/ranker.test.ts` | Scoring (age decay + engagement + metadata), dedup thresholds, section mapping, 5-item-per-section cap. |
-| `src/pipeline/utils/resilience.test.ts` | `withTimeout` deadline behavior, `withRetry` retry-on-error + retry-exhaustion + jitter. |
 | `src/pipeline/identity/workos.test.ts` | Identity cache hits + misses, batch resolution, stale-cache fallback. |
 | `src/pipeline/services/voice-baseline.test.ts` | S3 listing + fetch for baseline corpus. |
-| `src/pipeline/services/workos-directory.test.ts` | WorkOS Directory REST client (cursor pagination, error mapping). |
 | `src/pipeline/aggregators/aggregators.integration.test.ts` | Each aggregator factory against fake services — `SourceItem` shape validation end-to-end. |
 | `src/pipeline/pipeline.integration.test.ts` | Fake aggregators → real resolver + filter + ranker → mock Bedrock → audit. One run end-to-end, no network. |
 | `web/lib/diff.test.ts` | Levenshtein exact + sampling fallback on short and long inputs. |

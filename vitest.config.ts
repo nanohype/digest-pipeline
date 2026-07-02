@@ -31,6 +31,10 @@ export default defineConfig({
         'src/data/pool.ts',
         'src/pipeline/types.ts',
         'src/ports.ts',
+        // Vendored @nanohype/runtime modules — byte-identical copies of
+        // nanohype/library/runtime/src, unit-tested upstream alongside the
+        // source of truth. This suite covers the app's wiring over them.
+        'src/runtime/**',
       ],
       // Honest floors set just below current coverage so the gate catches a
       // regression (a new untested module) without flaking on minor

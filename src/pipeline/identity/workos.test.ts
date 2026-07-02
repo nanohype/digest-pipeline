@@ -1,17 +1,21 @@
 import { describe, it, expect, vi } from 'vitest';
 import { WorkOsIdentityResolver } from './workos.js';
-import type { DirectoryUser, WorkOsDirectoryClient } from '../services/workos-directory.js';
+import type { DirectoryUser, WorkOsDirectoryClient } from '../../runtime/workos-directory.js';
 
 function makeClient(overrides: Partial<WorkOsDirectoryClient> = {}): WorkOsDirectoryClient {
   return {
-    findByExternalId: vi.fn(async () => null),
+    findByEmail: vi.fn(async () => null),
+    findByCustomAttribute: vi.fn(async () => null),
     listUsersSince: vi.fn(async () => []),
+    listUsersInGroup: vi.fn(async () => []),
     ...overrides,
   };
 }
 
 const sampleUser: DirectoryUser = {
   id: 'directory_user_01',
+  firstName: 'Ada',
+  lastName: 'Lovelace',
   displayName: 'Ada Lovelace',
   title: 'Principal Engineer',
   department: 'Platform',
@@ -21,7 +25,7 @@ const sampleUser: DirectoryUser = {
 describe('WorkOsIdentityResolver', () => {
   it('maps a DirectoryUser to a ResolvedIdentity (no email surfaced)', async () => {
     const client = makeClient({
-      findByExternalId: vi.fn(async () => sampleUser),
+      findByCustomAttribute: vi.fn(async () => sampleUser),
     });
     const resolver = new WorkOsIdentityResolver(client);
     const identity = await resolver.resolveGitHubUser('ada');
@@ -34,9 +38,23 @@ describe('WorkOsIdentityResolver', () => {
     expect(identity).not.toHaveProperty('email');
   });
 
+  it('queries the source-specific custom attribute for each external-id type', async () => {
+    const findByCustomAttribute = vi.fn(async () => sampleUser);
+    const resolver = new WorkOsIdentityResolver(makeClient({ findByCustomAttribute }));
+    await resolver.resolveGitHubUser('ada');
+    await resolver.resolveSlackUser('U123');
+    await resolver.resolveLinearUser('lin_42');
+    expect(findByCustomAttribute.mock.calls).toEqual([
+      ['githubLogin', 'ada'],
+      ['slackUserId', 'U123'],
+      ['linearUserId', 'lin_42'],
+    ]);
+  });
+
   it('falls back to default role/team labels when the directory user omits title/department', async () => {
+    const { title: _title, department: _department, ...bare } = sampleUser;
     const client = makeClient({
-      findByExternalId: vi.fn(async () => ({ ...sampleUser, title: undefined, department: undefined })),
+      findByCustomAttribute: vi.fn(async () => bare),
     });
     const resolver = new WorkOsIdentityResolver(client);
     const identity = await resolver.resolveLinearUser('lin_42');
@@ -45,25 +63,25 @@ describe('WorkOsIdentityResolver', () => {
   });
 
   it('caches the second lookup for the same external id', async () => {
-    const findByExternalId = vi.fn(async () => sampleUser);
-    const resolver = new WorkOsIdentityResolver(makeClient({ findByExternalId }));
+    const findByCustomAttribute = vi.fn(async () => sampleUser);
+    const resolver = new WorkOsIdentityResolver(makeClient({ findByCustomAttribute }));
     await resolver.resolveSlackUser('U123');
     await resolver.resolveSlackUser('U123');
-    expect(findByExternalId).toHaveBeenCalledTimes(1);
+    expect(findByCustomAttribute).toHaveBeenCalledTimes(1);
   });
 
   it('returns null and does not cache when the directory has no user for the id', async () => {
-    const findByExternalId = vi.fn(async () => null);
-    const resolver = new WorkOsIdentityResolver(makeClient({ findByExternalId }));
+    const findByCustomAttribute = vi.fn(async () => null);
+    const resolver = new WorkOsIdentityResolver(makeClient({ findByCustomAttribute }));
     const identity = await resolver.resolveSlackUser('U404');
     expect(identity).toBeNull();
     await resolver.resolveSlackUser('U404');
-    expect(findByExternalId).toHaveBeenCalledTimes(2);
+    expect(findByCustomAttribute).toHaveBeenCalledTimes(2);
   });
 
   it('returns null when the underlying directory call throws (pipeline continues gracefully)', async () => {
     const client = makeClient({
-      findByExternalId: vi.fn(async () => {
+      findByCustomAttribute: vi.fn(async () => {
         throw new Error('WorkOS 5xx');
       }),
     });

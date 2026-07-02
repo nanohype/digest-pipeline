@@ -7,7 +7,7 @@
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { assertNoPii } from '../filters/pii.js';
-import { withRetry, withTimeout } from '../utils/resilience.js';
+import { withRetry, withTimeout } from '../../runtime/resilience.js';
 import { awsRequestHandler } from '../../common/aws.js';
 import { getLogger } from '../../common/logger.js';
 import { getTracer } from '../../common/tracer.js';
@@ -148,7 +148,7 @@ export class NewsletterGenerator {
               accept: 'application/json',
               body,
             });
-            const response = await withTimeout(this.bedrock.send(command), BEDROCK_TIMEOUT_MS);
+            const response = await withTimeout(this.bedrock.send(command), BEDROCK_TIMEOUT_MS, 'bedrock.invoke_model');
             const decoded = JSON.parse(new TextDecoder().decode(response.body));
             const usage = decoded.usage as
               | {
@@ -170,7 +170,7 @@ export class NewsletterGenerator {
             recordTokens('cache_write', usage?.cache_creation_input_tokens, 'tokens.cache_write');
             return decoded.content?.[0]?.text ?? '';
           },
-          { attempts: 3, initialDelay: 500, maxDelay: 5_000, jitter: true }
+          { attempts: 3, initialDelayMs: 500, maxDelayMs: 5_000, jitter: true }
         );
       } finally {
         span.end();
@@ -217,7 +217,8 @@ export class NewsletterGenerator {
     try {
       const response = await withTimeout(
         this.s3.send(new GetObjectCommand({ Bucket: this.config.voiceBaselineBucket, Key: key })),
-        S3_TIMEOUT_MS
+        S3_TIMEOUT_MS,
+        'bedrock.load_voice_baseline'
       );
       return (await response.Body?.transformToString()) ?? null;
     } catch {

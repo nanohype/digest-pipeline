@@ -5,7 +5,7 @@
  * identity resolver.
  */
 
-import { withRetry, withTimeout } from '../utils/resilience.js';
+import { withRetry, withTimeout } from '../../runtime/resilience.js';
 import { sanitizeSourceItem } from '../filters/pii.js';
 import { getLogger } from '../../common/logger.js';
 import type { AggregationResult, SanitizedSourceItem } from '../types.js';
@@ -19,11 +19,14 @@ export const aggregateGitHub: Aggregator = async (ctx: AggregatorContext): Promi
   const { runId, since, resolveIdentity, services } = ctx;
   const start = Date.now();
   try {
-    const prs = await withRetry(() => withTimeout(services.github.listMergedPRsSince(since), TIMEOUT_MS), {
-      attempts: 3,
-      initialDelay: 200,
-      jitter: true,
-    });
+    const prs = await withRetry(
+      () => withTimeout(services.github.listMergedPRsSince(since), TIMEOUT_MS, 'github.listMergedPRsSince'),
+      {
+        attempts: 3,
+        initialDelayMs: 200,
+        jitter: true,
+      }
+    );
 
     const items: SanitizedSourceItem[] = [];
     for (const pr of prs.slice(0, MAX_ITEMS)) {

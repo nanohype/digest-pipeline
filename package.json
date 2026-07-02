@@ -19,6 +19,8 @@
     "format:check": "prettier --check .",
     "typecheck": "tsc --noEmit",
     "check": "npm run typecheck && npm run lint && npm run format:check && npm test",
+    "sync:runtime": "node scripts/sync-runtime.mjs",
+    "sync:runtime:check": "node scripts/sync-runtime.mjs --check",
     "docs": "echo 'Docs: README.md, AGENTS.md, ARCHITECTURE.md, docs/'",
     "migrate:up": "tsx scripts/migrate.ts up",
     "migrate:down": "tsx scripts/migrate.ts down",

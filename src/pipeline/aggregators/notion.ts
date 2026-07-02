@@ -4,7 +4,7 @@
  * verified against the configured database ID for every returned page).
  */
 
-import { withRetry, withTimeout } from '../utils/resilience.js';
+import { withRetry, withTimeout } from '../../runtime/resilience.js';
 import { sanitizeSourceItem } from '../filters/pii.js';
 import { getLogger } from '../../common/logger.js';
 import type { AggregationResult, SanitizedSourceItem } from '../types.js';
@@ -16,11 +16,14 @@ export const aggregateNotion: Aggregator = async (ctx: AggregatorContext): Promi
   const { runId, since, services } = ctx;
   const start = Date.now();
   try {
-    const pages = await withRetry(() => withTimeout(services.notion.listRecentPagesSince(since), TIMEOUT_MS), {
-      attempts: 3,
-      initialDelay: 200,
-      jitter: true,
-    });
+    const pages = await withRetry(
+      () => withTimeout(services.notion.listRecentPagesSince(since), TIMEOUT_MS, 'notion.listRecentPagesSince'),
+      {
+        attempts: 3,
+        initialDelayMs: 200,
+        jitter: true,
+      }
+    );
 
     const items: SanitizedSourceItem[] = pages.map((page) =>
       sanitizeSourceItem({
