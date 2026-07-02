@@ -107,7 +107,9 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
       req.log.warn(
         {
           err,
-          tokenClaims: claims ? { sub: claims.sub, aud: claims.aud, iss: claims.iss, exp: claims.exp } : null,
+          tokenClaims: claims
+            ? { sub: claims.sub, aud: claims.aud, iss: claims.iss, exp: claims.exp }
+            : null,
         },
         'auth.verify-failed'
       );
@@ -132,53 +134,71 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     return replyWithDraft(reply, draft);
   });
 
-  app.post('/drafts/:id/edits', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (req, reply) => {
-    const { id } = parseOrThrow(DraftIdParamSchema, req.params);
-    const { editedText } = parseOrThrow(EditsBodySchema, req.body);
-    const user = requireUser(req);
+  app.post(
+    '/drafts/:id/edits',
+    { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } },
+    async (req, reply) => {
+      const { id } = parseOrThrow(DraftIdParamSchema, req.params);
+      const { editedText } = parseOrThrow(EditsBodySchema, req.body);
+      const user = requireUser(req);
 
-    const draft = await draftRepository.findById(id);
-    if (!draft) return reply.code(404).send({ error: 'Draft not found' });
-    if (draft.status !== 'PENDING') return reply.code(409).send({ error: `Draft is ${draft.status}` });
+      const draft = await draftRepository.findById(id);
+      if (!draft) return reply.code(404).send({ error: 'Draft not found' });
+      if (draft.status !== 'PENDING')
+        return reply.code(409).send({ error: `Draft is ${draft.status}` });
 
-    const stats = await auditWriter.humanEdit(draft.runId, draft.id, user.sub, draft.fullText, editedText);
-    draftEditRate.record(stats.editRate);
-    await draftRepository.saveEditCheckpoint(draft.id, editedText, user.sub);
-    reply.header('X-Run-Id', draft.runId).send({ status: 'saved' });
-  });
-
-  app.post('/drafts/:id/approve', { config: { rateLimit: { max: 5, timeWindow: '1 minute' } } }, async (req, reply) => {
-    const { id } = parseOrThrow(DraftIdParamSchema, req.params);
-    const user = requireUser(req);
-
-    const approvers = await config.loadApprovers();
-    if (!isApprover(user, approvers)) {
-      return reply.code(403).send({ error: 'Only CoS or designated backups can approve' });
+      const stats = await auditWriter.humanEdit(
+        draft.runId,
+        draft.id,
+        user.sub,
+        draft.fullText,
+        editedText
+      );
+      draftEditRate.record(stats.editRate);
+      await draftRepository.saveEditCheckpoint(draft.id, editedText, user.sub);
+      reply.header('X-Run-Id', draft.runId).send({ status: 'saved' });
     }
+  );
 
-    const draft = await draftRepository.findById(id);
-    if (!draft) return reply.code(404).send({ error: 'Draft not found' });
-    if (draft.status !== 'PENDING') return reply.code(409).send({ error: `Draft is ${draft.status}` });
+  app.post(
+    '/drafts/:id/approve',
+    { config: { rateLimit: { max: 5, timeWindow: '1 minute' } } },
+    async (req, reply) => {
+      const { id } = parseOrThrow(DraftIdParamSchema, req.params);
+      const user = requireUser(req);
 
-    await draftRepository.approve(draft.id, user.sub);
-    await auditWriter.approved(draft.runId, draft.id, user.sub);
+      const approvers = await config.loadApprovers();
+      if (!isApprover(user, approvers)) {
+        return reply.code(403).send({ error: 'Only CoS or designated backups can approve' });
+      }
 
-    const sesResult = await emailSender.send({
-      draftId: draft.id,
-      subject: `Company Update — Week of ${formatWeekOf(draft.weekOf)}`,
-      htmlBody: renderHtml(draft.fullText),
-      textBody: draft.fullText,
-    });
+      const draft = await draftRepository.findById(id);
+      if (!draft) return reply.code(404).send({ error: 'Draft not found' });
+      if (draft.status !== 'PENDING')
+        return reply.code(409).send({ error: `Draft is ${draft.status}` });
 
-    await auditWriter.sent(draft.runId, draft.id, sesResult.messageId, sesResult.recipientCount);
-    emailSent.add(sesResult.recipientCount);
-    await draftRepository.markSent(draft.id);
-    await slackConfirmer.confirmSent(draft.runId, draft.id, sesResult.recipientCount);
+      await draftRepository.approve(draft.id, user.sub);
+      await auditWriter.approved(draft.runId, draft.id, user.sub);
 
-    reply
-      .header('X-Run-Id', draft.runId)
-      .send({ status: 'sent', sesMessageId: sesResult.messageId, recipientCount: sesResult.recipientCount });
-  });
+      const sesResult = await emailSender.send({
+        draftId: draft.id,
+        subject: `Company Update — Week of ${formatWeekOf(draft.weekOf)}`,
+        htmlBody: renderHtml(draft.fullText),
+        textBody: draft.fullText,
+      });
+
+      await auditWriter.sent(draft.runId, draft.id, sesResult.messageId, sesResult.recipientCount);
+      emailSent.add(sesResult.recipientCount);
+      await draftRepository.markSent(draft.id);
+      await slackConfirmer.confirmSent(draft.runId, draft.id, sesResult.recipientCount);
+
+      reply.header('X-Run-Id', draft.runId).send({
+        status: 'sent',
+        sesMessageId: sesResult.messageId,
+        recipientCount: sesResult.recipientCount,
+      });
+    }
+  );
 
   // Cast: Fastify's `loggerInstance` option types the instance with Pino's
   // `Logger` (which has `msgPrefix`), while `FastifyInstance`'s default

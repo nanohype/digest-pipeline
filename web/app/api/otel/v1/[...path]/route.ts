@@ -14,7 +14,10 @@ const COLLECTOR_BASE = process.env.OTEL_EXPORTER_OTLP_ENDPOINT ?? 'http://localh
 // down, and telemetry must fail fast rather than pin route-handler workers.
 const COLLECTOR_TIMEOUT_MS = 5_000;
 
-export async function POST(req: Request, { params }: { params: Promise<{ path: string[] }> }): Promise<NextResponse> {
+export async function POST(
+  req: Request,
+  { params }: { params: Promise<{ path: string[] }> }
+): Promise<NextResponse> {
   const { path } = await params;
   const body = await req.arrayBuffer();
   let response: Response;

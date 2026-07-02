@@ -16,15 +16,15 @@ export default function HomePage() {
           <AuthStatus />
         </div>
         <p className="muted">
-          Weekly newsletter review for the Chief of Staff. Open a draft from the Slack notification link, or sign in to
-          view the latest pending draft.
+          Weekly newsletter review for the Chief of Staff. Open a draft from the Slack notification
+          link, or sign in to view the latest pending draft.
         </p>
       </header>
       <section className="card" style={{ marginTop: 24 }}>
         <h2>Getting here</h2>
         <p>
-          DigestPipeline posts a link into <code>#newsletter-review</code> every Friday morning. Click that link to land
-          on the review page for the week&apos;s draft.
+          DigestPipeline posts a link into <code>#newsletter-review</code> every Friday morning.
+          Click that link to land on the review page for the week&apos;s draft.
         </p>
       </section>
     </main>

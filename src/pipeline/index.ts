@@ -7,7 +7,12 @@
 import { randomUUID } from 'node:crypto';
 import { SpanStatusCode } from '@opentelemetry/api';
 import { buildAggregatorRegistry } from './aggregators/registry.js';
-import type { AggregatorConfig, AggregatorContext, AggregatorServices, IdentitySource } from './aggregators/types.js';
+import type {
+  AggregatorConfig,
+  AggregatorContext,
+  AggregatorServices,
+  IdentitySource,
+} from './aggregators/types.js';
 import { WorkOsIdentityResolver } from './identity/workos.js';
 import { deduplicateItems, rankAndSection } from './ai/ranker.js';
 import { NewsletterGenerator } from './ai/generator.js';
@@ -15,7 +20,12 @@ import { AuditWriter } from './audit.js';
 import { getLogger } from '../common/logger.js';
 import { getTracer } from '../common/tracer.js';
 import { runDuration, sourceItems, sourceFailure, bedrockFallback } from '../common/metrics.js';
-import type { PipelineRunResult, AggregationResult, RankedSection, ResolvedIdentity } from './types.js';
+import type {
+  PipelineRunResult,
+  AggregationResult,
+  RankedSection,
+  ResolvedIdentity,
+} from './types.js';
 
 const SKELETON_BANNER = '> ⚠️ Auto-generated skeleton — Bedrock failed. Edit before approving.\n\n';
 
@@ -51,7 +61,8 @@ export interface PipelineDeps {
 }
 
 export async function runPipeline(deps: PipelineDeps): Promise<PipelineRunResult> {
-  const { resolver, generator, auditWriter, draftStore, notifier, services, aggregatorConfig } = deps;
+  const { resolver, generator, auditWriter, draftStore, notifier, services, aggregatorConfig } =
+    deps;
   const log = getLogger();
   const tracer = getTracer('digest-pipeline.pipeline');
   const runId = randomUUID();
@@ -67,20 +78,33 @@ export async function runPipeline(deps: PipelineDeps): Promise<PipelineRunResult
     const since = new Date(weekOf.getTime() - lookbackDays * 24 * 60 * 60 * 1000);
     rootSpan.setAttribute('lookback.days', lookbackDays);
     const aggregatorRegistry = buildAggregatorRegistry();
-    const resolveIdentity = async (source: IdentitySource, externalId: string): Promise<ResolvedIdentity | null> => {
+    const resolveIdentity = async (
+      source: IdentitySource,
+      externalId: string
+    ): Promise<ResolvedIdentity | null> => {
       if (source === 'github') return resolver.resolveGitHubUser(externalId);
       if (source === 'linear') return resolver.resolveLinearUser(externalId);
       return resolver.resolveSlackUser(externalId);
     };
-    const ctx: AggregatorContext = { runId, since, resolveIdentity, services, config: aggregatorConfig };
+    const ctx: AggregatorContext = {
+      runId,
+      since,
+      resolveIdentity,
+      services,
+      config: aggregatorConfig,
+    };
 
     const sourceNames = aggregatorRegistry.names();
 
     const sourceResults = await tracer.startActiveSpan('phase.aggregate', async (span) => {
       span.setAttribute('source.count', sourceNames.length);
       try {
-        const settled = await Promise.allSettled(sourceNames.map((name) => aggregatorRegistry.get(name)(ctx)));
-        const results: AggregationResult[] = settled.map((r, i) => settledToResult(r, sourceNames[i]));
+        const settled = await Promise.allSettled(
+          sourceNames.map((name) => aggregatorRegistry.get(name)(ctx))
+        );
+        const results: AggregationResult[] = settled.map((r, i) =>
+          settledToResult(r, sourceNames[i])
+        );
         for (const r of results) {
           sourceItems.add(r.items.length, { source: r.source });
           if (r.error) {
@@ -151,7 +175,11 @@ export async function runPipeline(deps: PipelineDeps): Promise<PipelineRunResult
         await auditWriter.draftGenerated(
           runId,
           id,
-          sourceResults.map((r) => ({ source: r.source, itemCount: r.items.length, error: r.error })),
+          sourceResults.map((r) => ({
+            source: r.source,
+            itemCount: r.items.length,
+            error: r.error,
+          })),
           0
         );
         await notifier.notifyDraftReady(runId, id, draft.fullText);
@@ -174,7 +202,10 @@ export async function runPipeline(deps: PipelineDeps): Promise<PipelineRunResult
   });
 }
 
-function settledToResult(result: PromiseSettledResult<AggregationResult>, source: string): AggregationResult {
+function settledToResult(
+  result: PromiseSettledResult<AggregationResult>,
+  source: string
+): AggregationResult {
   if (result.status === 'fulfilled') return result.value;
   return {
     source,
@@ -192,7 +223,10 @@ function getThisFriday(now: Date): Date {
   return friday;
 }
 
-function buildSkeletonDraft(sections: RankedSection[]): { fullText: string; sections: RankedSection[] } {
+function buildSkeletonDraft(sections: RankedSection[]): {
+  fullText: string;
+  sections: RankedSection[];
+} {
   const blocks = sections.map((section) => {
     if (section.items.length === 0) {
       return `## ${section.displayName}\n\n_Nothing to report this week._`;

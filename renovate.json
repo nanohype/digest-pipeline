@@ -65,7 +65,13 @@
     {
       "description": "Group Next.js + React (web workspace) — they release in lockstep",
       "matchManagers": ["npm"],
-      "matchPackagePatterns": ["^next$", "^eslint-config-next$", "^react$", "^react-dom$", "^@types/react"],
+      "matchPackagePatterns": [
+        "^next$",
+        "^eslint-config-next$",
+        "^react$",
+        "^react-dom$",
+        "^@types/react"
+      ],
       "groupName": "next-react"
     },
     {

@@ -12,12 +12,19 @@ import type { Aggregator, AggregatorContext } from './types.js';
 
 const TIMEOUT_MS = 8_000;
 
-export const aggregateNotion: Aggregator = async (ctx: AggregatorContext): Promise<AggregationResult> => {
+export const aggregateNotion: Aggregator = async (
+  ctx: AggregatorContext
+): Promise<AggregationResult> => {
   const { runId, since, services } = ctx;
   const start = Date.now();
   try {
     const pages = await withRetry(
-      () => withTimeout(services.notion.listRecentPagesSince(since), TIMEOUT_MS, 'notion.listRecentPagesSince'),
+      () =>
+        withTimeout(
+          services.notion.listRecentPagesSince(since),
+          TIMEOUT_MS,
+          'notion.listRecentPagesSince'
+        ),
       {
         attempts: 3,
         initialDelayMs: 200,

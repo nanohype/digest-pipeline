@@ -21,7 +21,8 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const SRC = process.env.NANOHYPE_RUNTIME_SRC ?? join(ROOT, '..', 'nanohype', 'library', 'runtime', 'src');
+const SRC =
+  process.env.NANOHYPE_RUNTIME_SRC ?? join(ROOT, '..', 'nanohype', 'library', 'runtime', 'src');
 const DEST = join(ROOT, 'src', 'runtime');
 
 // The modules this app consumes. Tests stay upstream with the library —

@@ -23,11 +23,20 @@ describe('rankAndSection', () => {
   it('emits the five canonical sections in canonical order', () => {
     const result = rankAndSection([], now);
     const names = result.map((s) => s.name);
-    expect(names).toEqual(['what_shipped', 'whats_coming', 'new_joiners', 'wins_recognition', 'the_ask']);
+    expect(names).toEqual([
+      'what_shipped',
+      'whats_coming',
+      'new_joiners',
+      'wins_recognition',
+      'the_ask',
+    ]);
   });
 
   it('routes items to their declared section', () => {
-    const items = [makeItem({ id: 'a', section: 'whats_coming' }), makeItem({ id: 'b', section: 'new_joiners' })];
+    const items = [
+      makeItem({ id: 'a', section: 'whats_coming' }),
+      makeItem({ id: 'b', section: 'new_joiners' }),
+    ];
     const result = rankAndSection(items, now);
     expect(result.find((s) => s.name === 'whats_coming')?.items.map((i) => i.id)).toEqual(['a']);
     expect(result.find((s) => s.name === 'new_joiners')?.items.map((i) => i.id)).toEqual(['b']);
@@ -62,7 +71,10 @@ describe('rankAndSection', () => {
 
 describe('deduplicateItems', () => {
   it('keeps distinct items', () => {
-    const items = [makeItem({ id: 'a', title: 'Launched auth revamp' }), makeItem({ id: 'b', title: 'Hired new CTO' })];
+    const items = [
+      makeItem({ id: 'a', title: 'Launched auth revamp' }),
+      makeItem({ id: 'b', title: 'Hired new CTO' }),
+    ];
     expect(deduplicateItems(items)).toHaveLength(2);
   });
 

@@ -122,7 +122,10 @@ export default function ReviewPage({ params }: { params: Promise<RouteParams> })
     );
   }
 
-  const editRate = originalText.length > 0 ? levenshteinDistance(originalText, editedText) / originalText.length : 0;
+  const editRate =
+    originalText.length > 0
+      ? levenshteinDistance(originalText, editedText) / originalText.length
+      : 0;
   const isPending = draft.status === 'PENDING';
 
   return (
@@ -141,7 +144,11 @@ export default function ReviewPage({ params }: { params: Promise<RouteParams> })
         {isPending ? (
           <div className="actions-row">
             <DiffIndicator editRate={editRate} isSaving={isSaving} />
-            <ApproveButton onApprove={handleApprove} isApproving={isApproving} disabled={!isPending} />
+            <ApproveButton
+              onApprove={handleApprove}
+              isApproving={isApproving}
+              disabled={!isPending}
+            />
           </div>
         ) : null}
         {approveError ? (

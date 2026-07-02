@@ -50,24 +50,34 @@ export class NewsletterGenerator {
         maxAttempts: 1,
       });
     this.s3 =
-      deps.s3 ?? new S3Client({ region: deps.config.llm.region, requestHandler: awsRequestHandler(S3_TIMEOUT_MS) });
+      deps.s3 ??
+      new S3Client({
+        region: deps.config.llm.region,
+        requestHandler: awsRequestHandler(S3_TIMEOUT_MS),
+      });
   }
 
-  async generate(runId: string, sections: RankedSection[]): Promise<{ fullText: string; sections: RankedSection[] }> {
+  async generate(
+    runId: string,
+    sections: RankedSection[]
+  ): Promise<{ fullText: string; sections: RankedSection[] }> {
     const cappedSections = sections.map((s) => ({
       ...s,
       truncatedCount: Math.max(0, s.items.length - MAX_ITEMS_PER_SECTION),
       items: s.items.slice(0, MAX_ITEMS_PER_SECTION),
     }));
-    const voiceExamples = await tracer.startActiveSpan('bedrock.load_voice_baseline', async (span) => {
-      try {
-        const examples = await this.loadVoiceBaseline(runId);
-        span.setAttribute('examples.count', examples.length);
-        return examples;
-      } finally {
-        span.end();
+    const voiceExamples = await tracer.startActiveSpan(
+      'bedrock.load_voice_baseline',
+      async (span) => {
+        try {
+          const examples = await this.loadVoiceBaseline(runId);
+          span.setAttribute('examples.count', examples.length);
+          return examples;
+        } finally {
+          span.end();
+        }
       }
-    });
+    );
     const systemPrompt = this.buildSystemPrompt(voiceExamples);
     const userPrompt = this.buildUserPrompt(runId, cappedSections);
     // Defense-in-depth: aggregators already invoked piiFilter, but assert on the
@@ -112,14 +122,20 @@ export class NewsletterGenerator {
           })
           .join('\n');
         const truncatedNote =
-          section.truncatedCount > 0 ? `\n(${section.truncatedCount} additional items not shown)` : '';
+          section.truncatedCount > 0
+            ? `\n(${section.truncatedCount} additional items not shown)`
+            : '';
         return `### ${displayName}\n${itemLines}${truncatedNote}`;
       })
       .join('\n\n');
     return `Write this week's newsletter using the data below. Run ID: ${runId}\n\n${sectionBlocks}\n\nWrite the complete newsletter now.`;
   }
 
-  private async callBedrock(_runId: string, systemPrompt: string, userPrompt: string): Promise<string> {
+  private async callBedrock(
+    _runId: string,
+    systemPrompt: string,
+    userPrompt: string
+  ): Promise<string> {
     // Transient Bedrock errors (throttling, 5xx) are retried with jittered
     // exponential backoff. A validation error will still exhaust the budget
     // and throw, but adding a few seconds of delay is cheap for a weekly run.
@@ -148,7 +164,11 @@ export class NewsletterGenerator {
               accept: 'application/json',
               body,
             });
-            const response = await withTimeout(this.bedrock.send(command), BEDROCK_TIMEOUT_MS, 'bedrock.invoke_model');
+            const response = await withTimeout(
+              this.bedrock.send(command),
+              BEDROCK_TIMEOUT_MS,
+              'bedrock.invoke_model'
+            );
             const decoded = JSON.parse(new TextDecoder().decode(response.body));
             const usage = decoded.usage as
               | {
@@ -158,7 +178,11 @@ export class NewsletterGenerator {
                   cache_creation_input_tokens?: number;
                 }
               | undefined;
-            const recordTokens = (kind: BedrockTokenKind, count: number | undefined, attribute: string) => {
+            const recordTokens = (
+              kind: BedrockTokenKind,
+              count: number | undefined,
+              attribute: string
+            ) => {
               if (count) {
                 bedrockTokens.add(count, { kind, model: this.config.llm.modelId });
                 span.setAttribute(attribute, count);
@@ -186,7 +210,9 @@ export class NewsletterGenerator {
     const populatedSectionNames = new Set<keyof typeof SECTION_DISPLAY_NAMES>(
       expectedSections.filter((s) => s.items.length > 0).map((s) => s.name)
     );
-    const requiredHeaders = (Object.keys(SECTION_DISPLAY_NAMES) as Array<keyof typeof SECTION_DISPLAY_NAMES>)
+    const requiredHeaders = (
+      Object.keys(SECTION_DISPLAY_NAMES) as Array<keyof typeof SECTION_DISPLAY_NAMES>
+    )
       .filter((name) => populatedSectionNames.has(name))
       .map((name) => SECTION_DISPLAY_NAMES[name]);
     const missingHeaders = requiredHeaders.filter((h) => !text.includes(h));

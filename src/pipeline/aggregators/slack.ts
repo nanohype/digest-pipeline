@@ -14,9 +14,17 @@ import type { Aggregator, AggregatorContext } from './types.js';
 const TIMEOUT_MS = 15_000;
 const MAX_TOKEN_LENGTH = 2_000;
 const MIN_ANNOUNCEMENT_LENGTH = 20;
-const NEW_HIRE_PATTERNS = [/please welcome/i, /joined us/i, /joining the team/i, /excited to welcome/i, /our newest/i];
+const NEW_HIRE_PATTERNS = [
+  /please welcome/i,
+  /joined us/i,
+  /joining the team/i,
+  /excited to welcome/i,
+  /our newest/i,
+];
 
-export const aggregateSlack: Aggregator = async (ctx: AggregatorContext): Promise<AggregationResult> => {
+export const aggregateSlack: Aggregator = async (
+  ctx: AggregatorContext
+): Promise<AggregationResult> => {
   const { runId, since, resolveIdentity, services, config } = ctx;
   const { announcementsChannelId, teamChannelId, hrBotUserIds } = config.slack;
   const hrBotSet = new Set(hrBotUserIds);
@@ -37,7 +45,12 @@ export const aggregateSlack: Aggregator = async (ctx: AggregatorContext): Promis
         }
       ),
       withRetry(
-        () => withTimeout(services.slack.listChannelHistory(teamChannelId, since), TIMEOUT_MS, 'slack.history.team'),
+        () =>
+          withTimeout(
+            services.slack.listChannelHistory(teamChannelId, since),
+            TIMEOUT_MS,
+            'slack.history.team'
+          ),
         {
           attempts: 3,
           initialDelayMs: 200,
@@ -53,7 +66,9 @@ export const aggregateSlack: Aggregator = async (ctx: AggregatorContext): Promis
       const filtered = piiFilter(msg.text);
       if (filtered.trim().length < MIN_ANNOUNCEMENT_LENGTH) continue;
       const truncated = filtered.slice(0, MAX_TOKEN_LENGTH);
-      const author = msg.userId ? await resolveIdentity('slack', msg.userId).catch(() => null) : null;
+      const author = msg.userId
+        ? await resolveIdentity('slack', msg.userId).catch(() => null)
+        : null;
       items.push(
         sanitizeSourceItem({
           id: `slack-ann-${msg.ts}`,

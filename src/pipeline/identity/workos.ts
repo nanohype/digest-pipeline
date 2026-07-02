@@ -83,7 +83,10 @@ export class WorkOsIdentityResolver {
     return users.map((u) => this.toResolvedIdentity(u));
   }
 
-  private async resolveByExternalId(type: ExternalIdType, value: string): Promise<ResolvedIdentity | null> {
+  private async resolveByExternalId(
+    type: ExternalIdType,
+    value: string
+  ): Promise<ResolvedIdentity | null> {
     const cacheKey = `${type}:${value}`;
     const cached = this.cache.get(cacheKey);
     if (cached && Date.now() < cached.expiresAt) return cached.identity;

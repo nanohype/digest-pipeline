@@ -10,9 +10,19 @@ import { aggregateGitHub } from './github.js';
 import { aggregateLinear } from './linear.js';
 import { aggregateSlack } from './slack.js';
 import { aggregateNotion } from './notion.js';
-import type { AggregatorConfig, AggregatorContext, AggregatorServices, IdentitySource } from './types.js';
+import type {
+  AggregatorConfig,
+  AggregatorContext,
+  AggregatorServices,
+  IdentitySource,
+} from './types.js';
 import type { GitHubMergedPR, GitHubService } from '../services/github.js';
-import type { LinearEpic, LinearIssue, LinearMilestone, LinearService } from '../services/linear.js';
+import type {
+  LinearEpic,
+  LinearIssue,
+  LinearMilestone,
+  LinearService,
+} from '../services/linear.js';
 import type { SlackMessage, SlackService } from '../services/slack.js';
 import type { NotionPage, NotionService } from '../services/notion.js';
 import type { ResolvedIdentity } from '../types.js';
@@ -74,7 +84,9 @@ describe('aggregateGitHub', () => {
       role: 'Engineer',
       team: 'Billing',
     };
-    const result = await aggregateGitHub(buildContext({ services: { github }, identities: { github: identity } }));
+    const result = await aggregateGitHub(
+      buildContext({ services: { github }, identities: { github: identity } })
+    );
     expect(result.source).toBe('github');
     expect(result.items).toHaveLength(1);
     expect(result.items[0]).toMatchObject({
@@ -185,13 +197,19 @@ describe('aggregateSlack', () => {
       },
     ];
     const slack: SlackService = {
-      listChannelHistory: vi.fn(async (channel) => (channel === 'C_ANN' ? announcements : teamMessages)),
+      listChannelHistory: vi.fn(async (channel) =>
+        channel === 'C_ANN' ? announcements : teamMessages
+      ),
     };
     const result = await aggregateSlack(
       buildContext({
         services: { slack },
         config: {
-          slack: { announcementsChannelId: 'C_ANN', teamChannelId: 'C_TEAM', hrBotUserIds: ['U_HR_BOT'] },
+          slack: {
+            announcementsChannelId: 'C_ANN',
+            teamChannelId: 'C_TEAM',
+            hrBotUserIds: ['U_HR_BOT'],
+          },
         },
       })
     );
