@@ -1,8 +1,13 @@
+'use client';
+
 /**
- * ApproveButton — explicit send-to-company action with a confirmation
- * prompt. Intentionally unflashy; this button pushes email to 500
- * inboxes, so surprise is bad.
+ * ApproveButton — explicit send-to-company action gated by a modal
+ * confirmation dialog. Intentionally unflashy; this button pushes email to
+ * 500 inboxes, so surprise is bad.
  */
+
+import { useState } from 'react';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 
 interface ApproveButtonProps {
   onApprove: () => Promise<void>;
@@ -11,23 +16,39 @@ interface ApproveButtonProps {
 }
 
 export function ApproveButton({ onApprove, isApproving, disabled }: ApproveButtonProps) {
-  const handleClick = async () => {
-    const confirmed = window.confirm(
-      'Send this newsletter to the entire company?\n\nThis action cannot be undone.',
-    );
-    if (!confirmed) return;
+  const [confirming, setConfirming] = useState(false);
+
+  const handleConfirm = async () => {
+    setConfirming(false);
     await onApprove();
   };
 
   return (
-    <button
-      className="approve-button"
-      onClick={handleClick}
-      disabled={disabled || isApproving}
-      aria-busy={isApproving}
-      aria-disabled={disabled || isApproving}
-    >
-      {isApproving ? 'Sending…' : 'Approve & send'}
-    </button>
+    <>
+      <button
+        className="approve-button"
+        onClick={() => setConfirming(true)}
+        disabled={disabled || isApproving}
+        aria-busy={isApproving}
+        aria-disabled={disabled || isApproving}
+        aria-haspopup="dialog"
+      >
+        {isApproving ? 'Sending…' : 'Approve & send'}
+      </button>
+      {confirming ? (
+        <ConfirmDialog
+          title="Send this newsletter to the entire company?"
+          confirmLabel="Send to entire company"
+          cancelLabel="Cancel"
+          onConfirm={() => void handleConfirm()}
+          onCancel={() => setConfirming(false)}
+        >
+          <p>
+            This delivers the current draft to every employee&apos;s inbox. Sending cannot be
+            undone.
+          </p>
+        </ConfirmDialog>
+      ) : null}
+    </>
   );
 }

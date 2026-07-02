@@ -15,7 +15,7 @@
 
 import type { Counter, Histogram } from '@opentelemetry/api';
 
-import { createMetrics } from '../runtime/metrics.js';
+import { createMetrics } from '../vendor/runtime/metrics.js';
 
 const metrics = createMetrics({ meterName: 'digest-pipeline', namespace: 'digest-pipeline' });
 

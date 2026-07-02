@@ -221,6 +221,85 @@ section.draft-section {
   opacity: 0.7;
 }
 
+.dialog-root {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 7, 12, 0.7);
+}
+
+.dialog-panel {
+  position: relative;
+  z-index: 51;
+  width: 100%;
+  max-width: 440px;
+  margin: 0 16px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px;
+}
+
+.dialog-title {
+  font-size: 17px;
+  margin: 0 0 8px;
+  color: var(--text);
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.dialog-body {
+  color: var(--text-dim);
+}
+
+.dialog-body p {
+  margin: 0;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.dialog-button {
+  padding: 10px 18px;
+  border-radius: var(--radius);
+  font-weight: 600;
+  font-size: 14px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.dialog-button--cancel {
+  background: var(--panel-soft);
+  color: var(--text);
+  border-color: var(--border);
+}
+
+.dialog-button--cancel:hover {
+  background: var(--border);
+}
+
+.dialog-button--confirm {
+  background: var(--accent-soft);
+  color: white;
+}
+
+.dialog-button--confirm:hover {
+  background: var(--accent);
+}
+
 .review-header-row {
   display: flex;
   align-items: baseline;

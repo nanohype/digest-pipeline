@@ -3,7 +3,7 @@
  *
  * Resolves GitHub/Linear/Slack handles to canonical employee records
  * against the injected WorkOsDirectoryClient (the vendored
- * @nanohype/runtime client — see src/runtime/workos-directory.ts).
+ * @nanohype/runtime client — see src/vendor/runtime/workos-directory.ts).
  * The client is deliberately stateless, so the app-side concerns live
  * here: the external-id → directory custom-attribute mapping, and a
  * 4-hour in-process cache that keeps the weekly run inside rate limits
@@ -12,9 +12,12 @@
  */
 
 import type { ResolvedIdentity } from '../types.js';
-import { withRetry, withTimeout } from '../../runtime/resilience.js';
+import { withRetry, withTimeout } from '../../vendor/runtime/resilience.js';
 import { getLogger } from '../../common/logger.js';
-import type { DirectoryUser, WorkOsDirectoryClient } from '../../runtime/workos-directory.js';
+import type {
+  DirectoryUser,
+  WorkOsDirectoryClient,
+} from '../../vendor/runtime/workos-directory.js';
 
 const TIMEOUT_MS = 10_000;
 const CACHE_TTL_MS = 4 * 60 * 60 * 1000;

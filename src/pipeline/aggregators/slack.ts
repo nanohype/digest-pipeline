@@ -5,7 +5,7 @@
  * newsletter corpus.
  */
 
-import { withRetry, withTimeout } from '../../runtime/resilience.js';
+import { withRetry, withTimeout } from '../../vendor/runtime/resilience.js';
 import { piiFilter, sanitizeSourceItem } from '../filters/pii.js';
 import { getLogger } from '../../common/logger.js';
 import type { AggregationResult, SanitizedSourceItem } from '../types.js';

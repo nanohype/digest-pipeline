@@ -2,7 +2,7 @@
  * PII Filter — strips blocked content before LLM generation.
  *
  * The pattern policy is the vendored @nanohype/runtime redaction catalog
- * (src/runtime/pii.ts): one org-wide PII definition covering secrets and
+ * (src/vendor/runtime/pii.ts): one org-wide PII definition covering secrets and
  * tokens, SSN and cards, compensation, performance/HR, health, DOB,
  * contact info, AWS account ids, and customer/infrastructure identifiers.
  * Replacements are typed per label ([EMAIL], [COMPENSATION], …) so
@@ -22,7 +22,7 @@ import {
   scan,
   assertNoPii as assertNoPiiAgainstCatalog,
   type PiiFinding,
-} from '../../runtime/pii.js';
+} from '../../vendor/runtime/pii.js';
 import type { SourceItem, SanitizedSourceItem } from '../types.js';
 
 /** Replace every match of the org-wide catalog with its typed token. */

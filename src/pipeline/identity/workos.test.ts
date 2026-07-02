@@ -1,6 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
 import { WorkOsIdentityResolver } from './workos.js';
-import type { DirectoryUser, WorkOsDirectoryClient } from '../../runtime/workos-directory.js';
+import type {
+  DirectoryUser,
+  WorkOsDirectoryClient,
+} from '../../vendor/runtime/workos-directory.js';
 
 function makeClient(overrides: Partial<WorkOsDirectoryClient> = {}): WorkOsDirectoryClient {
   return {

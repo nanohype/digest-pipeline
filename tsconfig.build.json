@@ -10,7 +10,7 @@
     "src/api/**/*",
     "src/common/**/*",
     "src/data/**/*",
-    "src/runtime/**/*"
+    "src/vendor/runtime/**/*"
   ],
   "exclude": [
     "node_modules",

@@ -6,8 +6,9 @@
 
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { z } from 'zod';
 import { assertNoPii } from '../filters/pii.js';
-import { withRetry, withTimeout } from '../../runtime/resilience.js';
+import { withRetry, withTimeout } from '../../vendor/runtime/resilience.js';
 import { awsRequestHandler } from '../../common/aws.js';
 import { getLogger } from '../../common/logger.js';
 import { getTracer } from '../../common/tracer.js';
@@ -23,6 +24,23 @@ const MAX_ITEMS_PER_SECTION = 5;
 // reads are quick. Each bounds the AWS SDK socket and backs the withTimeout wrap.
 const BEDROCK_TIMEOUT_MS = 60_000;
 const S3_TIMEOUT_MS = 8_000;
+
+// Claude-on-Bedrock response envelope, scoped to what this generator consumes:
+// the first content block's text (the draft) and the token accounting. `usage`
+// is optional — error shapes omit it. Parsed with `parse` inside the retry so
+// a malformed envelope (e.g. a Bedrock error body) fails the run loudly
+// instead of flowing an empty draft into section validation.
+const CompletionResponseSchema = z.object({
+  content: z.array(z.object({ text: z.string() })).min(1, 'Bedrock returned empty content array'),
+  usage: z
+    .object({
+      input_tokens: z.number().optional(),
+      output_tokens: z.number().optional(),
+      cache_read_input_tokens: z.number().optional(),
+      cache_creation_input_tokens: z.number().optional(),
+    })
+    .optional(),
+});
 
 export interface NewsletterGeneratorDeps {
   config: PipelineConfig;
@@ -169,15 +187,9 @@ export class NewsletterGenerator {
               BEDROCK_TIMEOUT_MS,
               'bedrock.invoke_model',
             );
-            const decoded = JSON.parse(new TextDecoder().decode(response.body));
-            const usage = decoded.usage as
-              | {
-                  input_tokens?: number;
-                  output_tokens?: number;
-                  cache_read_input_tokens?: number;
-                  cache_creation_input_tokens?: number;
-                }
-              | undefined;
+            const raw: unknown = JSON.parse(new TextDecoder().decode(response.body));
+            const parsed = CompletionResponseSchema.parse(raw);
+            const usage = parsed.usage;
             const recordTokens = (
               kind: BedrockTokenKind,
               count: number | undefined,
@@ -192,7 +204,7 @@ export class NewsletterGenerator {
             recordTokens('output', usage?.output_tokens, 'tokens.output');
             recordTokens('cache_read', usage?.cache_read_input_tokens, 'tokens.cache_read');
             recordTokens('cache_write', usage?.cache_creation_input_tokens, 'tokens.cache_write');
-            return decoded.content?.[0]?.text ?? '';
+            return parsed.content[0].text;
           },
           { attempts: 3, initialDelayMs: 500, maxDelayMs: 5_000, jitter: true },
         );

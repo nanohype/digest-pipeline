@@ -13,7 +13,9 @@ chart/templates
 chart/dashboards
 web/next-env.d.ts
 
-# Vendored @nanohype/runtime modules — byte-identical to the library source
-# (nanohype/library/runtime/src), which formats itself. Enforced by
-# scripts/sync-runtime.mjs --check.
-src/runtime
+# Byte-identical vendored copies (runtime modules, the sync script, the
+# ESLint base) — formatted at their source of truth. Enforced by
+# scripts/sync-vendored.mjs --check.
+src/vendor
+scripts/sync-vendored.mjs
+eslint.base.mjs

@@ -4,7 +4,7 @@
  * "The Ask". Assignees resolved to directory identities.
  */
 
-import { withRetry, withTimeout } from '../../runtime/resilience.js';
+import { withRetry, withTimeout } from '../../vendor/runtime/resilience.js';
 import { sanitizeSourceItem } from '../filters/pii.js';
 import { getLogger } from '../../common/logger.js';
 import type { AggregationResult, SanitizedSourceItem } from '../types.js';
