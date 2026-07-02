@@ -5,7 +5,7 @@
  * newsletter corpus.
  */
 
-import { withRetry, withTimeout } from '../utils/resilience.js';
+import { withRetry, withTimeout } from '../../runtime/resilience.js';
 import { piiFilter, sanitizeSourceItem } from '../filters/pii.js';
 import { getLogger } from '../../common/logger.js';
 import type { AggregationResult, SanitizedSourceItem } from '../types.js';
@@ -23,22 +23,33 @@ export const aggregateSlack: Aggregator = async (ctx: AggregatorContext): Promis
   const start = Date.now();
   try {
     const [announcements, teamMessages] = await Promise.all([
-      withRetry(() => withTimeout(services.slack.listChannelHistory(announcementsChannelId, since), TIMEOUT_MS), {
-        attempts: 3,
-        initialDelay: 200,
-        jitter: true,
-      }),
-      withRetry(() => withTimeout(services.slack.listChannelHistory(teamChannelId, since), TIMEOUT_MS), {
-        attempts: 3,
-        initialDelay: 200,
-        jitter: true,
-      }),
+      withRetry(
+        () =>
+          withTimeout(
+            services.slack.listChannelHistory(announcementsChannelId, since),
+            TIMEOUT_MS,
+            'slack.history.announcements'
+          ),
+        {
+          attempts: 3,
+          initialDelayMs: 200,
+          jitter: true,
+        }
+      ),
+      withRetry(
+        () => withTimeout(services.slack.listChannelHistory(teamChannelId, since), TIMEOUT_MS, 'slack.history.team'),
+        {
+          attempts: 3,
+          initialDelayMs: 200,
+          jitter: true,
+        }
+      ),
     ]);
 
     const items: SanitizedSourceItem[] = [];
     for (const msg of announcements) {
-      // Length threshold compares post-filter text so [REDACTED] markers
-      // don't count as content.
+      // Length threshold compares post-filter text so redaction tokens
+      // ([EMAIL], [COMPENSATION], …) don't count as content.
       const filtered = piiFilter(msg.text);
       if (filtered.trim().length < MIN_ANNOUNCEMENT_LENGTH) continue;
       const truncated = filtered.slice(0, MAX_TOKEN_LENGTH);

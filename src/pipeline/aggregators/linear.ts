@@ -4,7 +4,7 @@
  * "The Ask". Assignees resolved to directory identities.
  */
 
-import { withRetry, withTimeout } from '../utils/resilience.js';
+import { withRetry, withTimeout } from '../../runtime/resilience.js';
 import { sanitizeSourceItem } from '../filters/pii.js';
 import { getLogger } from '../../common/logger.js';
 import type { AggregationResult, SanitizedSourceItem } from '../types.js';
@@ -18,19 +18,25 @@ export const aggregateLinear: Aggregator = async (ctx: AggregatorContext): Promi
   const start = Date.now();
   try {
     const [closedEpics, upcomingMilestones, askItems] = await Promise.all([
-      withRetry(() => withTimeout(services.linear.listClosedEpicsSince(since), TIMEOUT_MS), {
+      withRetry(
+        () => withTimeout(services.linear.listClosedEpicsSince(since), TIMEOUT_MS, 'linear.listClosedEpicsSince'),
+        {
+          attempts: 3,
+          initialDelayMs: 200,
+          jitter: true,
+        }
+      ),
+      withRetry(
+        () => withTimeout(services.linear.listUpcomingMilestones(), TIMEOUT_MS, 'linear.listUpcomingMilestones'),
+        {
+          attempts: 3,
+          initialDelayMs: 200,
+          jitter: true,
+        }
+      ),
+      withRetry(() => withTimeout(services.linear.listAskLabeledIssues(), TIMEOUT_MS, 'linear.listAskLabeledIssues'), {
         attempts: 3,
-        initialDelay: 200,
-        jitter: true,
-      }),
-      withRetry(() => withTimeout(services.linear.listUpcomingMilestones(), TIMEOUT_MS), {
-        attempts: 3,
-        initialDelay: 200,
-        jitter: true,
-      }),
-      withRetry(() => withTimeout(services.linear.listAskLabeledIssues(), TIMEOUT_MS), {
-        attempts: 3,
-        initialDelay: 200,
+        initialDelayMs: 200,
         jitter: true,
       }),
     ]);

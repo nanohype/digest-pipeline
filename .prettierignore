@@ -12,3 +12,8 @@ web/package-lock.json
 chart/templates
 chart/dashboards
 web/next-env.d.ts
+
+# Vendored @nanohype/runtime modules — byte-identical to the library source
+# (nanohype/library/runtime/src), which formats itself. Enforced by
+# scripts/sync-runtime.mjs --check.
+src/runtime

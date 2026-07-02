@@ -24,7 +24,7 @@ import { createOctokitGitHubService } from './services/github.js';
 import { createLinearService } from './services/linear.js';
 import { createSlackService } from './services/slack.js';
 import { createNotionService } from './services/notion.js';
-import { createWorkOsDirectoryClient } from './services/workos-directory.js';
+import { createWorkOsDirectoryClient } from '../runtime/workos-directory.js';
 import { createS3VoiceBaselineService } from './services/voice-baseline.js';
 import type { AggregatorConfig, AggregatorServices } from './aggregators/types.js';
 

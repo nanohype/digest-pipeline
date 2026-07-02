@@ -1,66 +1,52 @@
+/**
+ * Tests the app's PII wiring over the vendored @nanohype/runtime catalog.
+ * The catalog itself (every pattern, positive + negative samples) is
+ * unit-tested upstream in nanohype/library/runtime alongside the source
+ * of truth — here we verify the union policy is live at this app's
+ * boundaries and that the typed-token + run-id semantics hold.
+ */
+
 import { describe, it, expect } from 'vitest';
-import { piiFilter, piiScan, assertNoPii } from './pii.js';
+import { piiFilter, piiScan, assertNoPii, sanitizeSourceItem } from './pii.js';
+import type { SourceItem } from '../types.js';
 
 describe('piiFilter', () => {
-  it('redacts compensation phrasing', () => {
-    expect(piiFilter('Offer of $150,000 base salary')).toContain('[REDACTED]');
-    expect(piiFilter('annual comp is confidential')).toContain('[REDACTED]');
+  it('redacts with typed tokens, not a generic marker', () => {
+    expect(piiFilter('Ping sarah.doe+digest-pipeline@example.com later')).toBe('Ping [EMAIL] later');
+    expect(piiFilter('Offer of $150,000 base salary')).toContain('[COMPENSATION]');
   });
 
-  it('redacts non-USD and bare-number compensation', () => {
-    expect(piiFilter('£80,000 salary for the new hire')).toContain('[REDACTED]');
-    expect(piiFilter('salary of £80,000 confirmed')).toContain('[REDACTED]');
-    expect(piiFilter('Moved them to base 95k this cycle')).toContain('[REDACTED]');
-    expect(piiFilter('Offer is 120k annually')).toContain('[REDACTED]');
-    expect(piiFilter('€90k bonus approved')).toContain('[REDACTED]');
-  });
-
-  it('redacts performance-management vocabulary', () => {
-    expect(piiFilter('Placed on PIP last quarter')).toContain('[REDACTED]');
-    expect(piiFilter('Sent written warning to the team')).toContain('[REDACTED]');
-    expect(piiFilter('Performance improvement plan initiated')).toContain('[REDACTED]');
-  });
-
-  it('redacts contact info (email, phone, street address)', () => {
-    expect(piiFilter('Ping sarah.doe+digest-pipeline@example.com later')).not.toContain('sarah.doe');
-    expect(piiFilter('Call (415) 555-1234 if needed')).toContain('[REDACTED]');
-    expect(piiFilter('Mail to 1600 Pennsylvania Ave today')).toContain('[REDACTED]');
-  });
-
-  it('redacts international / E.164 phone numbers', () => {
+  it('still blocks the original app categories (comp, HR, health, contact, ids)', () => {
+    expect(piiFilter('salary of £80,000 confirmed')).toContain('[COMPENSATION]');
+    expect(piiFilter('Offer is 120k annually')).toContain('[COMPENSATION]');
+    expect(piiFilter('Placed on PIP last quarter')).toContain('[HR]');
+    expect(piiFilter('Tracking HR-2034 through resolution')).toContain('[HR_CASE]');
+    expect(piiFilter('Approved FMLA leave extension')).toContain('[HEALTH]');
+    expect(piiFilter('She is on medical leave this month')).toContain('[HEALTH]');
+    expect(piiFilter('Call (415) 555-1234 if needed')).toContain('[PHONE]');
     expect(piiFilter('Reach the London office on +44 20 7946 0958')).not.toContain('7946');
-    expect(piiFilter('Reach the London office on +44 20 7946 0958')).toContain('[REDACTED]');
-    expect(piiFilter('Direct line +1-415-555-1234 works too')).toContain('[REDACTED]');
-    expect(piiFilter('Mobile +919876543210 on file')).toContain('[REDACTED]');
+    expect(piiFilter('Mail to 1600 Pennsylvania Ave today')).toContain('[ADDRESS]');
+    expect(piiFilter('SSN 123-45-6789 appeared in the log')).not.toContain('123-45-6789');
+    expect(piiFilter('Card 4242 4242 4242 4242 seen in diff')).not.toMatch(/4242 4242 4242 4242/);
+    expect(piiFilter('DOB: 04/11/1986 from the spreadsheet')).toContain('[DOB]');
   });
 
-  it('redacts health/FMLA references', () => {
-    expect(piiFilter('Approved FMLA leave extension')).toContain('[REDACTED]');
-    expect(piiFilter('Shared a new diagnosis with HR')).toContain('[REDACTED]');
-  });
-
-  it('redacts paraphrased medical / HR-health phrasing', () => {
-    expect(piiFilter('She is on medical leave this month')).toContain('[REDACTED]');
-    expect(piiFilter('Discussing mental health resources with the team')).toContain('[REDACTED]');
-    expect(piiFilter('Filed a disability accommodation request')).toContain('[REDACTED]');
-    expect(piiFilter('Approved a leave of absence starting Monday')).toContain('[REDACTED]');
+  it('redacts the union categories this app previously lacked (secrets, aws, customer/infra)', () => {
+    expect(piiFilter('rotate key AKIAIOSFODNN7EXAMPLE now')).toBe('rotate key [AWS_KEY] now');
+    expect(piiFilter('leaked ghp_abcdefghijklmnopqrstuvwxyz0123456789')).toBe('leaked [GITHUB_PAT]');
+    expect(piiFilter('bot token xoxb-123456789012-abcdefGHIJKL revoked')).toBe('bot token [SLACK_TOKEN] revoked');
+    expect(piiFilter('deployed to 123456789012 aws')).toBe('deployed to [AWS_ACCOUNT] aws');
+    expect(piiFilter('affects cust-99231 only')).toBe('affects [CUSTOMER_ID] only');
+    expect(piiFilter('pod at 10.0.12.5 crashed')).toBe('pod at [INTERNAL_IP] crashed');
+    expect(piiFilter('failing over db-orders-primary')).toBe('failing over [INTERNAL_HOST]');
   });
 
   it('does not redact benign uses of common health/comp words', () => {
-    expect(piiFilter('The team is in good health and morale is high.')).not.toContain('[REDACTED]');
-    expect(piiFilter('Base your decision on the data.')).not.toContain('[REDACTED]');
-    expect(piiFilter('We are taking the lead on this project.')).not.toContain('[REDACTED]');
-  });
-
-  it('redacts HR case and ticket IDs', () => {
-    expect(piiFilter('Tracking HR-2034 through resolution')).toContain('[REDACTED]');
-    expect(piiFilter('Resolved ticket #ABC999 yesterday')).toContain('[REDACTED]');
-  });
-
-  it('redacts SSN, credit card, DOB', () => {
-    expect(piiFilter('SSN 123-45-6789 appeared in the log')).not.toContain('123-45-6789');
-    expect(piiFilter('Card 4242 4242 4242 4242 seen in diff')).not.toMatch(/4242 4242 4242 4242/);
-    expect(piiFilter('DOB: 04/11/1986 from the spreadsheet')).toContain('[REDACTED]');
+    expect(piiFilter('The team is in good health and morale is high.')).toBe(
+      'The team is in good health and morale is high.'
+    );
+    expect(piiFilter('Base your decision on the data.')).toBe('Base your decision on the data.');
+    expect(piiFilter('We are taking the lead on this project.')).toBe('We are taking the lead on this project.');
   });
 
   it('leaves clean text untouched', () => {
@@ -70,9 +56,11 @@ describe('piiFilter', () => {
 });
 
 describe('piiScan', () => {
-  it('returns every pattern that matched', () => {
+  it('returns structured findings (category + label) for every matched pattern', () => {
     const findings = piiScan('Email sarah@example.com and SSN 123-45-6789');
     expect(findings.length).toBeGreaterThanOrEqual(2);
+    expect(findings).toContainEqual({ category: 'contact', label: 'email', matches: ['sarah@example.com'] });
+    expect(findings).toContainEqual({ category: 'financial', label: 'ssn', matches: ['123-45-6789'] });
   });
 
   it('returns empty array on clean input', () => {
@@ -85,7 +73,29 @@ describe('assertNoPii', () => {
     expect(() => assertNoPii('Email: john@example.com', 'run-123')).toThrow(/run-123/);
   });
 
+  it('throws on the widened categories too (a leaked secret blocks the checkpoint)', () => {
+    expect(() => assertNoPii('token xoxb-123456789012-abcdefGHIJKL', 'run-456')).toThrow(/secrets\/slack_token/);
+  });
+
   it('does not throw on clean text', () => {
     expect(() => assertNoPii('The quarterly newsletter is ready.', 'run-xyz')).not.toThrow();
+  });
+});
+
+describe('sanitizeSourceItem', () => {
+  it('filters title and description so items leave the aggregator redacted', () => {
+    const item: SourceItem = {
+      id: 'src-1',
+      source: 'github',
+      section: 'what_shipped',
+      title: 'Rotated AKIAIOSFODNN7EXAMPLE after the incident',
+      description: 'Contact sarah@example.com; pod 10.0.12.5 recovered.',
+      publishedAt: new Date('2026-04-10T00:00:00Z'),
+      rawSignals: {},
+    };
+    const sanitized = sanitizeSourceItem(item);
+    expect(sanitized.title).toBe('Rotated [AWS_KEY] after the incident');
+    expect(sanitized.description).toBe('Contact [EMAIL]; pod [INTERNAL_IP] recovered.');
+    expect(() => assertNoPii(`${sanitized.title}\n${sanitized.description}`, 'run-sanitize')).not.toThrow();
   });
 });

@@ -218,7 +218,7 @@ describe('aggregateNotion', () => {
     const notion: NotionService = { listRecentPagesSince: vi.fn(async () => pages) };
     const result = await aggregateNotion(buildContext({ services: { notion } }));
     expect(result.items).toHaveLength(1);
-    expect(result.items[0].description).toContain('[REDACTED]');
+    expect(result.items[0].description).toContain('[EMAIL]');
     expect(result.items[0].description).not.toContain('jane@example.com');
   });
 });

@@ -1,4 +1,4 @@
-import { createRegistry, type ProviderRegistry } from '../../common/registry.js';
+import { createRegistry, type ProviderRegistry } from '../../runtime/registry.js';
 import type { Aggregator } from './types.js';
 import { aggregateGitHub } from './github.js';
 import { aggregateLinear } from './linear.js';

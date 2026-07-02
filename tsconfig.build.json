@@ -5,6 +5,6 @@
     "outDir": "dist",
     "rootDir": "src"
   },
-  "include": ["src/pipeline/**/*", "src/api/**/*", "src/common/**/*", "src/data/**/*"],
+  "include": ["src/pipeline/**/*", "src/api/**/*", "src/common/**/*", "src/data/**/*", "src/runtime/**/*"],
   "exclude": ["node_modules", "dist", ".next", "cdk.out", "src/web/**/*", "**/*.test.ts", "**/*.test.tsx"]
 }

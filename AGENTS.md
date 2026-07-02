@@ -122,10 +122,11 @@ The newsletter generator (`src/pipeline/ai/generator.ts`) calls Claude via `Invo
 
 ## Conventions
 
-- **Provider registry, not orchestrator edits.** Aggregators and identity resolvers register with `createRegistry<T>` (`src/common/registry.ts`). The orchestrator iterates `registry.names()`; adding a source is a registration line, never an orchestrator change.
+- **Provider registry, not orchestrator edits.** Aggregators and identity resolvers register with `createRegistry<T>` (vendored `src/runtime/registry.ts`). The orchestrator iterates `registry.names()`; adding a source is a registration line, never an orchestrator change.
 - **`SanitizedSourceItem` brand.** Items leave an aggregator only after `sanitizeSourceItem`, which stamps a `unique symbol` brand. The LLM prompt builder's signature accepts only the branded type, so the type system enforces "PII-filtered before the model sees it." `assertNoPii` runs again at two runtime checkpoints — on the assembled prompt before the Bedrock call, and on the model's output.
 - **Immutable audit-event ledger.** Every draft mutation is an append-only `audit_events` row keyed on `run_id` (`DRAFT_GENERATED`, `HUMAN_EDIT`, `APPROVED`, `SENT`, `EXPIRED`, `SOURCE_FAILURE`, `PIPELINE_FAILURE`). Audit writes are always awaited — zero fire-and-forget.
-- **Resilience contract.** Every external call goes through `withTimeout` (8s default, 15s for Slack history) + `withRetry(3, jitter)` from `src/pipeline/utils/resilience.ts`. Explicit timeouts everywhere.
+- **Resilience contract.** Every external call goes through `withTimeout` (8s default, 15s for Slack history) + `withRetry(3, jitter)` from the vendored `src/runtime/resilience.ts`. Explicit timeouts everywhere.
+- **Vendored runtime modules are read-only.** `src/runtime/` is a byte-identical copy of `nanohype/library/runtime/src` (same model as the vendored `tenant-chart-base` chart). Change the library, then `npm run sync:runtime`; CI fails on drift.
 - TypeScript strict, ESM (`"type": "module"`, `.js` extensions in relative imports), Node ≥ 24. Zod at every boundary (API bodies, config, aggregator responses). Pino JSON to stdout with OTel `trace_id`/`span_id` auto-injected. Direct Bedrock SDK via a thin interface — no LLM framework lock-in. ESLint flat config + typescript-eslint, Prettier.
 
 ## Pointers
