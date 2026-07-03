@@ -1,27 +1,20 @@
-import eslint from '@eslint/js';
 import tseslint from 'typescript-eslint';
+import base from './eslint.base.mjs';
 
 export default tseslint.config(
   {
-    ignores: ['dist/', '.next/', 'web/', 'node_modules/'],
+    // web/ owns its own toolchain; src/vendor/ holds byte-identical copies of
+    // @nanohype/runtime modules, linted at their source of truth — local lint
+    // fixes there would be drift.
+    ignores: ['.next/', 'web/', 'src/vendor/'],
   },
-  eslint.configs.recommended,
-  ...tseslint.configs.recommended,
+  // Org base (vendored from nanohype library/config, drift-gated).
+  ...base,
   {
     languageOptions: {
       parserOptions: {
         tsconfigRootDir: import.meta.dirname,
       },
-    },
-    rules: {
-      // TypeScript already resolves globals; eslint's no-undef double-flags
-      // Node primitives like `process` and `console`.
-      'no-undef': 'off',
-      '@typescript-eslint/no-unused-vars': [
-        'error',
-        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
-      ],
-      '@typescript-eslint/no-explicit-any': 'warn',
     },
   },
 );

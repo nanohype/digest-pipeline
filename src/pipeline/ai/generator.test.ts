@@ -127,4 +127,49 @@ describe('NewsletterGenerator', () => {
     expect(body.system[0].text).toContain('PRIOR APPROVED NEWSLETTER TEXT');
     expect(body.system[0].cache_control).toEqual({ type: 'ephemeral' });
   });
+
+  it('accepts an envelope carrying usage token accounting', async () => {
+    const send = vi.fn().mockResolvedValue({
+      body: new TextEncoder().encode(
+        JSON.stringify({
+          content: [{ text: FULL_DRAFT }],
+          usage: {
+            input_tokens: 1200,
+            output_tokens: 480,
+            cache_read_input_tokens: 900,
+            cache_creation_input_tokens: 300,
+          },
+        }),
+      ),
+    });
+    const generator = new NewsletterGenerator(makeDeps({ send }));
+
+    const result = await generator.generate('run-4', SECTIONS);
+
+    expect(result.fullText).toContain('What Shipped');
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails the run loudly on a malformed envelope instead of emitting an empty draft', async () => {
+    // A Bedrock error body has no `content` array. Schema validation throws on
+    // every attempt, so the retry budget exhausts and the run fails.
+    const send = vi.fn().mockResolvedValue({
+      body: new TextEncoder().encode(JSON.stringify({ message: 'Too many requests' })),
+    });
+    const generator = new NewsletterGenerator(makeDeps({ send }));
+
+    await expect(generator.generate('run-5', SECTIONS)).rejects.toThrow(/content/);
+    expect(send).toHaveBeenCalledTimes(3);
+  });
+
+  it('rejects an empty content array', async () => {
+    const send = vi.fn().mockResolvedValue({
+      body: new TextEncoder().encode(JSON.stringify({ content: [] })),
+    });
+    const generator = new NewsletterGenerator(makeDeps({ send }));
+
+    await expect(generator.generate('run-6', SECTIONS)).rejects.toThrow(
+      'Bedrock returned empty content array',
+    );
+  });
 });

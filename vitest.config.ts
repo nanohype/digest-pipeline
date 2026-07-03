@@ -35,7 +35,7 @@ export default defineConfig({
         // Vendored @nanohype/runtime modules — byte-identical copies of
         // nanohype/library/runtime/src, unit-tested upstream alongside the
         // source of truth. This suite covers the app's wiring over them.
-        'src/runtime/**',
+        'src/vendor/**',
       ],
       // Honest floors set just below current coverage so the gate catches a
       // regression (a new untested module) without flaking on minor

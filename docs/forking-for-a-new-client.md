@@ -183,7 +183,7 @@ The weekly `CronJob` runs in production at the next Friday 09:00 UTC after sync.
 
 ## What you should NOT touch
 
-- `src/pipeline/filters/pii.ts` — the regex catalogue is the vendored org-wide set (`src/runtime/pii.ts`), tuned to avoid false positives on newsletter-appropriate content. Category changes land in `nanohype/library/runtime` first, then re-sync (`npm run sync:runtime`); weakening an existing category is a security regression.
+- `src/pipeline/filters/pii.ts` — the regex catalogue is the vendored org-wide set (`src/vendor/runtime/pii.ts`), tuned to avoid false positives on newsletter-appropriate content. Category changes land in `nanohype/library/runtime` first, then re-sync (`npm run sync:vendored`); weakening an existing category is a security regression.
 - `src/pipeline/audit.ts` + `src/data/audit.ts` — all writes must stay awaited. Fire-and-forget on an audit event breaks the edit-rate derivation contract (the metric is computed from the ledger, not from current draft text).
 - `src/api/auth.ts` — WorkOS JWT verification + approver allow-list. Changes here are the security-critical surface of the whole system. If you simplify this to a constant token or a different auth provider, also update the landing-zone `digest-pipeline-platform` IRSA policy + [`secrets.md`](secrets.md).
 - The `SanitizedSourceItem` brand type (`src/pipeline/types.ts`). The PII filter runs before items leave the aggregator; the brand enforces this at the type level. Stripping the brand removes the compiler-enforced guarantee.

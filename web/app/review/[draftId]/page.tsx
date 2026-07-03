@@ -14,7 +14,7 @@
  * the session cookie.
  */
 
-import { useCallback, useEffect, useRef, useState, use } from 'react';
+import { useCallback, useEffect, useId, useRef, useState, use } from 'react';
 import { DiffIndicator } from '@/components/DiffIndicator';
 import { ApproveButton } from '@/components/ApproveButton';
 import { levenshteinDistance } from '@/lib/diff';
@@ -52,6 +52,7 @@ export default function ReviewPage({ params }: { params: Promise<RouteParams> })
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const editorId = useId();
 
   useEffect(() => {
     void fetch(`/api/drafts/${draftId}`)
@@ -166,13 +167,17 @@ export default function ReviewPage({ params }: { params: Promise<RouteParams> })
           </div>
           {isPending ? (
             <div className="draft-edit-pane">
-              <h2>Edit</h2>
+              {/* label-in-heading keeps the pane's h2 semantics while giving the
+                  textarea a real htmlFor/id association */}
+              <h2>
+                <label htmlFor={editorId}>Edit</label>
+              </h2>
               <textarea
+                id={editorId}
                 className="draft-editor"
                 value={editedText}
                 onChange={(e) => handleTextChange(e.target.value)}
                 rows={40}
-                aria-label="Edit newsletter draft"
               />
             </div>
           ) : null}

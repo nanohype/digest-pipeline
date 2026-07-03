@@ -53,11 +53,11 @@ Core insight: **every mutation to a draft is an immutable audit event**. Human e
 
 - **`src/pipeline/`** — weekly one-shot orchestrator (`entrypoint.ts`), shipped as the pipeline `CronJob`. Orchestrator in `index.ts` runs aggregators in parallel (`Promise.allSettled`), deduplicates, ranks, generates, audits, and notifies. One failed source does not fail the run (status becomes `PARTIAL`).
 - **`src/pipeline/aggregators/`** — One module per source. Each exports a factory that registers with the aggregator registry (`registry.ts`) so adding a source never edits the orchestrator. All external calls wrapped in `withTimeout` (8s default, 15s for Slack history) + `withRetry(3, jitter)`. Items are passed through `sanitizeSourceItem` before leaving the aggregator so the LLM prompt builder only ever sees PII-filtered content (enforced by the `SanitizedSourceItem` brand).
-- **`src/pipeline/filters/pii.ts`** — Redaction policy is the vendored org-wide catalog (`src/runtime/pii.ts`): secrets/tokens (JWT, AWS keys, GitHub PATs, Slack tokens, API keys), SSN, credit cards, compensation, performance/HR, HR case IDs, health, DOB, contact info, AWS account ids, customer/infrastructure identifiers. Replacements are typed per label (`[EMAIL]`, `[COMPENSATION]`, …). `assertNoPii` runs at two checkpoints: aggregation (post-piiFilter) and post-LLM output.
-- **`src/pipeline/identity/workos.ts`** — WorkOS Directory Sync-backed identity resolver with 4-hour in-memory cache and the GitHub/Linear/Slack external-id → custom-attribute mapping, over the vendored directory client (`src/runtime/workos-directory.ts`). Maps external IDs to canonical `{displayName, role, team}` via custom attributes on directory users.
+- **`src/pipeline/filters/pii.ts`** — Redaction policy is the vendored org-wide catalog (`src/vendor/runtime/pii.ts`): secrets/tokens (JWT, AWS keys, GitHub PATs, Slack tokens, API keys), SSN, credit cards, compensation, performance/HR, HR case IDs, health, DOB, contact info, AWS account ids, customer/infrastructure identifiers. Replacements are typed per label (`[EMAIL]`, `[COMPENSATION]`, …). `assertNoPii` runs at two checkpoints: aggregation (post-piiFilter) and post-LLM output.
+- **`src/pipeline/identity/workos.ts`** — WorkOS Directory Sync-backed identity resolver with 4-hour in-memory cache and the GitHub/Linear/Slack external-id → custom-attribute mapping, over the vendored directory client (`src/vendor/runtime/workos-directory.ts`). Maps external IDs to canonical `{displayName, role, team}` via custom attributes on directory users.
 - **`src/pipeline/ai/`** — `ranker.ts` scores items on age decay + engagement + metadata completeness. `generator.ts` wraps Bedrock Claude with voice-baseline few-shots loaded from S3, PII assertion at both ends, and `withRetry` around the Bedrock call.
 - **`src/pipeline/audit.ts`** — Awaited-only audit writes against a `DatabaseClient` interface. Zero fire-and-forget.
-- **`src/runtime/`** — vendored `@nanohype/runtime` modules (`resilience.ts`, `registry.ts`, `pii.ts`, `workos-directory.ts`), byte-identical copies of `nanohype/library/runtime/src` — the same consumption model as the vendored `chart/charts/tenant-chart-base`. `npm run sync:runtime` re-copies from the source of truth; `npm run sync:runtime:check` is the CI drift gate. Behavior changes (and their tests) land in the library first, then re-sync — never edit these copies in place. `withTimeout`/`withRetry` from here are used at every external call site.
+- **`src/vendor/runtime/`** — vendored `@nanohype/runtime` modules (`resilience.ts`, `registry.ts`, `pii.ts`, `workos-directory.ts`), byte-identical copies of `nanohype/library/runtime/src` — the same consumption model as the vendored `chart/charts/tenant-chart-base`. `npm run sync:vendored` re-copies from the source of truth; `npm run sync:vendored:check` is the CI drift gate. Behavior changes (and their tests) land in the library first, then re-sync — never edit these copies in place. `withTimeout`/`withRetry` from here are used at every external call site.
 - **`src/api/`** — Fastify server. Every route (except `/health`) gated by JWT middleware using `jose` against the WorkOS JWKS. Bodies validated with Zod. SIGTERM handler drains in-flight requests.
 - **`web/`** — Next.js App Router. `/review/[draftId]` page with inline edit, live edit-rate indicator, approve-and-send action. Uses WorkOS AuthKit for authentication.
 - **`src/data/`** — Postgres-backed `DraftRepository` and `AuditWriter` implementations. Migrations under `migrations/`.
@@ -82,8 +82,8 @@ npm run test:watch        # interactive watch
 npm run migrate:up        # Apply pending migrations to DATABASE_URL
 npm run migrate:down      # Roll back most recent migration
 
-npm run sync:runtime                # re-vendor src/runtime/ from nanohype/library/runtime
-npm run sync:runtime:check          # CI drift gate: vendored copies match the source of truth
+npm run sync:vendored                # re-sync vendored copies (runtime, config, chart base) from ../nanohype
+npm run sync:vendored:check          # CI drift gate: vendored copies match the source of truth
 
 npm run chart:lint                  # helm lint chart
 npm run chart:template:staging      # render chart with staging values
@@ -146,7 +146,7 @@ Unit tests per module with Vitest. Integration tests exercise the pipeline orche
 - `src/web/lib/diff.test.ts` — Levenshtein on short + long inputs
 - `src/pipeline/pipeline.integration.test.ts` — fake aggregators → resolver → filter → ranker → mock Bedrock → audit
 
-Vendored `src/runtime/` modules are not re-tested here — their unit tests live upstream in `nanohype/library/runtime` alongside the source of truth. This suite tests the app's wiring over them.
+Vendored `src/vendor/runtime/` modules are not re-tested here — their unit tests live upstream in `nanohype/library/runtime` alongside the source of truth. This suite tests the app's wiring over them.
 
 Target: ≥ 42 passing assertions. Run with `npm test`.
 
