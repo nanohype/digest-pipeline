@@ -4,7 +4,7 @@
  * plain DTO the aggregator can map without Linear types leaking through.
  */
 
-import { LinearClient } from '@linear/sdk';
+import { LinearClient, PaginationOrderBy } from '@linear/sdk';
 
 export interface LinearEpic {
   id: string;
@@ -100,7 +100,7 @@ export function createLinearService(config: LinearServiceConfig): LinearService 
           state: { type: { neq: 'completed' } },
         },
         first: 20,
-        orderBy: 'createdAt' as never,
+        orderBy: PaginationOrderBy.CreatedAt,
       });
 
       return issues.nodes.map<LinearIssue>((issue) => ({
