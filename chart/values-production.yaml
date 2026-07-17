@@ -22,8 +22,8 @@ env:
 
 tenantInfra:
   # Bucket names match landing-zone digest-pipeline-platform outputs 1:1.
-  voiceBaselineBucket: digest-pipeline-voice-baseline-production
-  rawAggregationsBucket: digest-pipeline-raw-aggregations-production
+  voiceBaselineBucket: digest-pipeline-production-voice-baseline
+  rawAggregationsBucket: digest-pipeline-production-raw-aggregations
   slackReviewChannelId: ''
   approversSecretId: digest-pipeline/production/approvers
   workosDirectorySecretId: digest-pipeline/production/workos-directory

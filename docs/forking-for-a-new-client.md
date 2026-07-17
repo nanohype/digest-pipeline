@@ -170,7 +170,7 @@ If all three of those pass, the fork is working.
 # Provision the prod substrate + seed production secrets first
 # (secrets.md — repeat with env=production).
 cd landing-zone
-terragrunt apply --terragrunt-working-dir live/aws/workload-prod/us-west-2/production/digest-pipeline-platform
+terragrunt apply --terragrunt-working-dir live/aws/workload-production/us-west-2/production/digest-pipeline-platform
 
 cd ../digest-pipeline
 npm run seed:production
