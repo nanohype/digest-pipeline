@@ -213,7 +213,7 @@ Repeat the staging steps with `production` in place of `staging`:
 ```bash
 # 1. Provision the prod substrate.
 cd landing-zone
-terragrunt apply --terragrunt-working-dir live/aws/workload-prod/us-west-2/production/digest-pipeline-platform
+terragrunt apply --terragrunt-working-dir live/aws/workload-production/us-west-2/production/digest-pipeline-platform
 
 # 2. Seed production secrets (see secrets.md).
 cd ../digest-pipeline

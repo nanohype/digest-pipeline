@@ -25,7 +25,7 @@ spec:
       annotations:
         argocd.argoproj.io/sync-wave: '{{`{{syncWave}}`}}'
     spec:
-      project: tenant-protohype
+      project: digest-pipeline
       sources:
         - repoURL: https://github.com/nanohype/digest-pipeline.git
           targetRevision: main
@@ -39,7 +39,7 @@ spec:
           ref: values
       destination:
         server: '{{`{{server}}`}}'
-        namespace: tenants-protohype
+        namespace: tenants-digest-pipeline
       syncPolicy:
         automated:
           prune: true
