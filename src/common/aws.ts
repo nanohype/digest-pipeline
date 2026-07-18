@@ -8,7 +8,7 @@
  * idempotent, withRetry) on top for an application-level deadline.
  */
 
-import { NodeHttpHandler } from '@smithy/node-http-handler';
+import { NodeHttpHandler } from "@smithy/node-http-handler";
 
 const CONNECTION_TIMEOUT_MS = 5_000;
 

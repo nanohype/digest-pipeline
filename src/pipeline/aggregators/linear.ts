@@ -4,11 +4,11 @@
  * "The Ask". Assignees resolved to directory identities.
  */
 
-import { withRetry, withTimeout } from '../../vendor/runtime/resilience.js';
-import { sanitizeSourceItem } from '../filters/pii.js';
-import { getLogger } from '../../common/logger.js';
-import type { AggregationResult, SanitizedSourceItem } from '../types.js';
-import type { Aggregator, AggregatorContext } from './types.js';
+import { getLogger } from "../../common/logger.js";
+import { withRetry, withTimeout } from "../../vendor/runtime/resilience.js";
+import { sanitizeSourceItem } from "../filters/pii.js";
+import type { AggregationResult, SanitizedSourceItem } from "../types.js";
+import type { Aggregator, AggregatorContext } from "./types.js";
 
 const TIMEOUT_MS = 8_000;
 const MAX_ASKS = 5;
@@ -25,7 +25,7 @@ export const aggregateLinear: Aggregator = async (
           withTimeout(
             services.linear.listClosedEpicsSince(since),
             TIMEOUT_MS,
-            'linear.listClosedEpicsSince',
+            "linear.listClosedEpicsSince",
           ),
         {
           attempts: 3,
@@ -38,7 +38,7 @@ export const aggregateLinear: Aggregator = async (
           withTimeout(
             services.linear.listUpcomingMilestones(),
             TIMEOUT_MS,
-            'linear.listUpcomingMilestones',
+            "linear.listUpcomingMilestones",
           ),
         {
           attempts: 3,
@@ -51,7 +51,7 @@ export const aggregateLinear: Aggregator = async (
           withTimeout(
             services.linear.listAskLabeledIssues(),
             TIMEOUT_MS,
-            'linear.listAskLabeledIssues',
+            "linear.listAskLabeledIssues",
           ),
         {
           attempts: 3,
@@ -64,13 +64,13 @@ export const aggregateLinear: Aggregator = async (
     const items: SanitizedSourceItem[] = [];
     for (const epic of closedEpics) {
       const author = epic.assigneeExternalId
-        ? await resolveIdentity('linear', epic.assigneeExternalId).catch(() => null)
+        ? await resolveIdentity("linear", epic.assigneeExternalId).catch(() => null)
         : null;
       items.push(
         sanitizeSourceItem({
           id: `linear-epic-${epic.id}`,
-          source: 'linear',
-          section: 'what_shipped',
+          source: "linear",
+          section: "what_shipped",
           title: epic.title,
           description: epic.description?.slice(0, 500),
           url: epic.url,
@@ -88,8 +88,8 @@ export const aggregateLinear: Aggregator = async (
       items.push(
         sanitizeSourceItem({
           id: `linear-milestone-${milestone.id}`,
-          source: 'linear',
-          section: 'whats_coming',
+          source: "linear",
+          section: "whats_coming",
           title: milestone.name,
           description: milestone.description?.slice(0, 300),
           url: milestone.url,
@@ -102,8 +102,8 @@ export const aggregateLinear: Aggregator = async (
       items.push(
         sanitizeSourceItem({
           id: `linear-ask-${issue.id}`,
-          source: 'linear',
-          section: 'the_ask',
+          source: "linear",
+          section: "the_ask",
           title: issue.title,
           description: issue.description?.slice(0, 300),
           url: issue.url,
@@ -112,11 +112,11 @@ export const aggregateLinear: Aggregator = async (
         }),
       );
     }
-    return { source: 'linear', items, durationMs: Date.now() - start };
+    return { source: "linear", items, durationMs: Date.now() - start };
   } catch (error) {
-    getLogger().error({ runId, source: 'linear', err: error }, 'aggregator.failure');
+    getLogger().error({ runId, source: "linear", err: error }, "aggregator.failure");
     return {
-      source: 'linear',
+      source: "linear",
       items: [],
       error: error instanceof Error ? error.message : String(error),
       durationMs: Date.now() - start,

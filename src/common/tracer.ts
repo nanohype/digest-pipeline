@@ -3,8 +3,8 @@
  * this just hands out a Tracer scoped by instrumentation name.
  */
 
-import { trace, type Tracer } from '@opentelemetry/api';
+import { type Tracer, trace } from "@opentelemetry/api";
 
-export function getTracer(name = 'digest-pipeline'): Tracer {
+export function getTracer(name = "digest-pipeline"): Tracer {
   return trace.getTracer(name);
 }

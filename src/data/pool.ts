@@ -1,4 +1,4 @@
-import { Pool } from 'pg';
+import { Pool } from "pg";
 
 /**
  * Small factory so tests and the composition root can both build a pool

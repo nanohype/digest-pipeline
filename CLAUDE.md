@@ -75,7 +75,7 @@ npm run dev:api           # Fastify API on :3001
 
 npm run build             # tsc → dist/
 npm run typecheck         # tsc --noEmit
-npm run lint              # ESLint on src/
+npm run lint              # Biome on src/
 npm test                  # vitest run
 npm run test:watch        # interactive watch
 

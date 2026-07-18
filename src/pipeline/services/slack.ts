@@ -4,7 +4,7 @@
  * normalised messages without Slack's shape bleeding through.
  */
 
-import { WebClient } from '@slack/web-api';
+import { WebClient } from "@slack/web-api";
 
 export interface SlackMessage {
   ts: string;
@@ -41,7 +41,7 @@ export function createSlackService(config: SlackServiceConfig): SlackService {
         .map<SlackMessage>((m) => ({
           ts: m.ts!,
           channel: channelId,
-          text: m.text ?? '',
+          text: m.text ?? "",
           userId: m.user,
           reactionCount: m.reactions?.reduce((n, r) => n + (r.count ?? 0), 0) ?? 0,
           replyCount: m.reply_count ?? 0,

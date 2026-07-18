@@ -18,12 +18,12 @@
  */
 
 import {
-  redact,
-  scan,
   assertNoPii as assertNoPiiAgainstCatalog,
   type PiiFinding,
-} from '../../vendor/runtime/pii.js';
-import type { SourceItem, SanitizedSourceItem } from '../types.js';
+  redact,
+  scan,
+} from "../../vendor/runtime/pii.js";
+import type { SanitizedSourceItem, SourceItem } from "../types.js";
 
 /** Replace every match of the org-wide catalog with its typed token. */
 export function piiFilter(text: string): string {

@@ -1,10 +1,10 @@
-import type { AggregationResult, ResolvedIdentity } from '../types.js';
-import type { GitHubService } from '../services/github.js';
-import type { LinearService } from '../services/linear.js';
-import type { SlackService } from '../services/slack.js';
-import type { NotionService } from '../services/notion.js';
+import type { GitHubService } from "../services/github.js";
+import type { LinearService } from "../services/linear.js";
+import type { NotionService } from "../services/notion.js";
+import type { SlackService } from "../services/slack.js";
+import type { AggregationResult, ResolvedIdentity } from "../types.js";
 
-export type IdentitySource = 'github' | 'linear' | 'slack';
+export type IdentitySource = "github" | "linear" | "slack";
 
 export interface AggregatorServices {
   github: GitHubService;

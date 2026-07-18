@@ -6,18 +6,18 @@
  * Runs via: node --enable-source-maps dist/api/entrypoint.js
  */
 
-import 'dotenv/config';
-import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
-import { WebClient as SlackWebClient } from '@slack/web-api';
-import { z } from 'zod';
-import { loadApiConfig } from './config.js';
-import { buildServer, registerShutdownHandlers } from './server.js';
-import type { EmailSender, SlackConfirmer } from '../ports.js';
-import { createDbPool } from '../data/pool.js';
-import { createPostgresDraftRepository } from '../data/drafts.js';
-import { createPostgresAuditWriter } from '../data/audit.js';
-import { getLogger } from '../common/logger.js';
-import { awsRequestHandler } from '../common/aws.js';
+import "dotenv/config";
+import { SESClient, SendEmailCommand } from "@aws-sdk/client-ses";
+import { WebClient as SlackWebClient } from "@slack/web-api";
+import { z } from "zod";
+import { awsRequestHandler } from "../common/aws.js";
+import { getLogger } from "../common/logger.js";
+import { createPostgresAuditWriter } from "../data/audit.js";
+import { createPostgresDraftRepository } from "../data/drafts.js";
+import { createDbPool } from "../data/pool.js";
+import type { EmailSender, SlackConfirmer } from "../ports.js";
+import { loadApiConfig } from "./config.js";
+import { buildServer, registerShutdownHandlers } from "./server.js";
 
 const DbSecretSchema = z.object({
   host: z.string().min(1),
@@ -48,7 +48,7 @@ async function resolveDatabaseUrl(
 ): Promise<string> {
   if (env.DATABASE_URL) return env.DATABASE_URL;
   if (!env.DATABASE_SECRET_ID) {
-    throw new Error('Either DATABASE_URL or DATABASE_SECRET_ID must be set');
+    throw new Error("Either DATABASE_URL or DATABASE_SECRET_ID must be set");
   }
   const secret = await config.secrets.getJson(env.DATABASE_SECRET_ID, DbSecretSchema);
   const encoded = encodeURIComponent(secret.password);
@@ -65,7 +65,7 @@ function createSesEmailSender(region: string, env: RuntimeEnv): EmailSender {
     requestHandler: awsRequestHandler(15_000),
     maxAttempts: 1,
   });
-  const recipients = env.NEWSLETTER_RECIPIENT_LIST.split(',')
+  const recipients = env.NEWSLETTER_RECIPIENT_LIST.split(",")
     .map((r) => r.trim())
     .filter(Boolean);
   return {
@@ -74,16 +74,16 @@ function createSesEmailSender(region: string, env: RuntimeEnv): EmailSender {
         Source: env.SES_FROM_ADDRESS,
         Destination: { BccAddresses: recipients },
         Message: {
-          Subject: { Data: subject, Charset: 'UTF-8' },
+          Subject: { Data: subject, Charset: "UTF-8" },
           Body: {
-            Html: { Data: htmlBody, Charset: 'UTF-8' },
-            Text: { Data: textBody, Charset: 'UTF-8' },
+            Html: { Data: htmlBody, Charset: "UTF-8" },
+            Text: { Data: textBody, Charset: "UTF-8" },
           },
         },
       });
       const response = await client.send(command);
       const messageId = response.MessageId;
-      if (!messageId) throw new Error('SES did not return a MessageId');
+      if (!messageId) throw new Error("SES did not return a MessageId");
       return { messageId, recipientCount: recipients.length };
     },
   };
@@ -99,9 +99,9 @@ function createSlackConfirmerFromBot(botToken: string, channelId: string): Slack
           text: `✅ DigestPipeline sent — run ${runId}, draft ${draftId}, ${recipientCount} recipients`,
           blocks: [
             {
-              type: 'section',
+              type: "section",
               text: {
-                type: 'mrkdwn',
+                type: "mrkdwn",
                 text: `✅ *DigestPipeline sent*\nRun \`${runId}\` · Draft \`${draftId}\` · ${recipientCount} recipients`,
               },
             },
@@ -111,7 +111,7 @@ function createSlackConfirmerFromBot(botToken: string, channelId: string): Slack
         // Slack posting is observability, not critical path. Log and
         // swallow so a transient Slack outage doesn't mask a successful
         // send from the approver or the audit trail.
-        getLogger().error({ runId, draftId, recipientCount, err }, 'slack.confirm-sent.failed');
+        getLogger().error({ runId, draftId, recipientCount, err }, "slack.confirm-sent.failed");
       }
     },
   };
@@ -136,11 +136,11 @@ async function main(): Promise<void> {
 
   registerShutdownHandlers(app);
 
-  await app.listen({ host: '0.0.0.0', port: config.env.PORT });
-  app.log.info({ port: config.env.PORT }, 'digest-pipeline API listening');
+  await app.listen({ host: "0.0.0.0", port: config.env.PORT });
+  app.log.info({ port: config.env.PORT }, "digest-pipeline API listening");
 }
 
 main().catch((err) => {
-  console.error('digest-pipeline API failed to start:', err);
+  console.error("digest-pipeline API failed to start:", err);
   process.exit(1);
 });

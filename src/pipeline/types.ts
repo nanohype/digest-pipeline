@@ -3,18 +3,18 @@
  * Agent: eng-ai + eng-backend
  */
 
-export type DigestPipelineStatus = 'PENDING' | 'APPROVED' | 'EXPIRED' | 'SENT' | 'FAILED';
+export type DigestPipelineStatus = "PENDING" | "APPROVED" | "EXPIRED" | "SENT" | "FAILED";
 
 export type SectionName =
-  | 'what_shipped'
-  | 'whats_coming'
-  | 'new_joiners'
-  | 'wins_recognition'
-  | 'the_ask';
+  | "what_shipped"
+  | "whats_coming"
+  | "new_joiners"
+  | "wins_recognition"
+  | "the_ask";
 
 export interface SourceItem {
   id: string;
-  source: 'github' | 'linear' | 'notion' | 'slack';
+  source: "github" | "linear" | "notion" | "slack";
   section: SectionName;
   title: string;
   description?: string;
@@ -59,13 +59,13 @@ export interface Draft {
 }
 
 export type AuditEventType =
-  | 'DRAFT_GENERATED'
-  | 'HUMAN_EDIT'
-  | 'APPROVED'
-  | 'SENT'
-  | 'EXPIRED'
-  | 'SOURCE_FAILURE'
-  | 'PIPELINE_FAILURE';
+  | "DRAFT_GENERATED"
+  | "HUMAN_EDIT"
+  | "APPROVED"
+  | "SENT"
+  | "EXPIRED"
+  | "SOURCE_FAILURE"
+  | "PIPELINE_FAILURE";
 
 export interface AuditEvent {
   id: string;
@@ -88,8 +88,8 @@ export interface PipelineConfig {
     temperature: number;
   };
   schedule: {
-    timezone: 'America/Los_Angeles';
-    dayOfWeek: 'Friday';
+    timezone: "America/Los_Angeles";
+    dayOfWeek: "Friday";
     draftPostHour: 9;
     draftPostMinute: 45;
     reminderHour: 11;
@@ -108,7 +108,7 @@ export interface PipelineRunResult {
   runId: string;
   weekOf: Date;
   draftId?: string;
-  status: 'SUCCESS' | 'PARTIAL' | 'FAILED';
+  status: "SUCCESS" | "PARTIAL" | "FAILED";
   sourceResults: AggregationResult[];
   durationMs: number;
   error?: string;

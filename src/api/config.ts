@@ -4,14 +4,14 @@
  * allow-list can be rotated without a redeploy.
  */
 
-import { z } from 'zod';
-import { createSecretsClient, type SecretsClient } from '../common/secrets.js';
+import { z } from "zod";
+import { createSecretsClient, type SecretsClient } from "../common/secrets.js";
 
 const EnvSchema = z.object({
-  NODE_ENV: z.enum(['development', 'staging', 'production']).default('development'),
+  NODE_ENV: z.enum(["development", "staging", "production"]).default("development"),
   PORT: z.coerce.number().int().positive().default(3001),
-  AWS_REGION: z.string().min(1).default('us-east-1'),
-  WORKOS_ISSUER: z.url().default('https://api.workos.com'),
+  AWS_REGION: z.string().min(1).default("us-east-1"),
+  WORKOS_ISSUER: z.url().default("https://api.workos.com"),
   WORKOS_CLIENT_ID: z.string().min(1),
   APPROVERS_SECRET_ID: z.string().min(1),
   WEB_ORIGIN: z
@@ -19,7 +19,7 @@ const EnvSchema = z.object({
     .min(1)
     .transform((s) =>
       s
-        .split(',')
+        .split(",")
         .map((o) => o.trim())
         .filter(Boolean),
     ),

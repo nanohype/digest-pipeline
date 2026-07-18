@@ -6,11 +6,11 @@
  * Correlation ID (runId) required on every event.
  */
 
-import { levenshteinDistance } from '../common/string.js';
-import type { AuditEventType, AuditEvent } from './types.js';
+import { levenshteinDistance } from "../common/string.js";
+import type { AuditEvent, AuditEventType } from "./types.js";
 
 export interface DatabaseClient {
-  insertAuditEvent(event: Omit<AuditEvent, 'id'>): Promise<void>;
+  insertAuditEvent(event: Omit<AuditEvent, "id">): Promise<void>;
 }
 
 export class AuditWriter {
@@ -34,7 +34,7 @@ export class AuditWriter {
     sourceResults: Array<{ source: string; itemCount: number; error?: string }>,
     llmTokensUsed: number,
   ): Promise<void> {
-    await this.write(runId, 'DRAFT_GENERATED', 'system', { draftId, sourceResults, llmTokensUsed });
+    await this.write(runId, "DRAFT_GENERATED", "system", { draftId, sourceResults, llmTokensUsed });
   }
 
   async humanEdit(
@@ -46,7 +46,7 @@ export class AuditWriter {
   ): Promise<void> {
     const editDistance = levenshteinDistance(originalText, editedText);
     const editRate = editDistance / Math.max(originalText.length, 1);
-    await this.write(runId, 'HUMAN_EDIT', editorUserId, {
+    await this.write(runId, "HUMAN_EDIT", editorUserId, {
       draftId,
       editDistanceChars: editDistance,
       editRate: Math.round(editRate * 10000) / 100,
@@ -56,7 +56,7 @@ export class AuditWriter {
   }
 
   async approved(runId: string, draftId: string, approverUserId: string): Promise<void> {
-    await this.write(runId, 'APPROVED', approverUserId, { draftId });
+    await this.write(runId, "APPROVED", approverUserId, { draftId });
   }
 
   async sent(
@@ -65,10 +65,10 @@ export class AuditWriter {
     sesMessageId: string,
     recipientCount: number,
   ): Promise<void> {
-    await this.write(runId, 'SENT', 'system', { draftId, sesMessageId, recipientCount });
+    await this.write(runId, "SENT", "system", { draftId, sesMessageId, recipientCount });
   }
 
   async expired(runId: string, draftId: string): Promise<void> {
-    await this.write(runId, 'EXPIRED', 'system', { draftId });
+    await this.write(runId, "EXPIRED", "system", { draftId });
   }
 }

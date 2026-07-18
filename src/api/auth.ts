@@ -7,8 +7,8 @@
  * authenticated callers get 403 from isApprover.
  */
 
-import { createRemoteJWKSet, decodeJwt, jwtVerify, type JWTPayload } from 'jose';
-import type { Approvers } from './config.js';
+import { createRemoteJWKSet, decodeJwt, type JWTPayload, jwtVerify } from "jose";
+import type { Approvers } from "./config.js";
 
 export interface SessionClaims extends JWTPayload {
   sub: string; // WorkOS user id
@@ -22,7 +22,7 @@ export interface Authenticator {
 }
 
 export function createAuthenticator(options: { issuer: string; clientId: string }): Authenticator {
-  const issuer = options.issuer.replace(/\/$/, '');
+  const issuer = options.issuer.replace(/\/$/, "");
   // /sso/jwks/<client_id> serves keys for both SSO tokens and User Management
   // session JWTs from the same Application — confirmed by inspecting the
   // @workos-inc/node SDK's getJwksUrl() (which is what authkit-nextjs uses
@@ -42,8 +42,8 @@ export function createAuthenticator(options: { issuer: string; clientId: string 
       // Authorization (who can do what) lives in `isApprover()` against
       // the explicit allow-list, not in JWT claims.
       const { payload } = await jwtVerify(token, jwks, { issuer: expectedIssuer });
-      if (typeof payload.sub !== 'string' || payload.sub.length === 0) {
-        throw new Error('Session token missing sub claim');
+      if (typeof payload.sub !== "string" || payload.sub.length === 0) {
+        throw new Error("Session token missing sub claim");
       }
       return payload as SessionClaims;
     },
@@ -67,7 +67,7 @@ export function extractBearerToken(authorizationHeader: string | undefined): str
   // polynomial-ReDoS surface on a crafted Authorization header. Anchored
   // literal + single-char tests are linear-time.
   if (!/^bearer/i.test(authorizationHeader)) return null;
-  const rest = authorizationHeader.slice('bearer'.length);
+  const rest = authorizationHeader.slice("bearer".length);
   if (!/^\s/.test(rest)) return null;
   const token = rest.trim();
   return token.length > 0 ? token : null;

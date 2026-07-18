@@ -16,15 +16,15 @@
  * factory.
  */
 
-import { pino, type Logger } from 'pino';
+import { type Logger, pino } from "pino";
 
 let cached: Logger | null = null;
 
 export function getLogger(): Logger {
   if (!cached) {
     cached = pino({
-      level: process.env.LOG_LEVEL ?? 'info',
-      base: { service: process.env.OTEL_SERVICE_NAME ?? 'digest-pipeline' },
+      level: process.env.LOG_LEVEL ?? "info",
+      base: { service: process.env.OTEL_SERVICE_NAME ?? "digest-pipeline" },
       timestamp: pino.stdTimeFunctions.isoTime,
     });
   }

@@ -13,23 +13,23 @@
  * audit_events — so the series count stays bounded.
  */
 
-import type { Counter, Histogram } from '@opentelemetry/api';
+import type { Counter, Histogram } from "@opentelemetry/api";
 
-import { createMetrics } from '../vendor/runtime/metrics.js';
+import { createMetrics } from "../vendor/runtime/metrics.js";
 
-const metrics = createMetrics({ meterName: 'digest-pipeline', namespace: 'digest-pipeline' });
+const metrics = createMetrics({ meterName: "digest-pipeline", namespace: "digest-pipeline" });
 
-export const runDuration: Histogram = metrics.histogramInstrument('run.duration_ms', {
-  description: 'Pipeline run wall-clock time',
-  unit: 'ms',
+export const runDuration: Histogram = metrics.histogramInstrument("run.duration_ms", {
+  description: "Pipeline run wall-clock time",
+  unit: "ms",
 });
 
-export const sourceItems: Counter = metrics.counterInstrument('source.items', {
-  description: 'Items returned by aggregator',
+export const sourceItems: Counter = metrics.counterInstrument("source.items", {
+  description: "Items returned by aggregator",
 });
 
-export const sourceFailure: Counter = metrics.counterInstrument('source.failure', {
-  description: 'Aggregator failures by source',
+export const sourceFailure: Counter = metrics.counterInstrument("source.failure", {
+  description: "Aggregator failures by source",
 });
 
 // Allowed values for the `kind` label on `digest-pipeline.bedrock.tokens`. `input` /
@@ -37,22 +37,22 @@ export const sourceFailure: Counter = metrics.counterInstrument('source.failure'
 // from the Anthropic prompt-cache usage fields (`cache_read_input_tokens` /
 // `cache_creation_input_tokens`) and surface cache effectiveness on the
 // Grafana dashboard. Kept low-cardinality on purpose.
-export type BedrockTokenKind = 'input' | 'output' | 'cache_read' | 'cache_write';
+export type BedrockTokenKind = "input" | "output" | "cache_read" | "cache_write";
 
-export const bedrockTokens: Counter = metrics.counterInstrument('bedrock.tokens', {
-  description: 'Bedrock token usage',
-  unit: 'tokens',
+export const bedrockTokens: Counter = metrics.counterInstrument("bedrock.tokens", {
+  description: "Bedrock token usage",
+  unit: "tokens",
 });
 
-export const bedrockFallback: Counter = metrics.counterInstrument('bedrock.fallback', {
-  description: 'Skeleton-fallback runs (Bedrock generation failed)',
+export const bedrockFallback: Counter = metrics.counterInstrument("bedrock.fallback", {
+  description: "Skeleton-fallback runs (Bedrock generation failed)",
 });
 
-export const draftEditRate: Histogram = metrics.histogramInstrument('draft.edit_rate', {
-  description: 'Per-draft Levenshtein edit rate (0-1)',
+export const draftEditRate: Histogram = metrics.histogramInstrument("draft.edit_rate", {
+  description: "Per-draft Levenshtein edit rate (0-1)",
 });
 
-export const emailSent: Counter = metrics.counterInstrument('email.sent', {
-  description: 'Newsletter sends',
-  unit: 'emails',
+export const emailSent: Counter = metrics.counterInstrument("email.sent", {
+  description: "Newsletter sends",
+  unit: "emails",
 });

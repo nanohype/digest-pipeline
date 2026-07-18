@@ -6,9 +6,9 @@
  * status in the WHERE clause so a racing approve/expire doesn't double-send.
  */
 
-import type { Pool } from 'pg';
-import type { Draft, DigestPipelineStatus, RankedSection } from '../pipeline/types.js';
-import type { DraftRepository } from '../ports.js';
+import type { Pool } from "pg";
+import type { DigestPipelineStatus, Draft, RankedSection } from "../pipeline/types.js";
+import type { DraftRepository } from "../ports.js";
 
 interface DraftRow {
   id: string;
