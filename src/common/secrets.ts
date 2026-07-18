@@ -6,9 +6,9 @@
  * causing surprises deep inside request handlers.
  */
 
-import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
-import { z } from 'zod';
-import { awsRequestHandler } from './aws.js';
+import { GetSecretValueCommand, SecretsManagerClient } from "@aws-sdk/client-secrets-manager";
+import type { z } from "zod";
+import { awsRequestHandler } from "./aws.js";
 
 export interface SecretsClient {
   getJson<S extends z.ZodType>(secretId: string, schema: S): Promise<z.infer<S>>;

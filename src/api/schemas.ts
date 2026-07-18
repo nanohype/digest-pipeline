@@ -3,7 +3,7 @@
  * throws become 400 via the Fastify error serializer.
  */
 
-import { z } from 'zod';
+import { z } from "zod";
 
 export const DraftIdParamSchema = z.object({
   id: z.uuid(),
@@ -18,8 +18,8 @@ export type EditsBody = z.infer<typeof EditsBodySchema>;
 export class ValidationError extends Error {
   readonly issues: readonly z.core.$ZodIssue[];
   constructor(issues: readonly z.core.$ZodIssue[]) {
-    super('Validation failed');
-    this.name = 'ValidationError';
+    super("Validation failed");
+    this.name = "ValidationError";
     this.issues = issues;
   }
 }

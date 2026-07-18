@@ -4,36 +4,36 @@
  * Agent: eng-backend
  */
 
-import { randomUUID } from 'node:crypto';
-import { SpanStatusCode } from '@opentelemetry/api';
-import { buildAggregatorRegistry } from './aggregators/registry.js';
+import { randomUUID } from "node:crypto";
+import { SpanStatusCode } from "@opentelemetry/api";
+import { getLogger } from "../common/logger.js";
+import { bedrockFallback, runDuration, sourceFailure, sourceItems } from "../common/metrics.js";
+import { getTracer } from "../common/tracer.js";
+import { buildAggregatorRegistry } from "./aggregators/registry.js";
 import type {
   AggregatorConfig,
   AggregatorContext,
   AggregatorServices,
   IdentitySource,
-} from './aggregators/types.js';
-import { WorkOsIdentityResolver } from './identity/workos.js';
-import { deduplicateItems, rankAndSection } from './ai/ranker.js';
-import { NewsletterGenerator } from './ai/generator.js';
-import { AuditWriter } from './audit.js';
-import { getLogger } from '../common/logger.js';
-import { getTracer } from '../common/tracer.js';
-import { runDuration, sourceItems, sourceFailure, bedrockFallback } from '../common/metrics.js';
+} from "./aggregators/types.js";
+import type { NewsletterGenerator } from "./ai/generator.js";
+import { deduplicateItems, rankAndSection } from "./ai/ranker.js";
+import type { AuditWriter } from "./audit.js";
+import type { WorkOsIdentityResolver } from "./identity/workos.js";
 import type {
-  PipelineRunResult,
   AggregationResult,
+  PipelineRunResult,
   RankedSection,
   ResolvedIdentity,
-} from './types.js';
+} from "./types.js";
 
-const SKELETON_BANNER = '> ⚠️ Auto-generated skeleton — Bedrock failed. Edit before approving.\n\n';
+const SKELETON_BANNER = "> ⚠️ Auto-generated skeleton — Bedrock failed. Edit before approving.\n\n";
 
 export interface PipelineDraftStore {
   create(input: {
     runId: string;
     weekOf: Date;
-    sections: Awaited<ReturnType<NewsletterGenerator['generate']>>['sections'];
+    sections: Awaited<ReturnType<NewsletterGenerator["generate"]>>["sections"];
     fullText: string;
   }): Promise<string>;
 }
@@ -64,26 +64,26 @@ export async function runPipeline(deps: PipelineDeps): Promise<PipelineRunResult
   const { resolver, generator, auditWriter, draftStore, notifier, services, aggregatorConfig } =
     deps;
   const log = getLogger();
-  const tracer = getTracer('digest-pipeline.pipeline');
+  const tracer = getTracer("digest-pipeline.pipeline");
   const runId = randomUUID();
   const start = Date.now();
   const weekOf = getThisFriday(deps.now?.() ?? new Date());
 
-  return tracer.startActiveSpan('pipeline.run', async (rootSpan) => {
-    rootSpan.setAttribute('run.id', runId);
-    rootSpan.setAttribute('week_of', weekOf.toISOString());
-    log.info({ runId, weekOf: weekOf.toISOString() }, 'pipeline.start');
+  return tracer.startActiveSpan("pipeline.run", async (rootSpan) => {
+    rootSpan.setAttribute("run.id", runId);
+    rootSpan.setAttribute("week_of", weekOf.toISOString());
+    log.info({ runId, weekOf: weekOf.toISOString() }, "pipeline.start");
 
     const lookbackDays = deps.lookbackDays ?? 7;
     const since = new Date(weekOf.getTime() - lookbackDays * 24 * 60 * 60 * 1000);
-    rootSpan.setAttribute('lookback.days', lookbackDays);
+    rootSpan.setAttribute("lookback.days", lookbackDays);
     const aggregatorRegistry = buildAggregatorRegistry();
     const resolveIdentity = async (
       source: IdentitySource,
       externalId: string,
     ): Promise<ResolvedIdentity | null> => {
-      if (source === 'github') return resolver.resolveGitHubUser(externalId);
-      if (source === 'linear') return resolver.resolveLinearUser(externalId);
+      if (source === "github") return resolver.resolveGitHubUser(externalId);
+      if (source === "linear") return resolver.resolveLinearUser(externalId);
       return resolver.resolveSlackUser(externalId);
     };
     const ctx: AggregatorContext = {
@@ -96,8 +96,8 @@ export async function runPipeline(deps: PipelineDeps): Promise<PipelineRunResult
 
     const sourceNames = aggregatorRegistry.names();
 
-    const sourceResults = await tracer.startActiveSpan('phase.aggregate', async (span) => {
-      span.setAttribute('source.count', sourceNames.length);
+    const sourceResults = await tracer.startActiveSpan("phase.aggregate", async (span) => {
+      span.setAttribute("source.count", sourceNames.length);
       try {
         const settled = await Promise.allSettled(
           sourceNames.map((name) => aggregatorRegistry.get(name)(ctx)),
@@ -109,10 +109,10 @@ export async function runPipeline(deps: PipelineDeps): Promise<PipelineRunResult
           sourceItems.add(r.items.length, { source: r.source });
           if (r.error) {
             sourceFailure.add(1, { source: r.source });
-            log.error({ runId, source: r.source, error: r.error }, 'aggregator.failure');
+            log.error({ runId, source: r.source, error: r.error }, "aggregator.failure");
           }
         }
-        span.setAttribute('with_errors', results.filter((r) => r.error).length);
+        span.setAttribute("with_errors", results.filter((r) => r.error).length);
         return results;
       } finally {
         span.end();
@@ -121,37 +121,37 @@ export async function runPipeline(deps: PipelineDeps): Promise<PipelineRunResult
 
     const allItems = sourceResults.flatMap((r) => r.items);
 
-    const deduplicated = tracer.startActiveSpan('phase.dedupe', (span) => {
-      span.setAttribute('items.in', allItems.length);
+    const deduplicated = tracer.startActiveSpan("phase.dedupe", (span) => {
+      span.setAttribute("items.in", allItems.length);
       const out = deduplicateItems(allItems);
-      span.setAttribute('items.out', out.length);
+      span.setAttribute("items.out", out.length);
       span.end();
       return out;
     });
 
-    const rankedSections = tracer.startActiveSpan('phase.rank', (span) => {
+    const rankedSections = tracer.startActiveSpan("phase.rank", (span) => {
       const sections = rankAndSection(deduplicated);
-      span.setAttribute('sections.populated', sections.filter((s) => s.items.length > 0).length);
+      span.setAttribute("sections.populated", sections.filter((s) => s.items.length > 0).length);
       span.end();
       return sections;
     });
 
-    const { draft, usedSkeleton } = await tracer.startActiveSpan('phase.generate', async (span) => {
+    const { draft, usedSkeleton } = await tracer.startActiveSpan("phase.generate", async (span) => {
       try {
         const result = await generator.generate(runId, rankedSections);
-        span.setAttribute('used_skeleton', false);
+        span.setAttribute("used_skeleton", false);
         return { draft: result, usedSkeleton: false };
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         span.recordException(error instanceof Error ? error : new Error(message));
-        span.setAttribute('used_skeleton', true);
+        span.setAttribute("used_skeleton", true);
         span.setStatus({ code: SpanStatusCode.ERROR, message });
-        await auditWriter.write(runId, 'PIPELINE_FAILURE', 'system', {
-          phase: 'generation',
+        await auditWriter.write(runId, "PIPELINE_FAILURE", "system", {
+          phase: "generation",
           error: message,
-          fallback: 'skeleton',
+          fallback: "skeleton",
         });
-        log.error({ runId, err: error }, 'generator.failed-falling-back-to-skeleton');
+        log.error({ runId, err: error }, "generator.failed-falling-back-to-skeleton");
         bedrockFallback.add(1);
         const skeleton = buildSkeletonDraft(rankedSections);
         await notifier.alert(
@@ -164,7 +164,7 @@ export async function runPipeline(deps: PipelineDeps): Promise<PipelineRunResult
       }
     });
 
-    const draftId = await tracer.startActiveSpan('phase.audit_and_notify', async (span) => {
+    const draftId = await tracer.startActiveSpan("phase.audit_and_notify", async (span) => {
       try {
         const id = await draftStore.create({
           runId,
@@ -183,7 +183,7 @@ export async function runPipeline(deps: PipelineDeps): Promise<PipelineRunResult
           0,
         );
         await notifier.notifyDraftReady(runId, id, draft.fullText);
-        span.setAttribute('draft.id', id);
+        span.setAttribute("draft.id", id);
         return id;
       } finally {
         span.end();
@@ -191,13 +191,13 @@ export async function runPipeline(deps: PipelineDeps): Promise<PipelineRunResult
     });
 
     const durationMs = Date.now() - start;
-    const status: PipelineRunResult['status'] =
-      usedSkeleton || sourceResults.some((r) => r.error) ? 'PARTIAL' : 'SUCCESS';
+    const status: PipelineRunResult["status"] =
+      usedSkeleton || sourceResults.some((r) => r.error) ? "PARTIAL" : "SUCCESS";
     runDuration.record(durationMs, { status });
-    rootSpan.setAttribute('status', status);
-    rootSpan.setAttribute('duration_ms', durationMs);
+    rootSpan.setAttribute("status", status);
+    rootSpan.setAttribute("duration_ms", durationMs);
     rootSpan.end();
-    log.info({ runId, draftId, durationMs, usedSkeleton, status }, 'pipeline.complete');
+    log.info({ runId, draftId, durationMs, usedSkeleton, status }, "pipeline.complete");
     return { runId, weekOf, draftId, status, sourceResults, durationMs };
   });
 }
@@ -206,7 +206,7 @@ function settledToResult(
   result: PromiseSettledResult<AggregationResult>,
   source: string,
 ): AggregationResult {
-  if (result.status === 'fulfilled') return result.value;
+  if (result.status === "fulfilled") return result.value;
   return {
     source,
     items: [],
@@ -232,12 +232,12 @@ function buildSkeletonDraft(sections: RankedSection[]): {
       return `## ${section.displayName}\n\n_Nothing to report this week._`;
     }
     const lines = section.items.map((item) => {
-      const author = item.author ? ` — ${item.author.displayName}, ${item.author.role}` : '';
-      const link = item.url ? ` ${item.url}` : '';
+      const author = item.author ? ` — ${item.author.displayName}, ${item.author.role}` : "";
+      const link = item.url ? ` ${item.url}` : "";
       return `- **${item.title}**${author}${link}`;
     });
-    return `## ${section.displayName}\n\n${lines.join('\n')}`;
+    return `## ${section.displayName}\n\n${lines.join("\n")}`;
   });
-  const fullText = `${SKELETON_BANNER}${blocks.join('\n\n')}\n`;
+  const fullText = `${SKELETON_BANNER}${blocks.join("\n\n")}\n`;
   return { fullText, sections };
 }

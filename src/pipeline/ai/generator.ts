@@ -4,20 +4,20 @@
  * Agent: eng-ai
  */
 
-import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
-import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
-import { z } from 'zod';
-import { assertNoPii } from '../filters/pii.js';
-import { withRetry, withTimeout } from '../../vendor/runtime/resilience.js';
-import { awsRequestHandler } from '../../common/aws.js';
-import { getLogger } from '../../common/logger.js';
-import { getTracer } from '../../common/tracer.js';
-import { bedrockTokens, type BedrockTokenKind } from '../../common/metrics.js';
-import type { VoiceBaselineService } from '../services/voice-baseline.js';
-import { SECTION_DISPLAY_NAMES } from '../sections.js';
-import type { RankedSection, PipelineConfig } from '../types.js';
+import { BedrockRuntimeClient, InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime";
+import { GetObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { z } from "zod";
+import { awsRequestHandler } from "../../common/aws.js";
+import { getLogger } from "../../common/logger.js";
+import { type BedrockTokenKind, bedrockTokens } from "../../common/metrics.js";
+import { getTracer } from "../../common/tracer.js";
+import { withRetry, withTimeout } from "../../vendor/runtime/resilience.js";
+import { assertNoPii } from "../filters/pii.js";
+import { SECTION_DISPLAY_NAMES } from "../sections.js";
+import type { VoiceBaselineService } from "../services/voice-baseline.js";
+import type { PipelineConfig, RankedSection } from "../types.js";
 
-const tracer = getTracer('digest-pipeline.generator');
+const tracer = getTracer("digest-pipeline.generator");
 
 const MAX_ITEMS_PER_SECTION = 5;
 // Bedrock model inference is slower than the aggregator calls; S3 voice-baseline
@@ -31,7 +31,7 @@ const S3_TIMEOUT_MS = 8_000;
 // a malformed envelope (e.g. a Bedrock error body) fails the run loudly
 // instead of flowing an empty draft into section validation.
 const CompletionResponseSchema = z.object({
-  content: z.array(z.object({ text: z.string() })).min(1, 'Bedrock returned empty content array'),
+  content: z.array(z.object({ text: z.string() })).min(1, "Bedrock returned empty content array"),
   usage: z
     .object({
       input_tokens: z.number().optional(),
@@ -85,11 +85,11 @@ export class NewsletterGenerator {
       items: s.items.slice(0, MAX_ITEMS_PER_SECTION),
     }));
     const voiceExamples = await tracer.startActiveSpan(
-      'bedrock.load_voice_baseline',
+      "bedrock.load_voice_baseline",
       async (span) => {
         try {
           const examples = await this.loadVoiceBaseline(runId);
-          span.setAttribute('examples.count', examples.length);
+          span.setAttribute("examples.count", examples.length);
           return examples;
         } finally {
           span.end();
@@ -103,7 +103,7 @@ export class NewsletterGenerator {
     // blocks the call rather than leaking into the model's context.
     assertNoPii(userPrompt, runId);
     const response = await this.callBedrock(runId, systemPrompt, userPrompt);
-    const validatedText = tracer.startActiveSpan('bedrock.validate_output', (span) => {
+    const validatedText = tracer.startActiveSpan("bedrock.validate_output", (span) => {
       try {
         const out = this.validateOutput(runId, response, cappedSections);
         return out;
@@ -118,8 +118,8 @@ export class NewsletterGenerator {
   private buildSystemPrompt(voiceExamples: string[]): string {
     const examplesBlock = voiceExamples
       .map((ex, i) => `## Example newsletter ${i + 1} (approved)\n\n${ex}`)
-      .join('\n\n---\n\n');
-    return `You are writing the weekly all-hands newsletter for a 500-person company.\nMatch the voice, tone, and style of the Chief of Staff who writes this newsletter.\n\nVOICE: Direct and warm. Concise sentences (avg 15-20 words). No corporate jargon.\nOpening: conversational, never starts with "This week...".\nSection headers use the emoji prefix shown. Items: **Bold title** \u2014 one sentence. Author in italics.\nClosing: one sentence, sometimes a question. Total: 400-600 words.\n\nHARD RULES:\n- EXACTLY 5 sections in order: What Shipped, What's Coming, New Joiners, Wins & Recognition, The Ask\n- AT MOST 5 items per section\n- Never fabricate information\n- Never include email addresses, phone numbers, salary/compensation, or performance plan references\n- If a section has no items: "Nothing to report this week."\n\n${voiceExamples.length > 0 ? `APPROVED EXAMPLES (match this voice exactly):\n\n${examplesBlock}` : '(No voice baseline yet \u2014 write in a clear, direct, warm company voice)'}`;
+      .join("\n\n---\n\n");
+    return `You are writing the weekly all-hands newsletter for a 500-person company.\nMatch the voice, tone, and style of the Chief of Staff who writes this newsletter.\n\nVOICE: Direct and warm. Concise sentences (avg 15-20 words). No corporate jargon.\nOpening: conversational, never starts with "This week...".\nSection headers use the emoji prefix shown. Items: **Bold title** \u2014 one sentence. Author in italics.\nClosing: one sentence, sometimes a question. Total: 400-600 words.\n\nHARD RULES:\n- EXACTLY 5 sections in order: What Shipped, What's Coming, New Joiners, Wins & Recognition, The Ask\n- AT MOST 5 items per section\n- Never fabricate information\n- Never include email addresses, phone numbers, salary/compensation, or performance plan references\n- If a section has no items: "Nothing to report this week."\n\n${voiceExamples.length > 0 ? `APPROVED EXAMPLES (match this voice exactly):\n\n${examplesBlock}` : "(No voice baseline yet \u2014 write in a clear, direct, warm company voice)"}`;
   }
 
   private buildUserPrompt(runId: string, sections: RankedSection[]): string {
@@ -133,19 +133,19 @@ export class NewsletterGenerator {
           .map((item, i) => {
             const author = item.author
               ? ` \u2014 ${item.author.displayName}, ${item.author.role} (${item.author.team})`
-              : '';
-            const desc = item.description ? `\n  ${item.description}` : '';
-            const link = item.url ? `\n  Link: ${item.url}` : '';
+              : "";
+            const desc = item.description ? `\n  ${item.description}` : "";
+            const link = item.url ? `\n  Link: ${item.url}` : "";
             return `${i + 1}. ${item.title}${author}${desc}${link}`;
           })
-          .join('\n');
+          .join("\n");
         const truncatedNote =
           section.truncatedCount > 0
             ? `\n(${section.truncatedCount} additional items not shown)`
-            : '';
+            : "";
         return `### ${displayName}\n${itemLines}${truncatedNote}`;
       })
-      .join('\n\n');
+      .join("\n\n");
     return `Write this week's newsletter using the data below. Run ID: ${runId}\n\n${sectionBlocks}\n\nWrite the complete newsletter now.`;
   }
 
@@ -157,14 +157,14 @@ export class NewsletterGenerator {
     // Transient Bedrock errors (throttling, 5xx) are retried with jittered
     // exponential backoff. A validation error will still exhaust the budget
     // and throw, but adding a few seconds of delay is cheap for a weekly run.
-    return tracer.startActiveSpan('bedrock.invoke_model', async (span) => {
-      span.setAttribute('model.id', this.config.llm.modelId);
-      span.setAttribute('max_tokens', this.config.llm.maxTokens);
+    return tracer.startActiveSpan("bedrock.invoke_model", async (span) => {
+      span.setAttribute("model.id", this.config.llm.modelId);
+      span.setAttribute("max_tokens", this.config.llm.maxTokens);
       try {
         return await withRetry(
           async () => {
             const body = JSON.stringify({
-              anthropic_version: 'bedrock-2023-05-31',
+              anthropic_version: "bedrock-2023-05-31",
               max_tokens: this.config.llm.maxTokens,
               temperature: this.config.llm.temperature,
               // Prompt-cache breakpoint on the stable system prefix. The system
@@ -173,19 +173,19 @@ export class NewsletterGenerator {
               // marking it ephemeral-cacheable means the few-shot corpus is read
               // from cache instead of re-billed on every call. The per-run user
               // turn stays after the breakpoint, uncached.
-              system: [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }],
-              messages: [{ role: 'user', content: userPrompt }],
+              system: [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }],
+              messages: [{ role: "user", content: userPrompt }],
             });
             const command = new InvokeModelCommand({
               modelId: this.config.llm.modelId,
-              contentType: 'application/json',
-              accept: 'application/json',
+              contentType: "application/json",
+              accept: "application/json",
               body,
             });
             const response = await withTimeout(
               this.bedrock.send(command),
               BEDROCK_TIMEOUT_MS,
-              'bedrock.invoke_model',
+              "bedrock.invoke_model",
             );
             const raw: unknown = JSON.parse(new TextDecoder().decode(response.body));
             const parsed = CompletionResponseSchema.parse(raw);
@@ -200,10 +200,10 @@ export class NewsletterGenerator {
                 span.setAttribute(attribute, count);
               }
             };
-            recordTokens('input', usage?.input_tokens, 'tokens.input');
-            recordTokens('output', usage?.output_tokens, 'tokens.output');
-            recordTokens('cache_read', usage?.cache_read_input_tokens, 'tokens.cache_read');
-            recordTokens('cache_write', usage?.cache_creation_input_tokens, 'tokens.cache_write');
+            recordTokens("input", usage?.input_tokens, "tokens.input");
+            recordTokens("output", usage?.output_tokens, "tokens.output");
+            recordTokens("cache_read", usage?.cache_read_input_tokens, "tokens.cache_read");
+            recordTokens("cache_write", usage?.cache_creation_input_tokens, "tokens.cache_write");
             return parsed.content[0].text;
           },
           { attempts: 3, initialDelayMs: 500, maxDelayMs: 5_000, jitter: true },
@@ -229,7 +229,7 @@ export class NewsletterGenerator {
       .map((name) => SECTION_DISPLAY_NAMES[name]);
     const missingHeaders = requiredHeaders.filter((h) => !text.includes(h));
     if (missingHeaders.length > 0)
-      throw new Error(`[${runId}] LLM output missing sections: ${missingHeaders.join(', ')}`);
+      throw new Error(`[${runId}] LLM output missing sections: ${missingHeaders.join(", ")}`);
     let validated = text;
     for (const section of expectedSections) {
       if (section.truncatedCount > 0) {
@@ -246,7 +246,7 @@ export class NewsletterGenerator {
       const texts = await Promise.all(keys.slice(-3).map((key) => this.readS3Text(key)));
       return texts.filter((text): text is string => Boolean(text));
     } catch (error) {
-      getLogger().warn({ runId, err: error }, 'voice-baseline.load-failed');
+      getLogger().warn({ runId, err: error }, "voice-baseline.load-failed");
       return [];
     }
   }
@@ -256,7 +256,7 @@ export class NewsletterGenerator {
       const response = await withTimeout(
         this.s3.send(new GetObjectCommand({ Bucket: this.config.voiceBaselineBucket, Key: key })),
         S3_TIMEOUT_MS,
-        'bedrock.load_voice_baseline',
+        "bedrock.load_voice_baseline",
       );
       return (await response.Body?.transformToString()) ?? null;
     } catch {

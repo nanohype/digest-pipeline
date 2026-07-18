@@ -79,9 +79,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Every vendored surface (src/vendor/runtime modules, .prettierrc.json,
-      # eslint.base.mjs, the tenant-chart-base chart, and the sync script
-      # itself) must stay byte-identical to its source of truth in
+      # Every vendored surface (src/vendor/runtime modules, biome.base.json,
+      # the tenant-chart-base chart, and the sync script itself) must stay
+      # byte-identical to its source of truth in
       # nanohype/nanohype, declared in scripts/vendored.json. Fixes propagate
       # outward from the library, never inward; a drifted copy is the defect.
       - name: Check out the vendored source of truth

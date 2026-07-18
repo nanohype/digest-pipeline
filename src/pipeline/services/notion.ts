@@ -12,7 +12,7 @@
  * intended database.
  */
 
-import { Client, isFullDatabase, isFullPage } from '@notionhq/client';
+import { Client, isFullDatabase, isFullPage } from "@notionhq/client";
 
 export interface NotionPage {
   id: string;
@@ -55,10 +55,10 @@ export function createNotionService(config: NotionServiceConfig): NotionService 
         const response = await client.dataSources.query({
           data_source_id: dataSourceId,
           filter: {
-            timestamp: 'created_time',
+            timestamp: "created_time",
             created_time: { after: since.toISOString() },
           },
-          sorts: [{ timestamp: 'created_time', direction: 'descending' }],
+          sorts: [{ timestamp: "created_time", direction: "descending" }],
           page_size: 50,
         });
 
@@ -70,7 +70,7 @@ export function createNotionService(config: NotionServiceConfig): NotionService 
           // over-scoped token cannot widen the aggregation surface.
           const parent = result.parent;
           const parentDatabaseId =
-            parent.type === 'data_source_id' || parent.type === 'database_id'
+            parent.type === "data_source_id" || parent.type === "database_id"
               ? parent.database_id
               : undefined;
           if (parentDatabaseId !== config.databaseId) continue;
@@ -95,8 +95,8 @@ export function createNotionService(config: NotionServiceConfig): NotionService 
 function extractTitle(properties: Record<string, unknown>): string | null {
   for (const value of Object.values(properties)) {
     const prop = value as { type?: string; title?: Array<{ plain_text?: string }> };
-    if (prop.type === 'title' && Array.isArray(prop.title)) {
-      const joined = prop.title.map((t) => t.plain_text ?? '').join('');
+    if (prop.type === "title" && Array.isArray(prop.title)) {
+      const joined = prop.title.map((t) => t.plain_text ?? "").join("");
       if (joined) return joined;
     }
   }
@@ -111,8 +111,8 @@ function extractAuthorName(properties: Record<string, unknown>): string | undefi
       people?: Array<{ name?: string }>;
       rich_text?: Array<{ plain_text?: string }>;
     };
-    if (prop.type === 'people' && prop.people?.[0]?.name) return prop.people[0].name;
-    if (prop.type === 'rich_text' && prop.rich_text?.[0]?.plain_text)
+    if (prop.type === "people" && prop.people?.[0]?.name) return prop.people[0].name;
+    if (prop.type === "rich_text" && prop.rich_text?.[0]?.plain_text)
       return prop.rich_text[0].plain_text;
   }
   return undefined;

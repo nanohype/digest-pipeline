@@ -1,9 +1,9 @@
-import { describe, it, expect, vi } from 'vitest';
-import { WorkOsIdentityResolver } from './workos.js';
+import { describe, expect, it, vi } from "vitest";
 import type {
   DirectoryUser,
   WorkOsDirectoryClient,
-} from '../../vendor/runtime/workos-directory.js';
+} from "../../vendor/runtime/workos-directory.js";
+import { WorkOsIdentityResolver } from "./workos.js";
 
 function makeClient(overrides: Partial<WorkOsDirectoryClient> = {}): WorkOsDirectoryClient {
   return {
@@ -16,80 +16,80 @@ function makeClient(overrides: Partial<WorkOsDirectoryClient> = {}): WorkOsDirec
 }
 
 const sampleUser: DirectoryUser = {
-  id: 'directory_user_01',
-  firstName: 'Ada',
-  lastName: 'Lovelace',
-  displayName: 'Ada Lovelace',
-  title: 'Principal Engineer',
-  department: 'Platform',
-  customAttributes: { githubLogin: 'ada' },
+  id: "directory_user_01",
+  firstName: "Ada",
+  lastName: "Lovelace",
+  displayName: "Ada Lovelace",
+  title: "Principal Engineer",
+  department: "Platform",
+  customAttributes: { githubLogin: "ada" },
 };
 
-describe('WorkOsIdentityResolver', () => {
-  it('maps a DirectoryUser to a ResolvedIdentity (no email surfaced)', async () => {
+describe("WorkOsIdentityResolver", () => {
+  it("maps a DirectoryUser to a ResolvedIdentity (no email surfaced)", async () => {
     const client = makeClient({
       findByCustomAttribute: vi.fn(async () => sampleUser),
     });
     const resolver = new WorkOsIdentityResolver(client);
-    const identity = await resolver.resolveGitHubUser('ada');
+    const identity = await resolver.resolveGitHubUser("ada");
     expect(identity).toEqual({
-      userId: 'directory_user_01',
-      displayName: 'Ada Lovelace',
-      role: 'Principal Engineer',
-      team: 'Platform',
+      userId: "directory_user_01",
+      displayName: "Ada Lovelace",
+      role: "Principal Engineer",
+      team: "Platform",
     });
-    expect(identity).not.toHaveProperty('email');
+    expect(identity).not.toHaveProperty("email");
   });
 
-  it('queries the source-specific custom attribute for each external-id type', async () => {
+  it("queries the source-specific custom attribute for each external-id type", async () => {
     const findByCustomAttribute = vi.fn(async () => sampleUser);
     const resolver = new WorkOsIdentityResolver(makeClient({ findByCustomAttribute }));
-    await resolver.resolveGitHubUser('ada');
-    await resolver.resolveSlackUser('U123');
-    await resolver.resolveLinearUser('lin_42');
+    await resolver.resolveGitHubUser("ada");
+    await resolver.resolveSlackUser("U123");
+    await resolver.resolveLinearUser("lin_42");
     expect(findByCustomAttribute.mock.calls).toEqual([
-      ['githubLogin', 'ada'],
-      ['slackUserId', 'U123'],
-      ['linearUserId', 'lin_42'],
+      ["githubLogin", "ada"],
+      ["slackUserId", "U123"],
+      ["linearUserId", "lin_42"],
     ]);
   });
 
-  it('falls back to default role/team labels when the directory user omits title/department', async () => {
+  it("falls back to default role/team labels when the directory user omits title/department", async () => {
     const { title: _title, department: _department, ...bare } = sampleUser;
     const client = makeClient({
       findByCustomAttribute: vi.fn(async () => bare),
     });
     const resolver = new WorkOsIdentityResolver(client);
-    const identity = await resolver.resolveLinearUser('lin_42');
-    expect(identity?.role).toBe('Team Member');
-    expect(identity?.team).toBe('Unknown Team');
+    const identity = await resolver.resolveLinearUser("lin_42");
+    expect(identity?.role).toBe("Team Member");
+    expect(identity?.team).toBe("Unknown Team");
   });
 
-  it('caches the second lookup for the same external id', async () => {
+  it("caches the second lookup for the same external id", async () => {
     const findByCustomAttribute = vi.fn(async () => sampleUser);
     const resolver = new WorkOsIdentityResolver(makeClient({ findByCustomAttribute }));
-    await resolver.resolveSlackUser('U123');
-    await resolver.resolveSlackUser('U123');
+    await resolver.resolveSlackUser("U123");
+    await resolver.resolveSlackUser("U123");
     expect(findByCustomAttribute).toHaveBeenCalledTimes(1);
   });
 
-  it('returns null and does not cache when the directory has no user for the id', async () => {
+  it("returns null and does not cache when the directory has no user for the id", async () => {
     const findByCustomAttribute = vi.fn(async () => null);
     const resolver = new WorkOsIdentityResolver(makeClient({ findByCustomAttribute }));
-    const identity = await resolver.resolveSlackUser('U404');
+    const identity = await resolver.resolveSlackUser("U404");
     expect(identity).toBeNull();
-    await resolver.resolveSlackUser('U404');
+    await resolver.resolveSlackUser("U404");
     expect(findByCustomAttribute).toHaveBeenCalledTimes(2);
   });
 
-  it('returns null when the underlying directory call throws (pipeline continues gracefully)', async () => {
+  it("returns null when the underlying directory call throws (pipeline continues gracefully)", async () => {
     const client = makeClient({
       findByCustomAttribute: vi.fn(async () => {
-        throw new Error('WorkOS 5xx');
+        throw new Error("WorkOS 5xx");
       }),
     });
     const resolver = new WorkOsIdentityResolver(client);
-    const identity = await resolver.resolveGitHubUser('broken');
+    const identity = await resolver.resolveGitHubUser("broken");
     expect(identity).toBeNull();
   });
 });

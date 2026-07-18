@@ -12,21 +12,21 @@
  * without a collector).
  */
 
-import { NodeSDK } from '@opentelemetry/sdk-node';
-import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node';
-import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
-import { OTLPMetricExporter } from '@opentelemetry/exporter-metrics-otlp-http';
-import { PeriodicExportingMetricReader } from '@opentelemetry/sdk-metrics';
-import { resourceFromAttributes } from '@opentelemetry/resources';
+import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node";
+import { OTLPMetricExporter } from "@opentelemetry/exporter-metrics-otlp-http";
+import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
+import { resourceFromAttributes } from "@opentelemetry/resources";
+import { PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics";
+import { NodeSDK } from "@opentelemetry/sdk-node";
 
-if (process.env.OTEL_SDK_DISABLED !== 'true') {
-  const endpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT ?? 'http://localhost:4318';
+if (process.env.OTEL_SDK_DISABLED !== "true") {
+  const endpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT ?? "http://localhost:4318";
   const sdk = new NodeSDK({
     resource: resourceFromAttributes({
-      'service.name': process.env.OTEL_SERVICE_NAME ?? 'digest-pipeline',
-      'service.version': process.env.npm_package_version ?? '0.0.0',
-      'deployment.environment': process.env.NODE_ENV ?? 'development',
-      'service.namespace': 'digest-pipeline',
+      "service.name": process.env.OTEL_SERVICE_NAME ?? "digest-pipeline",
+      "service.version": process.env.npm_package_version ?? "0.0.0",
+      "deployment.environment": process.env.NODE_ENV ?? "development",
+      "service.namespace": "digest-pipeline",
     }),
     traceExporter: new OTLPTraceExporter({ url: `${endpoint}/v1/traces` }),
     metricReader: new PeriodicExportingMetricReader({
@@ -35,7 +35,7 @@ if (process.env.OTEL_SDK_DISABLED !== 'true') {
     }),
     instrumentations: [
       getNodeAutoInstrumentations({
-        '@opentelemetry/instrumentation-fs': { enabled: false },
+        "@opentelemetry/instrumentation-fs": { enabled: false },
       }),
     ],
   });
@@ -46,6 +46,6 @@ if (process.env.OTEL_SDK_DISABLED !== 'true') {
       .catch(() => undefined)
       .finally(() => process.exit(0));
   };
-  process.once('SIGTERM', shutdown);
-  process.once('SIGINT', shutdown);
+  process.once("SIGTERM", shutdown);
+  process.once("SIGINT", shutdown);
 }

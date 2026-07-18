@@ -4,11 +4,11 @@
  * verified against the configured database ID for every returned page).
  */
 
-import { withRetry, withTimeout } from '../../vendor/runtime/resilience.js';
-import { sanitizeSourceItem } from '../filters/pii.js';
-import { getLogger } from '../../common/logger.js';
-import type { AggregationResult, SanitizedSourceItem } from '../types.js';
-import type { Aggregator, AggregatorContext } from './types.js';
+import { getLogger } from "../../common/logger.js";
+import { withRetry, withTimeout } from "../../vendor/runtime/resilience.js";
+import { sanitizeSourceItem } from "../filters/pii.js";
+import type { AggregationResult, SanitizedSourceItem } from "../types.js";
+import type { Aggregator, AggregatorContext } from "./types.js";
 
 const TIMEOUT_MS = 8_000;
 
@@ -23,7 +23,7 @@ export const aggregateNotion: Aggregator = async (
         withTimeout(
           services.notion.listRecentPagesSince(since),
           TIMEOUT_MS,
-          'notion.listRecentPagesSince',
+          "notion.listRecentPagesSince",
         ),
       {
         attempts: 3,
@@ -35,8 +35,8 @@ export const aggregateNotion: Aggregator = async (
     const items: SanitizedSourceItem[] = pages.map((page) =>
       sanitizeSourceItem({
         id: `notion-${page.id}`,
-        source: 'notion' as const,
-        section: 'whats_coming' as const,
+        source: "notion" as const,
+        section: "whats_coming" as const,
         title: page.title,
         description: page.summary?.slice(0, 300),
         url: page.url,
@@ -45,11 +45,11 @@ export const aggregateNotion: Aggregator = async (
       }),
     );
 
-    return { source: 'notion', items, durationMs: Date.now() - start };
+    return { source: "notion", items, durationMs: Date.now() - start };
   } catch (error) {
-    getLogger().error({ runId, source: 'notion', err: error }, 'aggregator.failure');
+    getLogger().error({ runId, source: "notion", err: error }, "aggregator.failure");
     return {
-      source: 'notion',
+      source: "notion",
       items: [],
       error: error instanceof Error ? error.message : String(error),
       durationMs: Date.now() - start,

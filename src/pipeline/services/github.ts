@@ -5,7 +5,7 @@
  * without mounting a fake HTTP server.
  */
 
-import { Octokit } from '@octokit/rest';
+import { Octokit } from "@octokit/rest";
 
 export interface GitHubMergedPR {
   number: number;
@@ -44,9 +44,9 @@ export function createOctokitGitHubService(config: GitHubServiceConfig): GitHubS
         const response = await octokit.rest.pulls.list({
           owner,
           repo,
-          state: 'closed',
-          sort: 'updated',
-          direction: 'desc',
+          state: "closed",
+          sort: "updated",
+          direction: "desc",
           per_page: perRepoLimit,
         });
         for (const pr of response.data) {
@@ -57,10 +57,10 @@ export function createOctokitGitHubService(config: GitHubServiceConfig): GitHubS
             title: pr.title,
             htmlUrl: pr.html_url,
             mergedAt: pr.merged_at,
-            authorLogin: pr.user?.login ?? 'unknown',
+            authorLogin: pr.user?.login ?? "unknown",
             body: pr.body ?? undefined,
             labels: pr.labels
-              .map((l) => (typeof l === 'string' ? l : (l.name ?? '')))
+              .map((l) => (typeof l === "string" ? l : (l.name ?? "")))
               .filter(Boolean),
             repo: `${owner}/${repo}`,
           });

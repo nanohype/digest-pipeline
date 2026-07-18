@@ -9,12 +9,12 @@
  * port without importing the web framework just to reach a type.
  */
 
-import type { Draft } from './pipeline/types.js';
+import type { Draft } from "./pipeline/types.js";
 
 export interface NewDraftInput {
   runId: string;
   weekOf: Date;
-  sections: Draft['sections'];
+  sections: Draft["sections"];
   fullText: string;
 }
 

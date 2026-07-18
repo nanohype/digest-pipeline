@@ -5,36 +5,36 @@
  * run by the k8s CronJob (weekly Friday 09:00 UTC).
  */
 
-import 'dotenv/config';
-import { z } from 'zod';
-import { S3Client } from '@aws-sdk/client-s3';
-import { WebClient as SlackWebClient } from '@slack/web-api';
-import { WorkOsIdentityResolver } from './identity/workos.js';
-import { NewsletterGenerator } from './ai/generator.js';
-import { AuditWriter } from './audit.js';
-import { getLogger } from '../common/logger.js';
+import "dotenv/config";
+import { S3Client } from "@aws-sdk/client-s3";
+import { WebClient as SlackWebClient } from "@slack/web-api";
+import { z } from "zod";
+import { awsRequestHandler } from "../common/aws.js";
+import { getLogger } from "../common/logger.js";
+import { createSecretsClient } from "../common/secrets.js";
+import { createPostgresAuditDatabase } from "../data/audit.js";
+import { createPostgresDraftRepository } from "../data/drafts.js";
+import { createDbPool } from "../data/pool.js";
+import { createWorkOsDirectoryClient } from "../vendor/runtime/workos-directory.js";
+import type { AggregatorConfig, AggregatorServices } from "./aggregators/types.js";
+import { NewsletterGenerator } from "./ai/generator.js";
+import { AuditWriter } from "./audit.js";
+import { WorkOsIdentityResolver } from "./identity/workos.js";
 import {
-  runPipeline,
   type PipelineDeps,
   type PipelineDraftStore,
   type PipelineNotifier,
-} from './index.js';
-import { createDbPool } from '../data/pool.js';
-import { createPostgresDraftRepository } from '../data/drafts.js';
-import { createPostgresAuditDatabase } from '../data/audit.js';
-import { createSecretsClient } from '../common/secrets.js';
-import { awsRequestHandler } from '../common/aws.js';
-import type { PipelineConfig } from './types.js';
-import { createOctokitGitHubService } from './services/github.js';
-import { createLinearService } from './services/linear.js';
-import { createSlackService } from './services/slack.js';
-import { createNotionService } from './services/notion.js';
-import { createWorkOsDirectoryClient } from '../vendor/runtime/workos-directory.js';
-import { createS3VoiceBaselineService } from './services/voice-baseline.js';
-import type { AggregatorConfig, AggregatorServices } from './aggregators/types.js';
+  runPipeline,
+} from "./index.js";
+import { createOctokitGitHubService } from "./services/github.js";
+import { createLinearService } from "./services/linear.js";
+import { createNotionService } from "./services/notion.js";
+import { createSlackService } from "./services/slack.js";
+import { createS3VoiceBaselineService } from "./services/voice-baseline.js";
+import type { PipelineConfig } from "./types.js";
 
 const PipelineEnvSchema = z.object({
-  AWS_REGION: z.string().min(1).default('us-east-1'),
+  AWS_REGION: z.string().min(1).default("us-east-1"),
   BEDROCK_MODEL_ID: z.string().min(1),
   BEDROCK_MAX_TOKENS: z.coerce.number().int().positive().default(2000),
   BEDROCK_TEMPERATURE: z.coerce.number().default(0.4),
@@ -92,7 +92,7 @@ async function resolveDatabaseUrl(): Promise<string> {
   const env = PipelineEnvSchema.parse(process.env);
   if (env.DATABASE_URL) return env.DATABASE_URL;
   if (!env.DATABASE_SECRET_ID) {
-    throw new Error('DATABASE_URL or DATABASE_SECRET_ID must be set');
+    throw new Error("DATABASE_URL or DATABASE_SECRET_ID must be set");
   }
   const secrets = createSecretsClient({ region: env.AWS_REGION });
   const secret = await secrets.getJson(env.DATABASE_SECRET_ID, DbSecretSchema);
@@ -130,8 +130,8 @@ async function buildDeps(): Promise<PipelineDeps> {
       temperature: env.BEDROCK_TEMPERATURE,
     },
     schedule: {
-      timezone: 'America/Los_Angeles',
-      dayOfWeek: 'Friday',
+      timezone: "America/Los_Angeles",
+      dayOfWeek: "Friday",
       draftPostHour: 9,
       draftPostMinute: 45,
       reminderHour: 11,
@@ -176,21 +176,21 @@ async function buildDeps(): Promise<PipelineDeps> {
           text: `DigestPipeline draft ready for review.`,
           blocks: [
             {
-              type: 'header',
-              text: { type: 'plain_text', text: '📰 Weekly newsletter draft ready' },
+              type: "header",
+              text: { type: "plain_text", text: "📰 Weekly newsletter draft ready" },
             },
             {
-              type: 'section',
-              text: { type: 'mrkdwn', text: `Run \`${runId}\` · Draft \`${draftId}\`` },
+              type: "section",
+              text: { type: "mrkdwn", text: `Run \`${runId}\` · Draft \`${draftId}\`` },
             },
             {
-              type: 'section',
-              text: { type: 'mrkdwn', text: `Preview:\n>>> ${fullText.slice(0, 600)}` },
+              type: "section",
+              text: { type: "mrkdwn", text: `Preview:\n>>> ${fullText.slice(0, 600)}` },
             },
           ],
         });
       } catch (err) {
-        log.error({ runId, draftId, err }, 'slack.notify-failed');
+        log.error({ runId, draftId, err }, "slack.notify-failed");
       }
     },
     async alert(runId, message) {
@@ -200,7 +200,7 @@ async function buildDeps(): Promise<PipelineDeps> {
           text: `⚠️ DigestPipeline alert (run ${runId}): ${message}`,
         });
       } catch (err) {
-        log.error({ runId, message, err }, 'slack.alert-failed');
+        log.error({ runId, message, err }, "slack.alert-failed");
       }
     },
   };
@@ -220,11 +220,11 @@ async function buildDeps(): Promise<PipelineDeps> {
 async function main(): Promise<void> {
   const deps = await buildDeps();
   const result = await runPipeline(deps);
-  getLogger().info({ result }, 'pipeline.exit');
-  process.exit(result.status === 'FAILED' ? 1 : 0);
+  getLogger().info({ result }, "pipeline.exit");
+  process.exit(result.status === "FAILED" ? 1 : 0);
 }
 
 main().catch((err) => {
-  getLogger().fatal({ err }, 'pipeline.unhandled');
+  getLogger().fatal({ err }, "pipeline.unhandled");
   process.exit(1);
 });

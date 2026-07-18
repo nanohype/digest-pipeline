@@ -14,9 +14,9 @@
     "start:api": "node --enable-source-maps dist/api/entrypoint.js",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "eslint src/",
-    "format": "prettier --write .",
-    "format:check": "prettier --check .",
+    "lint": "biome lint .",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
     "typecheck": "tsc --noEmit",
     "check": "npm run typecheck && npm run lint && npm run format:check && npm test",
     "sync:vendored": "node scripts/sync-vendored.mjs",
@@ -61,15 +61,12 @@
     "zod": "^4.3.0"
   },
   "devDependencies": {
-    "@eslint/js": "^10.0.0",
+    "@biomejs/biome": "2.5.4",
     "@types/node": "^26.1.1",
     "@types/pg": "^8.11.0",
     "@vitest/coverage-v8": "^4.0.0",
-    "eslint": "^10.0.0",
-    "prettier": "^3.4.0",
     "tsx": "^4.19.0",
     "typescript": "^6.0.0",
-    "typescript-eslint": "^8.0.0",
     "vitest": "^4.0.0"
   },
   "overrides": {

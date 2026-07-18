@@ -7,10 +7,10 @@
  * uses the same underlying table via insertAuditEvent.
  */
 
-import type { Pool } from 'pg';
-import { levenshteinDistance } from '../common/string.js';
-import type { AuditWriterPort } from '../ports.js';
-import type { DatabaseClient } from '../pipeline/audit.js';
+import type { Pool } from "pg";
+import { levenshteinDistance } from "../common/string.js";
+import type { DatabaseClient } from "../pipeline/audit.js";
+import type { AuditWriterPort } from "../ports.js";
 
 export function createPostgresAuditDatabase(pool: Pool): DatabaseClient {
   return {
@@ -43,7 +43,7 @@ export function createPostgresAuditWriter(pool: Pool): AuditWriterPort {
       const distance = levenshteinDistance(originalText, editedText);
       const rate = distance / Math.max(originalText.length, 1);
       const editRatePct = Math.round(rate * 10000) / 100;
-      await insert(runId, 'HUMAN_EDIT', editorUserId, {
+      await insert(runId, "HUMAN_EDIT", editorUserId, {
         draftId,
         editDistanceChars: distance,
         editRate: editRatePct,
@@ -54,11 +54,11 @@ export function createPostgresAuditWriter(pool: Pool): AuditWriterPort {
     },
 
     async approved(runId, draftId, approverUserId) {
-      await insert(runId, 'APPROVED', approverUserId, { draftId });
+      await insert(runId, "APPROVED", approverUserId, { draftId });
     },
 
     async sent(runId, draftId, sesMessageId, recipientCount) {
-      await insert(runId, 'SENT', 'system', { draftId, sesMessageId, recipientCount });
+      await insert(runId, "SENT", "system", { draftId, sesMessageId, recipientCount });
       await pool.query(
         `INSERT INTO email_analytics (draft_id, ses_message_id)
          VALUES ($1, $2)

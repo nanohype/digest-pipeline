@@ -5,11 +5,11 @@
  * newsletter corpus.
  */
 
-import { withRetry, withTimeout } from '../../vendor/runtime/resilience.js';
-import { piiFilter, sanitizeSourceItem } from '../filters/pii.js';
-import { getLogger } from '../../common/logger.js';
-import type { AggregationResult, SanitizedSourceItem } from '../types.js';
-import type { Aggregator, AggregatorContext } from './types.js';
+import { getLogger } from "../../common/logger.js";
+import { withRetry, withTimeout } from "../../vendor/runtime/resilience.js";
+import { piiFilter, sanitizeSourceItem } from "../filters/pii.js";
+import type { AggregationResult, SanitizedSourceItem } from "../types.js";
+import type { Aggregator, AggregatorContext } from "./types.js";
 
 const TIMEOUT_MS = 15_000;
 const MAX_TOKEN_LENGTH = 2_000;
@@ -36,7 +36,7 @@ export const aggregateSlack: Aggregator = async (
           withTimeout(
             services.slack.listChannelHistory(announcementsChannelId, since),
             TIMEOUT_MS,
-            'slack.history.announcements',
+            "slack.history.announcements",
           ),
         {
           attempts: 3,
@@ -49,7 +49,7 @@ export const aggregateSlack: Aggregator = async (
           withTimeout(
             services.slack.listChannelHistory(teamChannelId, since),
             TIMEOUT_MS,
-            'slack.history.team',
+            "slack.history.team",
           ),
         {
           attempts: 3,
@@ -67,16 +67,16 @@ export const aggregateSlack: Aggregator = async (
       if (filtered.trim().length < MIN_ANNOUNCEMENT_LENGTH) continue;
       const truncated = filtered.slice(0, MAX_TOKEN_LENGTH);
       const author = msg.userId
-        ? await resolveIdentity('slack', msg.userId).catch(() => null)
+        ? await resolveIdentity("slack", msg.userId).catch(() => null)
         : null;
       items.push(
         sanitizeSourceItem({
           id: `slack-ann-${msg.ts}`,
-          source: 'slack',
-          section: 'wins_recognition',
-          title: truncated.split('\n')[0].slice(0, 120),
+          source: "slack",
+          section: "wins_recognition",
+          title: truncated.split("\n")[0].slice(0, 120),
           description: truncated,
-          url: `https://slack.com/archives/${msg.channel}/p${msg.ts.replace('.', '')}`,
+          url: `https://slack.com/archives/${msg.channel}/p${msg.ts.replace(".", "")}`,
           author: author ?? undefined,
           publishedAt: new Date(Number(msg.ts) * 1000),
           rawSignals: { reactionCount: msg.reactionCount, threadReplies: msg.replyCount },
@@ -89,20 +89,20 @@ export const aggregateSlack: Aggregator = async (
       items.push(
         sanitizeSourceItem({
           id: `slack-team-${msg.ts}`,
-          source: 'slack',
-          section: 'new_joiners',
-          title: msg.text.split('\n')[0].slice(0, 120),
+          source: "slack",
+          section: "new_joiners",
+          title: msg.text.split("\n")[0].slice(0, 120),
           description: msg.text.slice(0, 500),
           publishedAt: new Date(Number(msg.ts) * 1000),
           rawSignals: { isNewHireIntro: true },
         }),
       );
     }
-    return { source: 'slack', items, durationMs: Date.now() - start };
+    return { source: "slack", items, durationMs: Date.now() - start };
   } catch (error) {
-    getLogger().error({ runId, source: 'slack', err: error }, 'aggregator.failure');
+    getLogger().error({ runId, source: "slack", err: error }, "aggregator.failure");
     return {
-      source: 'slack',
+      source: "slack",
       items: [],
       error: error instanceof Error ? error.message : String(error),
       durationMs: Date.now() - start,

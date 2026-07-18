@@ -6,20 +6,20 @@
  * otherwise surface as a spurious "missing sections" generation failure.
  */
 
-import type { SectionName } from './types.js';
+import type { SectionName } from "./types.js";
 
 export const SECTION_ORDER: SectionName[] = [
-  'what_shipped',
-  'whats_coming',
-  'new_joiners',
-  'wins_recognition',
-  'the_ask',
+  "what_shipped",
+  "whats_coming",
+  "new_joiners",
+  "wins_recognition",
+  "the_ask",
 ];
 
 export const SECTION_DISPLAY_NAMES: Record<SectionName, string> = {
-  what_shipped: '🚀 What Shipped',
+  what_shipped: "🚀 What Shipped",
   whats_coming: "📅 What's Coming",
-  new_joiners: '👋 New Joiners',
-  wins_recognition: '🏆 Wins & Recognition',
-  the_ask: '📣 The Ask',
+  new_joiners: "👋 New Joiners",
+  wins_recognition: "🏆 Wins & Recognition",
+  the_ask: "📣 The Ask",
 };

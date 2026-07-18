@@ -4,7 +4,7 @@
  * plain DTO the aggregator can map without Linear types leaking through.
  */
 
-import { LinearClient, PaginationOrderBy } from '@linear/sdk';
+import { LinearClient, PaginationOrderBy } from "@linear/sdk";
 
 export interface LinearEpic {
   id: string;
@@ -49,7 +49,7 @@ export interface LinearServiceConfig {
 
 export function createLinearService(config: LinearServiceConfig): LinearService {
   const client = new LinearClient({ apiKey: config.apiKey });
-  const askLabel = config.askLabelName ?? 'the-ask';
+  const askLabel = config.askLabelName ?? "the-ask";
 
   return {
     async listClosedEpicsSince(since) {
@@ -79,7 +79,7 @@ export function createLinearService(config: LinearServiceConfig): LinearService 
 
     async listUpcomingMilestones() {
       const projects = await client.projects({
-        filter: { state: { eq: 'started' } },
+        filter: { state: { eq: "started" } },
         first: 50,
       });
 
@@ -97,7 +97,7 @@ export function createLinearService(config: LinearServiceConfig): LinearService 
       const issues = await client.issues({
         filter: {
           labels: { name: { eq: askLabel } },
-          state: { type: { neq: 'completed' } },
+          state: { type: { neq: "completed" } },
         },
         first: 20,
         orderBy: PaginationOrderBy.CreatedAt,

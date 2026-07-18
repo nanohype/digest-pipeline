@@ -5,7 +5,7 @@
  * inject a canned list without a real S3 client.
  */
 
-import { ListObjectsV2Command, type S3Client } from '@aws-sdk/client-s3';
+import { ListObjectsV2Command, type S3Client } from "@aws-sdk/client-s3";
 
 export interface VoiceBaselineService {
   listBaselineKeys(): Promise<string[]>;
