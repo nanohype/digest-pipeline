@@ -157,7 +157,7 @@ migrate:
 prometheusRule:
   # Ships SLO recording rules + burn-rate alerts to a Prometheus Operator
   # (kube-prometheus-stack). Off by default — inert without an operator, which
-  # the managed-Prometheus stack (grafana-agent + AMP, alerts in Amazon Managed
+  # the managed-Prometheus stack (Grafana Alloy + AMP, alerts in Amazon Managed
   # Grafana) doesn't run. Set `enabled: true` on a cluster that runs one.
   enabled: false
   selector:
@@ -203,7 +203,8 @@ networkPolicy:
       ports:
         - protocol: TCP
           port: 5432
-    # OTLP traces + metrics + logs to the grafana-agent OTLP receiver
+    # OTLP traces + metrics + logs to the Grafana Alloy OTLP receiver
+    # (Service `alloy` in the `monitoring` namespace, eks-gitops addon)
     - to:
         - namespaceSelector:
             matchLabels:
@@ -218,8 +219,11 @@ env:
   BEDROCK_MODEL_ID: anthropic.claude-sonnet-4-6
   LOG_LEVEL: info
   NODE_ENV: production
-  # OTel — exports to cluster-level Collector (no per-pod sidecar)
-  OTEL_EXPORTER_OTLP_ENDPOINT: http://grafana-agent.monitoring.svc.cluster.local:4318
+  # OTel — exports to the cluster-level Grafana Alloy collector (no per-pod
+  # sidecar). Alloy is an eks-gitops addon; its Service is `alloy` in the
+  # `monitoring` namespace and exposes the OTLP receiver on 4317 (gRPC) and
+  # 4318 (HTTP).
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy.monitoring.svc.cluster.local:4318
   OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
   OTEL_TRACES_SAMPLER: always_on
   OTEL_METRICS_EXPORTER: otlp

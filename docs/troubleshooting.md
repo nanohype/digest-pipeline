@@ -522,12 +522,12 @@ If you fork digest-pipeline and the redirect URI ever needs to differ between en
 
 ### Traces missing from Grafana Cloud Tempo
 
-**Cause:** The pods export OTLP to the shared cluster collector (`otel-collector.observability.svc.cluster.local:4318`); the collector then authenticates upstream against `otlpEndpoint`. The break is usually in the collector's upstream auth (it owns the Grafana Cloud credentials, not the app), or the app can't reach the collector Service.
+**Cause:** The pods export OTLP to the shared cluster Grafana Alloy collector (`alloy.monitoring.svc.cluster.local:4318`); the collector then authenticates upstream against `otlpEndpoint`. The break is usually in the collector's upstream auth (it owns the Grafana Cloud credentials, not the app), or the app can't reach the Alloy Service.
 
-**Fix:** The collector is a cluster addon owned by `eks-gitops`, in the `observability` namespace. Check its logs (it's shared across all tenants, so filter for the digest-pipeline resource attrs `agents.tenant=growth` / `agents.platform=digest-pipeline`):
+**Fix:** Alloy is a cluster addon owned by `eks-gitops`, in the `monitoring` namespace. Check its logs (it's shared across all tenants, so filter for the digest-pipeline resource attrs `agents.tenant=growth` / `agents.platform=digest-pipeline`):
 
 ```bash
-kubectl -n observability logs deploy/otel-collector --tail=200 | grep -Ei 'digest-pipeline|growth|error'
+kubectl -n monitoring logs daemonset/alloy --tail=200 | grep -Ei 'digest-pipeline|growth|error'
 ```
 
 Common errors:
@@ -535,7 +535,7 @@ Common errors:
 - `404 Not Found` — wrong region in `otlpEndpoint` (e.g. `prod-us-west-0` when your stack is `prod-us-east-0`).
 - `403 Forbidden` — the Cloud Access Policy doesn't include `metrics:write` + `traces:write`.
 
-If the collector logs show no digest-pipeline spans arriving at all, the app-side export is failing — confirm `OTEL_EXPORTER_OTLP_ENDPOINT` resolves to the collector Service from inside the pod and that the chart's `networkpolicy.yaml` allows egress to it.
+If the Alloy logs show no digest-pipeline spans arriving at all, the app-side export is failing — confirm `OTEL_EXPORTER_OTLP_ENDPOINT` resolves to the `alloy.monitoring` Service from inside the pod and that the chart's `networkpolicy.yaml` allows egress to it.
 
 ### Logs not in Grafana
 

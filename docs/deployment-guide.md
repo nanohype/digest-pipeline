@@ -35,7 +35,7 @@ Provision these **separately** per environment — staging and production each w
 | **Linear** | Personal API key, optional `askLabel` override | Linear → Settings → API → Personal API keys. The aggregator reads closed epics, upcoming milestones, and issues tagged with `askLabel` (default `ask`) from the past week. |
 | **Notion** | Internal-integration token (`secret_…`), database ID of the all-hands page | Notion → Settings → Connections → Develop or manage integrations. Share the all-hands database with the integration explicitly. |
 | **GitHub** | PAT with `repo:read` over the repos you want aggregated | GitHub → Settings → Developer settings → Personal access tokens. Read-only; used for merged-PR fetch. |
-| **Grafana Cloud** | OTLP instance ID, Cloud Access Policy token (`glc_…`, `metrics:write`+`traces:write`), OTLP endpoint URL | grafana.com → Connections → OpenTelemetry. The cluster OTel Collector (eks-gitops) reads this for its upstream auth. See [`secrets.md`](secrets.md) § "The `digest-pipeline/{env}/grafana-cloud` secret" for the JSON payload shape. |
+| **Grafana Cloud** | OTLP instance ID, Cloud Access Policy token (`glc_…`, `metrics:write`+`traces:write`), OTLP endpoint URL | grafana.com → Connections → OpenTelemetry. The cluster Grafana Alloy collector (eks-gitops) reads this for its upstream auth. See [`secrets.md`](secrets.md) § "The `digest-pipeline/{env}/grafana-cloud` secret" for the JSON payload shape. |
 
 ### Local tooling
 
@@ -278,6 +278,6 @@ done
 | Pipeline Job runs once, exits, status `Failed` with `AccessDeniedException` on Bedrock | Model access not enabled across all regions the inference profile spans | Default profile is `us.anthropic.claude-sonnet-4-6` — request model access for `anthropic.claude-sonnet-4-6` in us-east-1, us-east-2, AND us-west-2. See [`troubleshooting.md`](troubleshooting.md) § "Bedrock errors" |
 | API 5xx on `/drafts/:id/approve` with `SES.MessageRejected` | `sesFromAddress` not a verified SES identity, or SES still in sandbox and the recipient isn't verified | Verify the identity in SES; request production-access or verify each recipient during bring-up |
 | WorkOS sign-in bounces with `invalid_redirect_uri` | The web's redirect URI isn't registered for the Client ID | Add `https://<host>/callback` in the WorkOS dashboard → Redirects |
-| Traces missing from Grafana Cloud | The cluster OTel Collector's upstream auth is failing | Check the collector's logs in the `observability` namespace. The usual cause is a mis-computed `authHeader`; verify it's `Basic ` + base64 of `instanceId:apiToken` |
+| Traces missing from Grafana Cloud | The cluster Grafana Alloy collector's upstream auth is failing | Check Alloy's logs in the `monitoring` namespace. The usual cause is a mis-computed `authHeader`; verify it's `Basic ` + base64 of `instanceId:apiToken` |
 
 For every concrete error observed during bring-up with root cause + fix, see [`troubleshooting.md`](troubleshooting.md).

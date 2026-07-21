@@ -2,14 +2,15 @@
 # eks-agent-platform operator. Apply once per cluster before the
 # ApplicationSet entry starts reconciling the chart.
 #
-# Two CRs declared here:
+# Three CRs declared here:
+#   - Tenant       (the growth team — the owner `Platform.spec.tenant` names)
 #   - BudgetPolicy (referenced by Platform.spec.budget — required)
 #   - Platform     (the actual tenant declaration)
 #
-# Both CRs live in the growth team's management namespace (`tenants-growth`).
-# That is where the team's Platform declarations are kept; it is not the
-# namespace the workloads run in — the operator derives that one from
-# `metadata.name`.
+# Tenant is cluster-scoped, so it takes no namespace. BudgetPolicy and Platform
+# live in the growth team's management namespace (`tenants-growth`). That is
+# where the team's Platform declarations are kept; it is not the namespace the
+# workloads run in — the operator derives that one from `metadata.name`.
 #
 # What the operator reconciles from the Platform CR:
 #   - Workload namespace `tenants-digest-pipeline`, derived from the Platform
@@ -42,6 +43,24 @@
 # (`tenantInfra.*`). SES DKIM CNAME records are
 # emitted as outputs for the operator to publish to the apex DNS zone.
 
+---
+apiVersion: platform.nanohype.dev/v1alpha1
+kind: Tenant
+metadata:
+  name: growth
+  labels:
+    agents.nanohype.dev/tenant: growth
+spec:
+  # The growth team — internal comms and audience programs. Owns the weekly
+  # all-hands newsletter this Platform generates, drafts and sends.
+  displayName: Growth
+  primaryPersona: ops
+  # Soft ceiling on the sum of every owned Platform's BudgetPolicy.monthlyUsd.
+  # digest-pipeline is the only Platform under this Tenant today.
+  aggregateMonthlyBudgetUsd: '2000'
+  compliance:
+    soc2: true
+    hipaa: false
 ---
 apiVersion: governance.nanohype.dev/v1alpha1
 kind: BudgetPolicy
