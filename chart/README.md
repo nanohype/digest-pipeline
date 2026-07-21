@@ -19,7 +19,7 @@ Plus a `migrate-job` Helm pre-install/pre-upgrade hook that runs the SQL migrati
   - `ingress.yaml` — ingress-nginx routing `/api/*` → api Service (with rewrite-target to strip `/api`), `/` → web Service; cert-manager TLS
   - `serviceaccount.yaml` — shared SA across all three workloads, name pinned to the app; bound to the tenant IAM role by a Pod Identity association (no role-arn annotation)
   - `networkpolicy.yaml` — ingress: ingress-nginx → api/web + intra-pod web → api; egress: DNS + HTTPS + Postgres on cluster VPC CIDR
-  - `externalsecret.yaml` — aggregates four AWS Secrets Manager entries into one Secret consumed via envFrom; composes `DATABASE_URL` via the External Secrets template engine
+  - `externalsecret.yaml` — aggregates three AWS Secrets Manager entries into one Secret consumed via envFrom; composes `DATABASE_URL` via the External Secrets template engine
   - `migrate-job.yaml` — Helm pre-install/pre-upgrade hook running `npm run migrate:up`
   - `prometheusrule.yaml` — alerts on the digest-pipeline metrics (`digest-pipeline.run.duration_ms`, `digest-pipeline.source.failure`, `digest-pipeline.bedrock.fallback`, `digest-pipeline.email.sent`)
   - `grafana-dashboard.yaml` — GrafanaDashboard CR (instanceSelector `dashboards: external`) loading the dashboard from `dashboards/digest-pipeline.json`, reconciled by the grafana-operator onto Amazon Managed Grafana
@@ -34,7 +34,7 @@ Single-tenant component `components/aws/digest-pipeline-platform/` provisions ev
 - The `<env>-digest-pipeline-app-access` managed policy (`app_access_policy_arn`): S3 GetObject/PutObject/ListBucket on both buckets, SES SendEmail on the verified identity + configuration set, Secrets Manager read on `digest-pipeline/<env>/*` plus the Aurora master-credentials ARN, CloudWatch PutMetricData
 - The EKS Pod Identity association binding the chart's ServiceAccount to the tenant IAM role
 
-Secrets Manager entries (`digest-pipeline/<env>/approvers`, `digest-pipeline/<env>/workos-directory`, `digest-pipeline/<env>/grafana-cloud`) are seeded via this repo's `scripts/seed-secrets.sh`; the ExternalSecret then syncs them into the in-cluster Secret. `db-credentials` is the exception — the landing-zone `digest-pipeline-platform` rds-aurora module creates and owns it alongside the cluster.
+Secrets Manager entries (`digest-pipeline/<env>/approvers`, `digest-pipeline/<env>/workos-directory`) are seeded via this repo's `scripts/seed-secrets.sh`; the ExternalSecret then syncs them into the in-cluster Secret. `db-credentials` is the exception — the landing-zone `digest-pipeline-platform` rds-aurora module creates and owns it alongside the cluster.
 
 ## Pod identity
 

@@ -79,7 +79,7 @@ This repo owns the application — source, chart, Platform CR, gitops entry. Eve
 - SES verified identity + configuration set (the newsletter send; DKIM CNAMEs are emitted as outputs for the operator to publish)
 - The `app-access` managed policy carrying the app's substrate grants (S3, SES, Secrets Manager, CloudWatch)
 - The EKS Pod Identity association binding the chart's ServiceAccount to the tenant role
-- Secrets Manager seeding (`digest-pipeline/<env>/{approvers,workos-directory,db-credentials,grafana-cloud}`)
+- Secrets Manager seeding (`digest-pipeline/<env>/{approvers,workos-directory,db-credentials}`)
 
 The role itself is operator-owned: `<env>-digest-pipeline-tenant`, minted from the Platform CR, carrying the Bedrock grant clamped to `spec.identity.allowedModels`. Landing-zone's managed policy attaches on top of it through `spec.identity.extraPolicyArns`. All three workloads share one ServiceAccount and therefore one role. The bucket names, channel id, and secret ids land in the chart's `tenantInfra.*`. The chart contains **no inline IAM** — no role, no policy, no role-arn annotation.
 
@@ -89,4 +89,4 @@ The chart assumes these cluster-level capabilities are already installed and rec
 
 - **External Secrets Operator** — backs `externalsecret.yaml` (aggregates the four `digest-pipeline/<env>/*` Secrets Manager entries into one Secret, composing `DATABASE_URL`)
 - **ingress-nginx** + **cert-manager** — back `ingress.yaml` (TLS for `/` → web and `/api/*` → api)
-- **observability stack** — the cluster Grafana Alloy collector (`alloy.monitoring.svc.cluster.local:4318`) and log forwarder that carry traces/metrics/logs to Grafana Cloud. The app emits OTLP and structured Pino JSON to stdout; there are no per-pod sidecars. The `prometheusrule.yaml` alerts and the `grafana-dashboard.yaml` dashboard (`chart/dashboards/digest-pipeline.json`) load into that stack, querying the `digest-pipeline.*` metrics.
+- **observability stack** — the cluster Grafana Alloy collector (`alloy.monitoring.svc.cluster.local:4318`), which fans traces out to in-cluster Tempo, metrics to Amazon Managed Prometheus over SigV4 remote-write, and tailed pod stdout to in-cluster Loki. The app emits OTLP and structured Pino JSON to stdout; there are no per-pod sidecars. The `prometheusrule.yaml` alerts and the `grafana-dashboard.yaml` dashboard (`chart/dashboards/digest-pipeline.json`) load into that stack, querying the `digest-pipeline.*` metrics.

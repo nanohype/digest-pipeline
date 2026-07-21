@@ -19,8 +19,11 @@
     "format:check": "biome format .",
     "typecheck": "tsc --noEmit",
     "check": "npm run typecheck && npm run lint && npm run format:check && npm test",
+    "platform:validate": "node scripts/validate-platform.mjs",
     "sync:vendored": "node scripts/sync-vendored.mjs",
     "sync:vendored:check": "node scripts/sync-vendored.mjs --check",
+    "sync:crd": "node scripts/sync-crd-schemas.mjs",
+    "sync:crd:check": "node scripts/sync-crd-schemas.mjs --check",
     "docs": "echo 'Docs: README.md, AGENTS.md, ARCHITECTURE.md, docs/'",
     "migrate:up": "tsx scripts/migrate.ts up",
     "migrate:down": "tsx scripts/migrate.ts down",
@@ -67,7 +70,8 @@
     "@vitest/coverage-v8": "^4.0.0",
     "tsx": "^4.19.0",
     "typescript": "^6.0.0",
-    "vitest": "^4.0.0"
+    "vitest": "^4.0.0",
+    "yaml": "^2.9.0"
   },
   "overrides": {
     "@grpc/grpc-js": "^1.14.4",

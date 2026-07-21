@@ -140,7 +140,6 @@ externalSecret:
   approversSecret: '' # digest-pipeline/<env>/approvers
   workosSecret: '' # digest-pipeline/<env>/workos-directory
   dbCredentialsSecret: '' # digest-pipeline/<env>/db-credentials
-  grafanaCloudSecret: '' # digest-pipeline/<env>/grafana-cloud
 
 # Helm hook: applies pending DB migrations BEFORE the new chart version rolls
 # out, against the same Postgres the api/pipeline reach via DATABASE_URL.
@@ -222,7 +221,11 @@ env:
   # OTel — exports to the cluster-level Grafana Alloy collector (no per-pod
   # sidecar). Alloy is an eks-gitops addon; its Service is `alloy` in the
   # `monitoring` namespace and exposes the OTLP receiver on 4317 (gRPC) and
-  # 4318 (HTTP).
+  # 4318 (HTTP). The receiver takes no authentication — it is in-cluster and
+  # reachable only through the NetworkPolicy egress rule below — so no
+  # OTEL_EXPORTER_OTLP_HEADERS is set. Alloy fans out from there: traces to
+  # in-cluster Tempo, metrics to Amazon Managed Prometheus over SigV4
+  # remote-write signed with Alloy's own Pod Identity, logs to in-cluster Loki.
   OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy.monitoring.svc.cluster.local:4318
   OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
   OTEL_TRACES_SAMPLER: always_on

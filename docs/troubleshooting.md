@@ -520,9 +520,9 @@ If you fork digest-pipeline and the redirect URI ever needs to differ between en
 
 ## Observability errors
 
-### Traces missing from Grafana Cloud Tempo
+### Traces missing from Tempo
 
-**Cause:** The pods export OTLP to the shared cluster Grafana Alloy collector (`alloy.monitoring.svc.cluster.local:4318`); the collector then authenticates upstream against `otlpEndpoint`. The break is usually in the collector's upstream auth (it owns the Grafana Cloud credentials, not the app), or the app can't reach the Alloy Service.
+**Cause:** The pods export OTLP to the shared cluster Grafana Alloy collector (`alloy.monitoring.svc.cluster.local:4318`), which forwards traces to in-cluster Tempo. The receiver takes no authentication, so the break is almost always reachability — the app can't get to the Alloy Service — or Alloy itself failing to reach Tempo.
 
 **Fix:** Alloy is a cluster addon owned by `eks-gitops`, in the `monitoring` namespace. Check its logs (it's shared across all tenants, so filter for the digest-pipeline resource attrs `agents.tenant=growth` / `agents.platform=digest-pipeline`):
 
@@ -531,7 +531,7 @@ kubectl -n monitoring logs daemonset/alloy --tail=200 | grep -Ei 'digest-pipelin
 ```
 
 Common errors:
-- `401 Unauthorized` — the collector's `authHeader` is malformed. Verify it's `Basic ` + base64 of `instanceId:apiToken` with no trailing newline in `digest-pipeline/{env}/grafana-cloud`.
+- `403 Forbidden` / connection refused from Alloy toward Tempo — check the `tempo` Service in the `monitoring` namespace is up and that eks-gitops has reconciled the Tempo addon.
 - `404 Not Found` — wrong region in `otlpEndpoint` (e.g. `prod-us-west-0` when your stack is `prod-us-east-0`).
 - `403 Forbidden` — the Cloud Access Policy doesn't include `metrics:write` + `traces:write`.
 
@@ -539,7 +539,7 @@ If the Alloy logs show no digest-pipeline spans arriving at all, the app-side ex
 
 ### Logs not in Grafana
 
-**Cause:** DigestPipeline does NOT ship logs through OTel. Logs go directly from pod stdout → the eks-gitops cluster log forwarder → Grafana Cloud Loki. If logs are missing, either the forwarder isn't scraping the namespace or the pods aren't emitting to stdout.
+**Cause:** DigestPipeline does NOT ship logs through OTel. Logs go directly from pod stdout → the eks-gitops cluster Alloy collector → in-cluster Loki. If logs are missing, either Alloy isn't tailing the namespace or the pods aren't emitting to stdout.
 
 **Fix:** Query Loki in Grafana with the service label — e.g. `{service="digest-pipeline-pipeline"}` (or `digest-pipeline-api` / `digest-pipeline-web`); `trace_id` is present on every line, so the Tempo ↔ Loki join is one click. If nothing returns, confirm the pods are logging (`kubectl -n tenants-digest-pipeline logs deploy/digest-pipeline-api` shows JSON lines) and that the cluster log forwarder (an `eks-gitops` addon) is healthy and watching `tenants-digest-pipeline`.
 

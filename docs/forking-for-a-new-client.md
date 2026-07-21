@@ -1,6 +1,6 @@
 # Forking DigestPipeline for a new client
 
-DigestPipeline is a nanohype composite skeleton. Forking for a different client means swapping **runtime configuration** — Secrets Manager entries, WorkOS directory, Slack workspace, Linear workspace, SES sending identity, Grafana Cloud stack — not editing business logic. Every external integration goes through a constructor-injected client (`src/pipeline/entrypoint.ts`, `src/api/entrypoint.ts`), and every AWS resource carries an env-scoped prefix (`digest-pipeline-<env>`) set by the landing-zone `digest-pipeline-platform` component.
+DigestPipeline is a nanohype composite skeleton. Forking for a different client means swapping **runtime configuration** — Secrets Manager entries, WorkOS directory, Slack workspace, Linear workspace, SES sending identity — not editing business logic. Every external integration goes through a constructor-injected client (`src/pipeline/entrypoint.ts`, `src/api/entrypoint.ts`), and every AWS resource carries an env-scoped prefix (`digest-pipeline-<env>`) set by the landing-zone `digest-pipeline-platform` component.
 
 Budget ~3 hours end-to-end: 45 min for third-party account setup, 30 min for local seed, 45 min for a clean staging deploy (substrate apply + chart sync), 30 min for a manual end-to-end run, 30 min to wire voice-baseline + Slack bot memberships.
 
@@ -15,7 +15,6 @@ Have ready:
 - A Linear workspace with workflows + labels matching the aggregator's expectations (closed epics, upcoming milestones, optional `ask`-labeled issues).
 - A Notion workspace with an all-hands database the integration can read.
 - A GitHub org + PAT with `repo:read` over the repos you want summarized.
-- A Grafana Cloud stack (free tier) with a Cloud Access Policy that has `metrics:write` + `traces:write`.
 - A verified SES identity (domain or email) in the deployment region.
 
 ## 1. Name the fork
@@ -67,14 +66,9 @@ Register the bot in each channel (`/invite @<bot>`).
 
 - PAT with `repo:read` on the repos you want aggregated. For org-owned repos that require SSO, **authorize the token for the org** from the GitHub PAT page; otherwise the Octokit calls 404 even with valid credentials.
 
-### Grafana Cloud
+### Observability
 
-Single JSON blob at `digest-pipeline/{env}/grafana-cloud`:
-
-- `instanceId` — grafana.com → Connections → OpenTelemetry → "Instance ID"
-- `apiToken` — a Cloud Access Policy token (`glc_…`) with `metrics:write` + `traces:write`
-- `otlpEndpoint` — the region-specific OTLP gateway URL, e.g. `https://otlp-gateway-prod-us-west-0.grafana.net/otlp`
-- `authHeader` — pre-computed `Basic ` + base64 of `instanceId:apiToken` (the seeder snippet in [`secrets.md`](secrets.md) § "The `digest-pipeline/{env}/grafana-cloud` secret" shows the one-liner)
+Nothing to configure. The cluster's `eks-gitops` observability stack — Alloy, Tempo, Loki, Amazon Managed Prometheus — is shared infrastructure, and the fork inherits it by exporting OTLP to the in-cluster Alloy Service. There is no telemetry secret to seed and no vendor account to create. What does change per fork is the `agents.tenant` / `agents.platform` resource attributes in `chart/values*.yaml`, which is how the shared dashboards slice your fork's data out from everyone else's.
 
 ### SES
 
@@ -88,8 +82,8 @@ Copy the template, fill it in, seed:
 ```bash
 cp secrets.template.json digest-pipeline-secrets.staging.json
 # Edit digest-pipeline-secrets.staging.json — replace every REPLACE_ME.
-# Leave web-config.cookiePassword and grafana-cloud.authHeader empty if you
-# want the seeder to generate / compute them.
+# Leave web-config.cookiePassword empty if you
+# want the seeder to generate it.
 npm run seed:staging:dry     # validates shape, no AWS calls
 AWS_PROFILE=<yours> npm run seed:staging
 ```
@@ -153,7 +147,7 @@ kubectl -n tenants-digest-pipeline create job digest-pipeline-pipeline-manual-$(
   --from=cronjob/digest-pipeline-pipeline
 ```
 
-Watch (stdout also reaches Grafana Cloud Loki — filter `service="digest-pipeline-pipeline"`):
+Watch (stdout also reaches Loki — filter `service="digest-pipeline-pipeline"`):
 
 ```bash
 kubectl -n tenants-digest-pipeline logs -f job/digest-pipeline-pipeline-manual-<ts>

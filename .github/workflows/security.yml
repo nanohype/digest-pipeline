@@ -43,10 +43,14 @@ jobs:
           # The repo owns three Dockerfiles (Dockerfile.api/.pipeline/.web), so
           # the scan targets the repo root rather than a single file. The Helm
           # chart is covered by the ci workflow's helm lint + template steps, so
-          # it's skipped here. platform.yaml (a Platform CR) and
-          # gitops/applicationset-entry.yaml (an ArgoCD ApplicationSet) are not
-          # standard workloads, so trivy's generic Kubernetes checks misfire on
-          # them rather than surfacing real findings — skip both.
+          # it's skipped here. platform.yaml (the Tenant/BudgetPolicy/Platform
+          # CRs) and gitops/applicationset-entry.yaml (an ArgoCD
+          # ApplicationSet) are not standard workloads, so trivy's generic
+          # Kubernetes checks misfire on them rather than surfacing real
+          # findings — skip both. platform.yaml is not left ungated by that:
+          # the ci workflow validates it against the operator's CRD schemas
+          # (`npm run platform:validate`), which is the check that actually
+          # applies to a custom resource.
           scan-ref: '.'
           skip-dirs: 'chart'
           skip-files: 'platform.yaml,gitops/applicationset-entry.yaml'

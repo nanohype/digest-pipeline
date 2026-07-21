@@ -2,11 +2,15 @@
  * OpenTelemetry SDK bootstrap. Loaded via `node --import` so it
  * registers before any instrumented module is required.
  *
- * Traces and metrics only — logs go to stdout via Pino and are
- * shipped by the eks-gitops cluster log forwarder to Grafana Cloud
- * Loki (the universal interface). The OTel pino instrumentation still
- * injects trace context into log records so Loki lines carry trace_id /
- * span_id for correlation back to Tempo.
+ * Traces and metrics only — logs go to stdout via Pino and are picked
+ * up by the eks-gitops cluster collector into Loki (the universal
+ * interface). The OTel pino instrumentation still injects trace context
+ * into log records so Loki lines carry trace_id / span_id for
+ * correlation back to Tempo.
+ *
+ * No exporter credentials: OTLP goes to the in-cluster Alloy collector,
+ * whose receiver takes no authentication. Alloy owns the upstream auth
+ * (SigV4 to Amazon Managed Prometheus) and Tempo and Loki are in-cluster.
  *
  * Skip the whole SDK when `OTEL_SDK_DISABLED=true` (tests, local dev
  * without a collector).

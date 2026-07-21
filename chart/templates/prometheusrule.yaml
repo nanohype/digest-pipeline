@@ -6,7 +6,7 @@
 #   digest-pipeline.draft.edit_rate{run_id}
 #   digest-pipeline.email.sent{run_id}
 #
-# Metric names land in Mimir after the OTel collector's metric-name
+# Metric names land in Amazon Managed Prometheus after Alloy's metric-name
 # normalization (dots → underscores). Adjust label selectors below if
 # your collector pipeline uses different relabel rules.
 
