@@ -26,7 +26,7 @@ DigestPipeline is an automated weekly newsletter pipeline for a Chief of Staff. 
 
 #### Observability
 
-- **OpenTelemetry traces + metrics** exported OTLP to the cluster OTel collector (`otel-collector.observability.svc.cluster.local:4318`) → Grafana Cloud Tempo + Mimir. Pipeline phases and Bedrock sub-phases are explicit named spans.
+- **OpenTelemetry traces + metrics** exported OTLP to the cluster Grafana Alloy collector (`alloy.monitoring.svc.cluster.local:4318`) → Grafana Cloud Tempo + Mimir. Pipeline phases and Bedrock sub-phases are explicit named spans.
 - **Pino → stdout → Grafana Cloud Loki.** Log shipping is an infrastructure concern: apps emit structured JSON to stdout; the eks-gitops cluster log forwarder ships it to Grafana Cloud Loki (`{service="digest-pipeline-pipeline"}` / `digest-pipeline-api`). `trace_id` / `span_id` are auto-injected by `@opentelemetry/instrumentation-pino`, so every log record joins to Tempo.
 - **Browser → API trace propagation.** W3C `traceparent` header added to fetch calls by `@opentelemetry/instrumentation-fetch`; the Next.js proxy routes and Fastify auto-instrumentation continue the trace so a single trace spans browser → API → Postgres.
 - **Custom metrics**: `digest-pipeline.run.duration_ms{status}`, `digest-pipeline.source.{items,failure}{source}`, `digest-pipeline.bedrock.{tokens{kind,model},fallback}`, `digest-pipeline.draft.edit_rate`, `digest-pipeline.email.sent`.
