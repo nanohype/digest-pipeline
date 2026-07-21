@@ -17,7 +17,7 @@ Plus a `migrate-job` Helm pre-install/pre-upgrade hook that runs the SQL migrati
   - `api-deployment.yaml` + `api-service.yaml` — Fastify API
   - `web-deployment.yaml` + `web-service.yaml` — Next.js web; wires `DIGEST_PIPELINE_API_URL` to the api Service DNS
   - `ingress.yaml` — ingress-nginx routing `/api/*` → api Service (with rewrite-target to strip `/api`), `/` → web Service; cert-manager TLS
-  - `serviceaccount.yaml` — shared SA across all three workloads, name pinned to the app; bound to the landing-zone digest-pipeline-platform IAM role by a Pod Identity association (no role-arn annotation)
+  - `serviceaccount.yaml` — shared SA across all three workloads, name pinned to the app; bound to the tenant IAM role by a Pod Identity association (no role-arn annotation)
   - `networkpolicy.yaml` — ingress: ingress-nginx → api/web + intra-pod web → api; egress: DNS + HTTPS + Postgres on cluster VPC CIDR
   - `externalsecret.yaml` — aggregates four AWS Secrets Manager entries into one Secret consumed via envFrom; composes `DATABASE_URL` via the External Secrets template engine
   - `migrate-job.yaml` — Helm pre-install/pre-upgrade hook running `npm run migrate:up`
@@ -31,22 +31,25 @@ Single-tenant component `components/aws/digest-pipeline-platform/` provisions ev
 - Aurora Serverless v2 Postgres (drafts + audit_events; per-env ACU range) + `digest-pipeline/<env>/db-credentials` Secret managed by the rds-aurora module
 - S3 ×2 — `digest-pipeline-voice-baseline-<env>` (immutable corpus, versioned, 365d noncurrent retention) + `digest-pipeline-raw-aggregations-<env>` (debug snapshots, 90d expiration)
 - SES v2 verified email identity + configuration set; DKIM tokens emitted as outputs for the operator to publish as CNAME records on the apex DNS zone
-- IAM role with the consolidated inline policy (Aurora RDS connect, S3 PutObject + GetObject on both buckets, SES SendEmail on the verified identity, Bedrock invoke for Claude Sonnet 4.6 + Titan embed, Secrets Manager read on `digest-pipeline/<env>/*`, CloudWatch PutMetricData)
+- The `<env>-digest-pipeline-app-access` managed policy (`app_access_policy_arn`): S3 GetObject/PutObject/ListBucket on both buckets, SES SendEmail on the verified identity + configuration set, Secrets Manager read on `digest-pipeline/<env>/*` plus the Aurora master-credentials ARN, CloudWatch PutMetricData
+- The EKS Pod Identity association binding the chart's ServiceAccount to the tenant IAM role
 
 Secrets Manager entries (`digest-pipeline/<env>/approvers`, `digest-pipeline/<env>/workos-directory`, `digest-pipeline/<env>/grafana-cloud`) are seeded via this repo's `scripts/seed-secrets.sh`; the ExternalSecret then syncs them into the in-cluster Secret. `db-credentials` is the exception — the landing-zone `digest-pipeline-platform` rds-aurora module creates and owns it alongside the cluster.
 
 ## Pod identity
 
-Two IAM roles exist for any digest-pipeline Platform tenant — different SAs, different policies, different owners:
+One IAM role serves the whole Platform: `<env>-digest-pipeline-tenant`, minted by the eks-agent-platform operator from the Platform CR. Its trust policy is the EKS Pod Identity service principal (`pods.eks.amazonaws.com`), so the trust policy itself names no ServiceAccount — the `(namespace, service-account)` binding lives in a Pod Identity association:
 
-| Role                             | Owner                                             | Trust                                                     | Used by                                                         |
-| -------------------------------- | ------------------------------------------------- | --------------------------------------------------------- | --------------------------------------------------------------- |
-| `<env>-digest-pipeline-platform` | landing-zone `digest-pipeline-platform` component | `system:serviceaccount:tenants-protohype:digest-pipeline` | This chart's pipeline CronJob + api Deployment + web Deployment |
-| `<env>-digest-pipeline-tenant`   | eks-agent-platform operator                       | `system:serviceaccount:tenants-protohype:tenant-runtime`  | AgentFleet pods (if/when any land in this Platform)             |
+| Association                                  | Created by                                        | Used by                                                        |
+| -------------------------------------------- | ------------------------------------------------- | -------------------------------------------------------------- |
+| `(tenants-digest-pipeline, digest-pipeline)` | landing-zone `digest-pipeline-platform` component | This chart's pipeline CronJob + api Deployment + web Deployment |
+| `(tenants-digest-pipeline, tenant-runtime)`  | eks-agent-platform operator                       | AgentFleet pods (if/when any land in this Platform)            |
 
-The chart's `serviceaccount.yaml` creates a ServiceAccount named `digest-pipeline` (pinned via `serviceAccount.name`) with no role-arn annotation. The landing-zone `digest-pipeline-platform` component creates an EKS Pod Identity association binding that `(namespace, service-account)` to the IAM role, so EKS injects credentials through the standard AWS credential chain — no annotation, no role ARN in the chart. The ServiceAccount name must match the association's `service_account`, which is why it is pinned to the app name.
+The role's permissions come from two owners, joined on the Platform CR. Bedrock invoke is operator-owned: the agent-iam baseline grant, clamped by the operator's `bedrock-model-scoping` inline policy to exactly `spec.identity.allowedModels`. The app's substrate grants are tofu-owned: the landing-zone `app_access_policy_arn` managed policy, attached by the operator because `spec.identity.extraPolicyArns` references it.
 
-The operator-managed role is unused by this chart today and is harmless. It only matters once an AgentFleet CR lands in the `digest-pipeline` Platform.
+The chart's `serviceaccount.yaml` creates a ServiceAccount named `digest-pipeline` (pinned via `serviceAccount.name`) with no role-arn annotation — EKS injects credentials through the standard AWS credential chain via the association. The ServiceAccount name must match the association's `service_account`, which is why it is pinned to the app name.
+
+Ordering matters: the Platform CR must reach `Ready` (tenant role minted) before the landing-zone component can look the role up and create its association.
 
 ## Render locally
 
@@ -57,6 +60,6 @@ helm lint chart
 
 ## Where the rest sits
 
-- **AWS substrate** — Aurora Serverless v2, the two S3 buckets (voice-baseline immutable corpus + raw-aggregations debug snapshots), the SES verified identity + configuration set, and the IAM role live in the landing-zone `digest-pipeline-platform` component. SES is `ses.tf` in that component; the pipeline pod calls SES via the SDK on its IAM role.
+- **AWS substrate** — Aurora Serverless v2, the two S3 buckets (voice-baseline immutable corpus + raw-aggregations debug snapshots), the SES verified identity + configuration set, and the app-access managed policy live in the landing-zone `digest-pipeline-platform` component. SES is `ses.tf` in that component; the pipeline pod calls SES via the SDK on the tenant role.
 - **Cluster addons** — ingress-nginx, cert-manager, external-secrets, the OTel collector + log forwarder, and kube-prometheus-stack (which consumes this chart's `prometheusrule.yaml` + `grafana-dashboard.yaml`) are reconciled by `eks-gitops`.
 - **Images** — `release.yml` builds and pushes the three images (`api`/`pipeline`/`web`) to `ghcr.io/nanohype/digest-pipeline`; the chart references them by tag and resolution happens at pull time, so multi-arch falls out of the build matrix rather than a pinned platform.

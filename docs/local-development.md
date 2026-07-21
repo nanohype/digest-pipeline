@@ -8,7 +8,7 @@ How to iterate on DigestPipeline without deploying — the dev loop, a local Pos
 cp .env.example .env
 npm install
 npm run typecheck        # tsc --noEmit
-npm run lint             # ESLint on src/
+npm run lint             # Biome lint
 npm test                 # vitest run (all suites)
 npm run test:watch       # interactive watch
 ```
@@ -135,10 +135,10 @@ Test files under `src/`:
 
 ```bash
 npm run typecheck   # tsc --noEmit with strict + NodeNext
-npm run lint        # ESLint on src/
+npm run lint        # Biome lint
 ```
 
-`tsconfig.json` enforces strict mode with `NodeNext` module resolution, so relative imports require the `.js` suffix. ESLint's `no-floating-promises` rule catches any accidentally un-`await`ed audit write.
+`tsconfig.json` enforces strict mode with `NodeNext` module resolution, so relative imports require the `.js` suffix. Biome runs the recommended rule set plus the repo's formatter settings from `biome.base.json`.
 
 ## Running CI parity locally
 
@@ -182,7 +182,7 @@ When a scheduled staging / production run fails, reproduce locally:
 
 3. The `details` JSON blob on `PIPELINE_FAILURE` records which phase failed and the error message. Armed with that, rerun locally with the same inputs (or copy the raw aggregation from `s3://digest-pipeline-raw-aggregations-<account>-staging/<run_id>/` if the snapshot made it that far).
 
-4. Pull the run's logs. The pipeline Job's stdout goes to Grafana Cloud Loki via the cluster log forwarder — filter on `service="digest-pipeline-pipeline"` and the `run_id` field. For the live Job pod: `kubectl -n tenants-protohype logs job/<job-name>` (the CronJob spawns `digest-pipeline-pipeline-<timestamp>` Jobs). Every line carries `trace_id` so you can jump into Tempo.
+4. Pull the run's logs. The pipeline Job's stdout goes to Grafana Cloud Loki via the cluster log forwarder — filter on `service="digest-pipeline-pipeline"` and the `run_id` field. For the live Job pod: `kubectl -n tenants-digest-pipeline logs job/<job-name>` (the CronJob spawns `digest-pipeline-pipeline-<timestamp>` Jobs). Every line carries `trace_id` so you can jump into Tempo.
 
 ## Common dev-time gotchas
 

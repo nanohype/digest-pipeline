@@ -60,10 +60,10 @@ A run with no approval expires rather than sending. The generator handles a Bedr
 
 ## What this repo deliberately does NOT do
 
-- **Not its own cloud substrate.** It does not provision Aurora, the S3 buckets, the SES identity, KMS, or the IAM role. Those are landing-zone (see Boundaries). The chart consumes their outputs.
+- **Not its own cloud substrate.** It does not provision Aurora, the S3 buckets, the SES identity, KMS, or any IAM. Those are landing-zone and the operator (see Boundaries). The chart consumes their outputs.
 - **Not a model host.** Bedrock runs Claude inference outside the cluster on-account. No self-hosted models.
 - **Not a cluster bootstrap.** The EKS cluster, ArgoCD, and the cluster addons it depends on (ESO, ingress-nginx, cert-manager, the observability stack) must already exist (eks-gitops).
-- **Not the tenant operator.** It declares a `Platform` CR; the `eks-agent-platform` operator reconciles the namespace, IRSA, and AppProject.
+- **Not the tenant operator.** It declares a `Platform` CR; the `eks-agent-platform` operator reconciles the namespace, the tenant IAM role, and the AppProject.
 - **Not an always-on service for the pipeline.** The pipeline is a scheduled `CronJob`, not a long-running pod. Only the api and web run continuously.
 
 ## Boundaries
@@ -77,10 +77,11 @@ This repo owns the application — source, chart, Platform CR, gitops entry. Eve
 - Aurora Serverless v2 Postgres (the draft store + audit ledger)
 - Two S3 buckets (voice-baseline corpus, raw aggregations)
 - SES verified identity + configuration set (the newsletter send; DKIM CNAMEs are emitted as outputs for the operator to publish)
-- Bedrock invoke policy on the IAM role
+- The `app-access` managed policy carrying the app's substrate grants (S3, SES, Secrets Manager, CloudWatch)
+- The EKS Pod Identity association binding the chart's ServiceAccount to the tenant role
 - Secrets Manager seeding (`digest-pipeline/<env>/{approvers,workos-directory,db-credentials,grafana-cloud}`)
 
-Its IAM role is the role digest-pipeline's app pods assume, bound to the chart's ServiceAccount by an EKS Pod Identity association; the bucket names, channel id, and secret ids land in the chart's `tenantInfra.*`. The chart contains **no inline IAM**; the role and the association are owned in landing-zone and consumed by reference. All three workloads share one SA, all assume the `digest-pipeline-platform` role.
+The role itself is operator-owned: `<env>-digest-pipeline-tenant`, minted from the Platform CR, carrying the Bedrock grant clamped to `spec.identity.allowedModels`. Landing-zone's managed policy attaches on top of it through `spec.identity.extraPolicyArns`. All three workloads share one ServiceAccount and therefore one role. The bucket names, channel id, and secret ids land in the chart's `tenantInfra.*`. The chart contains **no inline IAM** — no role, no policy, no role-arn annotation.
 
 ### Cluster addons → `eks-gitops`
 

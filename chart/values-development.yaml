@@ -12,7 +12,7 @@ externalSecret:
   grafanaCloudSecret: digest-pipeline/development/grafana-cloud
 
 env:
-  OTEL_RESOURCE_ATTRIBUTES: 'service.namespace=digest-pipeline,service.version=0.1.0,deployment.environment=development,agents.tenant=protohype,agents.platform=digest-pipeline'
+  OTEL_RESOURCE_ATTRIBUTES: 'service.namespace=digest-pipeline,service.version=0.1.0,deployment.environment=development,agents.tenant=growth,agents.platform=digest-pipeline'
 
 tenantInfra:
   # Bucket names match landing-zone digest-pipeline-platform outputs 1:1

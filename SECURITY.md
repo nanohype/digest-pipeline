@@ -46,7 +46,7 @@ backupApproverIds[]}`) — it is not hardcoded and not editable from the UI.
 
 - No long-lived credentials in the app. Pods get AWS access via EKS Pod Identity; there
   are no static keys anywhere in the repo or image. Bedrock, S3, SES, and Secrets Manager calls
-  AssumeRoleWithWebIdentity into the landing-zone `digest-pipeline-platform` IAM role.
+  run as the `<env>-digest-pipeline-tenant` role, vended to the pod by the Pod Identity agent.
 - App-level secrets are projected at deploy time by External Secrets Operator from AWS Secrets
   Manager (`digest-pipeline/<env>/*`) into a Kubernetes Secret consumed `envFrom` — never committed.
 - Inference runs on-account via Amazon Bedrock — source content is not sent to third parties.

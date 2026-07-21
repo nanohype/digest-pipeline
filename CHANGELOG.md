@@ -34,12 +34,12 @@ DigestPipeline is an automated weekly newsletter pipeline for a Chief of Staff. 
 
 #### Infrastructure (Helm chart + Platform tenant)
 
-- **Helm chart** (`chart/`) rendering three workloads into the `tenants-protohype` namespace: the pipeline `CronJob`, the api `Deployment` (Fastify :3001), and the web `Deployment` (Next.js :3000). One base `values.yaml` plus `values-{staging,production}.yaml` delta files; env-scoped secret paths (`digest-pipeline/{env}/*`).
+- **Helm chart** (`chart/`) rendering three workloads into the `tenants-digest-pipeline` namespace: the pipeline `CronJob`, the api `Deployment` (Fastify :3001), and the web `Deployment` (Next.js :3000). One base `values.yaml` plus `values-{staging,production}.yaml` delta files; env-scoped secret paths (`digest-pipeline/{env}/*`).
 - **ArgoCD ApplicationSet entry** (`gitops/applicationset-entry.yaml`) for `nanohype/eks-gitops`: matrix generator (clusters × `[digest-pipeline]`), Helm multi-source `$values` pattern, sync wave 100, automated + selfHeal, ServerSideApply, `CreateNamespace=false` (the Platform reconciler owns the Namespace).
-- **Platform CR + BudgetPolicy** (`platform.yaml`) declaring digest-pipeline as a tenant of the `protohype` team on the `eks-agent-platform` operator. The operator reconciles the Namespace, ResourceQuota (8 CPU / 16Gi across pipeline + api + web), LimitRange, default-deny NetworkPolicy, and the ArgoCD AppProject.
+- **Platform CR + BudgetPolicy** (`platform.yaml`, applied in the `tenants-growth` management namespace) declaring digest-pipeline as a tenant of the `growth` team on the `eks-agent-platform` operator. The operator reconciles the `tenants-digest-pipeline` workload namespace, ResourceQuota (8 CPU / 16Gi across pipeline + api + web), LimitRange, default-deny NetworkPolicy, the ArgoCD AppProject, and the `<env>-digest-pipeline-tenant` IAM role.
 - **Ingress + secrets + migrations.** `ingress.yaml` (ingress-nginx + cert-manager: `/api/*` → api with rewrite-target, `/` → web); `externalsecret.yaml` aggregates four AWS Secrets Manager entries into one Secret consumed via envFrom and composes `DATABASE_URL` via the External Secrets template engine; `migrate-job.yaml` is a Helm pre-install/pre-upgrade hook running `npm run migrate:up` before the new pods roll out.
-- **Per-tenant AWS substrate** lives in the landing-zone `digest-pipeline-platform` component: Aurora Serverless v2 Postgres, the voice-baseline (versioned, retained) + raw-aggregations (90-day lifecycle) S3 buckets, the SES verified identity + configuration set, and the IAM role. The chart's shared ServiceAccount carries the `eks.amazonaws.com/role-arn` annotation from that component's `irsa_role_arn` output via `aws.platformRoleArn`.
-- **IAM least privilege.** The IAM role can read only `digest-pipeline/{env}/*` secrets, invoke `anthropic.claude-*` foundation models, read the voice-baseline bucket, write the raw-aggregations bucket, and `ses:SendEmail` on the verified identity. Staging and production roles do not cross-read.
+- **Per-tenant AWS substrate** lives in the landing-zone `digest-pipeline-platform` component: Aurora Serverless v2 Postgres, the voice-baseline (versioned, retained) + raw-aggregations (90-day lifecycle) S3 buckets, the SES verified identity + configuration set, the app-access managed policy, and the EKS Pod Identity association that binds the chart's shared ServiceAccount to the tenant role. The chart carries no IAM — no role, no policy, no role-arn annotation.
+- **IAM least privilege.** The tenant role can read only `digest-pipeline/{env}/*` secrets, invoke the Bedrock models listed in `spec.identity.allowedModels`, read the voice-baseline bucket, write the raw-aggregations bucket, and `ses:SendEmail` on the verified identity. Staging and production roles do not cross-read.
 
 #### Operator surface
 
@@ -73,5 +73,5 @@ DigestPipeline is an automated weekly newsletter pipeline for a Chief of Staff. 
 - HTML output in the API is entity-escaped; no `dangerouslySetInnerHTML` in the web.
 - Secret values never embedded in cluster manifests: the External Secrets operator syncs them from AWS Secrets Manager into an in-cluster Secret at runtime, authorized by the IAM role's scoped `secretsmanager:GetSecretValue` permission on `digest-pipeline/{env}/*`.
 
-[Unreleased]: https://github.com/nanohype/protohype/compare/feature/digest-pipeline-v1...HEAD
-[0.1.0]: https://github.com/nanohype/protohype/releases/tag/digest-pipeline-v0.1.0
+[Unreleased]: https://github.com/nanohype/digest-pipeline/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/nanohype/digest-pipeline/releases/tag/v0.1.0

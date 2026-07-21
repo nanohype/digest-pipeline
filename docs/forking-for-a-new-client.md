@@ -24,12 +24,12 @@ Two layers carry naming. The **product name** (`digest-pipeline`) is the GitHub 
 
 - Secrets Manager path prefix (`digest-pipeline/{env}/...`) — the chart's ExternalSecret `remoteRef` keys
 - S3 bucket names (`digest-pipeline-voice-baseline-<account>-<env>`, `digest-pipeline-raw-aggregations-<account>-<env>`) — landing-zone `digest-pipeline-platform` outputs
-- The landing-zone `digest-pipeline-platform` component + its IRSA trust on `system:serviceaccount:tenants-protohype:digest-pipeline`
+- The landing-zone `digest-pipeline-platform` component + its Pod Identity association on `(tenants-digest-pipeline, digest-pipeline)`
 - OTel `agents.platform=digest-pipeline` + the `digest-pipeline.*` metric names + the Helm `digest-pipeline.*` template helpers and `digest-pipeline.io/service` labels
 - npm package name (`digest-pipeline`), the Dockerfile non-root user (`digest-pipeline`)
-- Tenant identity: `tenant=protohype`, namespace `tenants-protohype`, AppProject `tenant-protohype`
+- Platform identity: Platform name `digest-pipeline`, which drives the workload namespace `tenants-digest-pipeline`, the AppProject `digest-pipeline`, and the `<env>-digest-pipeline-tenant` IAM role. (`spec.tenant: growth` names the owning team and drives none of those.)
 
-If you want to rename the internal handle too — e.g. `digest` for your company — do a global find-and-replace on `digest-pipeline` (lowercase) across this repo, then re-cut the landing-zone component name + secret prefixes + IRSA trust to match, repoint the ExternalSecret `remoteRef` keys, and update the chart's image repository. That's a coordinated change across this repo + landing-zone, not a local edit. For most forks it's cheaper to keep the internal handle and rename only what's customer-visible (Slack channels, email subjects) plus the GitHub repo / product name.
+If you want to rename the internal handle too — e.g. `digest` for your company — do a global find-and-replace on `digest-pipeline` (lowercase) across this repo, then re-cut the landing-zone component name + secret prefixes + Pod Identity association to match, repoint the ExternalSecret `remoteRef` keys, and update the chart's image repository. That's a coordinated change across this repo + landing-zone, not a local edit. For most forks it's cheaper to keep the internal handle and rename only what's customer-visible (Slack channels, email subjects) plus the GitHub repo / product name.
 
 ## 2. Third-party account setup
 
@@ -98,13 +98,14 @@ The seeder blocks if any `REPLACE_ME` slips through. `digest-pipeline-secrets.{e
 
 ## 4. Provision the substrate, then deploy staging
 
-The per-tenant AWS substrate (Aurora, the two S3 buckets, the SES identity, the IAM role, `db-credentials`) is the landing-zone `digest-pipeline-platform` component. Apply it, then plumb its IRSA output into the chart:
+The per-tenant AWS substrate (Aurora, the two S3 buckets, the SES identity, the app-access managed policy, `db-credentials`) is the landing-zone `digest-pipeline-platform` component. Apply it, then reference its app-access policy from the Platform CR:
 
 ```bash
 cd landing-zone
 terragrunt apply --terragrunt-working-dir live/aws/workload-staging/us-west-2/staging/digest-pipeline-platform
-tofu -chdir=live/aws/workload-staging/us-west-2/staging/digest-pipeline-platform output -raw irsa_role_arn
-# the IAM role is bound by landing-zone's Pod Identity association — nothing to paste
+tofu -chdir=live/aws/workload-staging/us-west-2/staging/digest-pipeline-platform output -raw app_access_policy_arn
+# paste that ARN into spec.identity.extraPolicyArns in platform.yaml;
+# the IAM role itself is bound by landing-zone's Pod Identity association — nothing to paste into the chart
 ```
 
 Set `web.workosClientId` (and the API `WORKOS_CLIENT_ID`) and `image.tag` in `chart/values-staging.yaml`. Then bring the tenant up:
@@ -148,14 +149,14 @@ At least one file is required for voice-matching. Five is a good floor. Each fil
 The weekly `CronJob` is the scheduled runner. To kick off one run before Friday, create a Job from the CronJob template:
 
 ```bash
-kubectl -n tenants-protohype create job digest-pipeline-pipeline-manual-$(date +%s) \
+kubectl -n tenants-digest-pipeline create job digest-pipeline-pipeline-manual-$(date +%s) \
   --from=cronjob/digest-pipeline-pipeline
 ```
 
 Watch (stdout also reaches Grafana Cloud Loki — filter `service="digest-pipeline-pipeline"`):
 
 ```bash
-kubectl -n tenants-protohype logs -f job/digest-pipeline-pipeline-manual-<ts>
+kubectl -n tenants-digest-pipeline logs -f job/digest-pipeline-pipeline-manual-<ts>
 ```
 
 Expected: `pipeline.start` → `phase.aggregate` (per-source item counts) → `phase.dedupe` → `phase.rank` → `phase.generate` (Bedrock span with token usage) → `phase.audit_and_notify` → `slack.notify-draft` → `pipeline.exit` with `status: "OK"` (if every source returned items and Bedrock succeeded).
@@ -185,7 +186,7 @@ The weekly `CronJob` runs in production at the next Friday 09:00 UTC after sync.
 
 - `src/pipeline/filters/pii.ts` — the regex catalogue is the vendored org-wide set (`src/vendor/runtime/pii.ts`), tuned to avoid false positives on newsletter-appropriate content. Category changes land in `nanohype/library/runtime` first, then re-sync (`npm run sync:vendored`); weakening an existing category is a security regression.
 - `src/pipeline/audit.ts` + `src/data/audit.ts` — all writes must stay awaited. Fire-and-forget on an audit event breaks the edit-rate derivation contract (the metric is computed from the ledger, not from current draft text).
-- `src/api/auth.ts` — WorkOS JWT verification + approver allow-list. Changes here are the security-critical surface of the whole system. If you simplify this to a constant token or a different auth provider, also update the landing-zone `digest-pipeline-platform` IRSA policy + [`secrets.md`](secrets.md).
+- `src/api/auth.ts` — WorkOS JWT verification + approver allow-list. Changes here are the security-critical surface of the whole system. If you simplify this to a constant token or a different auth provider, also update the landing-zone `digest-pipeline-platform` app-access policy + [`secrets.md`](secrets.md).
 - The `SanitizedSourceItem` brand type (`src/pipeline/types.ts`). The PII filter runs before items leave the aggregator; the brand enforces this at the type level. Stripping the brand removes the compiler-enforced guarantee.
 
 ## What you might want to change

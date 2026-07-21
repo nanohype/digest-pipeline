@@ -1,4 +1,4 @@
-# Platform CR — declares digest-pipeline as a tenant of the protohype team on the
+# Platform CR — declares digest-pipeline as a tenant of the growth team on the
 # eks-agent-platform operator. Apply once per cluster before the
 # ApplicationSet entry starts reconciling the chart.
 #
@@ -6,11 +6,17 @@
 #   - BudgetPolicy (referenced by Platform.spec.budget — required)
 #   - Platform     (the actual tenant declaration)
 #
+# Both CRs live in the growth team's management namespace (`tenants-growth`).
+# That is where the team's Platform declarations are kept; it is not the
+# namespace the workloads run in — the operator derives that one from
+# `metadata.name`.
+#
 # What the operator reconciles from the Platform CR:
-#   - Namespace `tenants-protohype` (Pod Security Standards baseline)
+#   - Workload namespace `tenants-digest-pipeline`, derived from the Platform
+#     name (Pod Security Standards baseline)
 #   - ResourceQuota + LimitRange
 #   - Default-deny NetworkPolicy (the chart layers app-specific rules on top)
-#   - ArgoCD AppProject scoped to this Platform
+#   - ArgoCD AppProject `digest-pipeline`, scoped to that namespace
 #   - Per-Platform IAM role (`<env>-digest-pipeline-tenant`) with the baseline
 #     policy + spec.identity.extraPolicyArns attached and Bedrock invoke
 #     clamped to spec.identity.allowedModels (bedrock-model-scoping inline
@@ -41,7 +47,7 @@ apiVersion: governance.nanohype.dev/v1alpha1
 kind: BudgetPolicy
 metadata:
   name: digest-pipeline
-  namespace: tenants-protohype
+  namespace: tenants-growth
 spec:
   platformRef:
     name: digest-pipeline
@@ -56,11 +62,11 @@ apiVersion: platform.nanohype.dev/v1alpha1
 kind: Platform
 metadata:
   name: digest-pipeline
-  namespace: tenants-protohype
+  namespace: tenants-growth
 spec:
   displayName: digest-pipeline
   persona: ops
-  tenant: protohype
+  tenant: growth
   budget:
     name: digest-pipeline
   identity:
@@ -76,7 +82,7 @@ spec:
     # `app_access_policy_arn`. Account-scoped, so it is filled per
     # environment at apply time (landing-zone
     # docs/first-deploy-aws.md, App platform tenants):
-    #   arn:aws:iam::<account>:policy/eks-agent-platform/digest-pipeline-<env>-app-access
+    #   arn:aws:iam::<account>:policy/eks-agent-platform/<env>-digest-pipeline-app-access
     extraPolicyArns: []
   compliance:
     soc2: true
