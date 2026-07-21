@@ -6,9 +6,9 @@ DigestPipeline keeps credentials in **AWS Secrets Manager** — one secret per i
 
 ## The secrets (per environment)
 
-Every secret below is operator-provisioned with `aws secretsmanager create-secret` **before** the first `cdk deploy`. CDK references them by name via `Secret.fromSecretNameV2(...)` — it does not create them, so `cdk destroy` leaves the credentials in place untouched, and the values never transit CloudFormation.
+Every secret below is operator-provisioned with `aws secretsmanager create-secret` **before** the chart is deployed. The chart's `externalsecret.yaml` references them by name through External Secrets Operator — it does not create them, so uninstalling the release leaves the credentials in place untouched, and the values never transit a Helm manifest.
 
-ECS refuses to start the pipeline / api / web tasks until the task execution role can resolve every `ecs.Secret.fromSecretsManager(...)` reference, so every row below must exist at `cdk deploy` time.
+External Secrets can't materialize the Kubernetes Secret until every referenced entry resolves, and the pods mount that Secret via `envFrom` — so a missing row here surfaces as pods stuck without their configuration.
 
 | Secret name (`digest-pipeline/{env}/…`) | Used by | What it is |
 |---|---|---|
@@ -19,11 +19,10 @@ ECS refuses to start the pipeline / api / web tasks until the task execution rol
 | `slack` | pipeline + api | JSON — `{ botToken, announcementsChannelId, teamChannelId, hrBotUserIds: [] }`. Bot token (`xoxb-…`) needs exactly four scopes: `channels:history`, `channels:read`, `chat:write`, `users:read` — see [`slack-app-setup.md`](slack-app-setup.md) for the one-time bot provisioning. Two channel IDs are ingestion sources for the Slack aggregator; `hrBotUserIds` are the bot user IDs to filter out (e.g. your HRIS integration). |
 | `notion` | pipeline | JSON — `{ apiKey, databaseId }`. Notion internal-integration token + the all-hands database ID. |
 | `web-config` | web | JSON — `{ workosApiKey, workosClientId, cookiePassword, redirectUri }`. WorkOS AuthKit for the review UI. `cookiePassword` must be ≥32 chars. |
-| `runtime-config` | pipeline + api | JSON — `{ slackReviewChannelId, sesFromAddress, newsletterRecipients }`. Non-credential operational config kept alongside secrets because ECS's `Secret.fromSecretsManager(..., 'field')` lets us project individual JSON fields into env vars. |
-| `db-credentials` | **CDK-managed** | JSON — `{ username, password, host, port, dbname, engine }`. Created by the `DigestPipelineDb` construct (`secretsmanager.Secret(...)` with `generateSecretString`); Aurora rotates `password` on the built-in schedule. Pipeline + api resolve it via `DATABASE_SECRET_ID` in `src/pipeline/entrypoint.ts:87-97`. |
-| `grafana-cloud` | ADOT collector sidecar | JSON — `{ instanceId, apiToken, otlpEndpoint, authHeader }`. The operator pre-computes `authHeader = "Basic " + base64("instanceId:apiToken")` once; the collector injects it into the OTLP exporter's `Authorization` header. |
+| `runtime-config` | pipeline + api | JSON — `{ slackReviewChannelId, sesFromAddress, newsletterRecipients }`. Non-credential operational config kept alongside secrets because the ExternalSecret's `remoteRef.property` projects individual JSON fields into discrete env vars. |
+| `db-credentials` | **landing-zone-managed** | JSON — `{ username, password, host, port, dbname, engine }`. Created by the `digest-pipeline-platform` component's rds-aurora module; Aurora rotates `password` on the built-in schedule. The ExternalSecret composes these fields into `DATABASE_URL`. |
 
-> **Different external accounts per environment.** Staging and production should have their own Slack workspace (or at minimum their own bot user + review channel), Linear workspace, Notion database, WorkOS directory, and Grafana Cloud stack. Don't share credentials across envs — a leaked staging token would otherwise unlock production.
+> **Different external accounts per environment.** Staging and production should have their own Slack workspace (or at minimum their own bot user + review channel), Linear workspace, Notion database, and WorkOS directory. Don't share credentials across envs — a leaked staging token would otherwise unlock production.
 
 ## Getting a WorkOS User Management ID for `approvers`
 
@@ -42,50 +41,22 @@ Repeat once per approver. DigestPipeline caches the `approvers` secret for 5 min
 
 **If Hosted UI doesn't appear** in that nav, no authentication method is enabled yet for this WorkOS project. Go to **User Management → Authentication → Methods** and turn on at least one (email+password, Google OAuth, or an SSO connection). AuthKit can't provision users without one.
 
-## The `digest-pipeline/{env}/grafana-cloud` secret (JSON payload)
+## Telemetry carries no secret
 
-The ADOT collector sidecar reads the Grafana Cloud OTLP credentials from this one secret and injects them into the collector's `basicauth/grafana` extension via `env:` variables wired in `infra/lib/digest-pipeline-stack.ts`:
+Nothing in this table covers observability, and that is not an omission. The
+pods export OTLP to the Grafana Alloy collector at
+`alloy.monitoring.svc.cluster.local:4318`, an in-cluster Service whose receiver
+takes no authentication — it is reachable only from inside the cluster, and
+only through the egress rule in the chart's `networkpolicy.yaml`. Alloy owns
+every upstream credential from there: SigV4-signed remote-write to Amazon
+Managed Prometheus using its own EKS Pod Identity, with Tempo and Loki both
+running in-cluster. No token the app could hold would be read by anything.
 
-```yaml
-exporters:
-  otlphttp/grafana:
-    endpoint: ${env:GRAFANA_OTLP_ENDPOINT}
-    headers:
-      Authorization: ${env:GRAFANA_AUTH_HEADER}
-```
-
-Required schema:
-
-```json
-{
-  "instanceId":   "<OTLP instance ID from grafana.com → Connections → OpenTelemetry>",
-  "apiToken":     "<glc_... from a Cloud Access Policy with metrics:write + traces:write>",
-  "otlpEndpoint": "https://otlp-gateway-prod-us-west-0.grafana.net/otlp",
-  "authHeader":   "Basic <base64(instanceId:apiToken)>"
-}
-```
-
-Creating it for the first time (staging shown; repeat with production values):
-
-```bash
-OTLP_INSTANCE_ID=...
-OTLP_API_TOKEN=glc_...
-OTLP_ENDPOINT=https://otlp-gateway-prod-us-west-0.grafana.net/otlp   # pick the right region
-AUTH_HEADER="Basic $(printf '%s:%s' "$OTLP_INSTANCE_ID" "$OTLP_API_TOKEN" | base64)"
-
-aws secretsmanager create-secret \
-  --region us-west-2 \
-  --name digest-pipeline/staging/grafana-cloud \
-  --description 'Grafana Cloud (staging): OTLP endpoint + pre-computed basic-auth header.' \
-  --secret-string "{
-    \"instanceId\":   \"$OTLP_INSTANCE_ID\",
-    \"apiToken\":     \"$OTLP_API_TOKEN\",
-    \"otlpEndpoint\": \"$OTLP_ENDPOINT\",
-    \"authHeader\":   \"$AUTH_HEADER\"
-  }"
-```
-
-> **Logs do not go through this secret.** DigestPipeline ships logs directly from stdout: the eks-gitops cluster log forwarder picks up pod stdout and ships it to Grafana Cloud Loki. The cluster OTel collector only handles traces + metrics. There is no `lokiEndpoint` or `lokiUsername` field in `digest-pipeline/{env}/grafana-cloud` — the forwarder carries its own upstream auth — and if you see one here it's a leftover from an earlier iteration and can be removed. Query logs in Grafana with e.g. `{service="digest-pipeline-pipeline"}`; `trace_id` rides on every line, so the Tempo ↔ Loki join is one click. See [`troubleshooting.md`](troubleshooting.md) § "Logs not in Grafana" for the cluster-side wiring.
+Logs take a separate route and also need no credential: pods write structured
+JSON to stdout, Alloy tails it off the node into Loki. Query with
+`{service="digest-pipeline-pipeline"}`; `trace_id` rides on every line, so the
+Tempo ↔ Loki join is one click. See [`troubleshooting.md`](troubleshooting.md)
+§ "Logs not in Grafana" for the cluster-side wiring.
 
 ## Seed all secrets in one shot (recommended)
 
@@ -97,7 +68,6 @@ cp secrets.template.json digest-pipeline-secrets.staging.json
 # Edit digest-pipeline-secrets.staging.json in your preferred $EDITOR.
 #   - Replace every "REPLACE_ME" with the real value.
 #   - You can leave web-config.cookiePassword empty — the seeder generates one.
-#   - You can leave grafana-cloud.authHeader empty — the seeder computes it
 #     from instanceId + apiToken.
 #   - The file is gitignored (`digest-pipeline-secrets.*.json`).
 
@@ -112,28 +82,26 @@ Safety rails in the seeder (`scripts/seed-secrets.sh`):
 - Detects whether each secret already exists and picks `put-secret-value` vs. `create-secret` — same command works for first-time seeding (none exist) and rotation (all exist).
 - Never logs secret values; only key names, action taken, and character counts in dry-run mode.
 - Auto-generates `web-config.cookiePassword` if empty (openssl rand, 48-char ASCII-safe).
-- Auto-computes `grafana-cloud.authHeader = "Basic " + base64(instanceId:apiToken)` if empty.
 
-`digest-pipeline/{env}/db-credentials` is **CDK-managed** and is not in the seeder's key list — the `DigestPipelineDb` construct creates and owns it alongside the Aurora cluster.
+`digest-pipeline/{env}/db-credentials` is **landing-zone-managed** and is not in the seeder's key list — the `digest-pipeline-platform` rds-aurora module creates and owns it alongside the Aurora cluster.
 
-After seeding, force an ECS rollover so the already-running api + web tasks pick up the freshly-written values:
+After seeding, restart the running workloads so they pick up the freshly-written values. External Secrets refreshes the Kubernetes Secret on its own interval (`externalSecret.refreshInterval`, 1h by default), but `envFrom` is read once at container start:
 
 ```bash
-CLUSTER=$(aws cloudformation describe-stacks --region us-west-2 \
-  --stack-name DigestPipelineStaging \
-  --query "Stacks[0].Resources[?ResourceType=='AWS::ECS::Cluster'].PhysicalResourceId" \
-  --output text)
+NS=tenants-digest-pipeline
 
-aws ecs update-service --region us-west-2 --cluster "$CLUSTER" \
-  --service DigestPipelineApiService --force-new-deployment
-aws ecs update-service --region us-west-2 --cluster "$CLUSTER" \
-  --service DigestPipelineWebService --force-new-deployment
-# The pipeline picks up new secrets on the next scheduled run.
+# Pull the new values now instead of waiting for the refresh interval.
+kubectl -n "$NS" annotate externalsecret digest-pipeline-secrets \
+  force-sync="$(date +%s)" --overwrite
+
+kubectl -n "$NS" rollout restart deployment/digest-pipeline-api
+kubectl -n "$NS" rollout restart deployment/digest-pipeline-web
+# The pipeline CronJob picks up new secrets on its next scheduled run.
 ```
 
 ## Seed by hand (fallback)
 
-If you need to seed from a machine without the repo checked out, the raw `aws secretsmanager` commands below work. The seeder is just a wrapper that applies shape validation + the two auto-derivations before calling them.
+If you need to seed from a machine without the repo checked out, the raw `aws secretsmanager` commands below work. The seeder is just a wrapper that applies shape validation + the cookie-password auto-derivation before calling them.
 
 ```bash
 ENV=staging                                          # or: production
@@ -227,15 +195,13 @@ aws secretsmanager create-secret \
     "newsletterRecipients": "exec-list@yourco.com,staff@yourco.com"
   }'
 
-# ── grafana-cloud (see schema above) ───────────────────────────────────
-# Create separately using the snippet in § "The digest-pipeline/{env}/grafana-cloud secret".
 ```
 
-`digest-pipeline/{env}/db-credentials` is **CDK-managed** — don't create it by hand. The `DigestPipelineDb` construct creates and rotates it alongside the Aurora cluster.
+`digest-pipeline/{env}/db-credentials` is **landing-zone-managed** — don't create it by hand. The `digest-pipeline-platform` rds-aurora module creates and rotates it alongside the Aurora cluster.
 
 ## Rotate a single credential
 
-`put-secret-value` overwrites the previous value (Secrets Manager keeps a version history). Rotate the target environment's secret, then bounce that env's ECS service(s) so the task execution role pulls the new value at container start:
+`put-secret-value` overwrites the previous value (Secrets Manager keeps a version history). Rotate the target environment's secret, then restart that env's workloads so the new value is read at container start:
 
 ```bash
 ENV=staging
@@ -245,17 +211,10 @@ aws secretsmanager put-secret-value \
   --secret-id digest-pipeline/${ENV}/github \
   --secret-string "$(jq -c '.token = "ghp_NEW..."' < github-${ENV}.json)"
 
-# Force rollover of any service that consumes the rotated secret.
-aws ecs update-service \
-  --region us-west-2 \
-  --cluster DigestPipelineCluster-... \
-  --service DigestPipelinePipelineService-... \
-  --force-new-deployment
-aws ecs update-service \
-  --region us-west-2 \
-  --cluster DigestPipelineCluster-... \
-  --service DigestPipelineApiService-... \
-  --force-new-deployment
+# Force a re-sync, then restart whatever consumes the rotated secret.
+kubectl -n tenants-digest-pipeline annotate externalsecret digest-pipeline-secrets \
+  force-sync="$(date +%s)" --overwrite
+kubectl -n tenants-digest-pipeline rollout restart deployment/digest-pipeline-api
 ```
 
 > The `approvers` secret is an exception. `src/api/auth.ts` reads it via `config.loadApprovers()` on every approve call through a `SecretsClient` that caches with a 5-minute TTL (`src/common/secrets.ts:21`), so approver rotation takes effect within 5 minutes without a redeploy or task rollover.
@@ -270,44 +229,41 @@ Rotation cadence guidance:
 | WorkOS AuthKit cookie password (`web-config.cookiePassword`) | 365 days | Rotation invalidates all active sessions — users must re-login. |
 | SES verified identity | n/a | `sesFromAddress` is an identity name, not a credential; only rotate when the org renames the sending domain. |
 | Approvers allow-list (`approvers`) | n/a | Rotates by content, not by schedule. Updated whenever the Chief of Staff changes or adds a backup approver. |
-| Grafana Cloud write token (`grafana-cloud.apiToken`) | 90 days | When rotating, regenerate `authHeader` from the new `instanceId:apiToken`. The collector sidecar picks up the new value on the next task rollover. |
 
 > Rotate staging and production on independent calendars. Rotating both simultaneously maximises blast radius; staggering by ≥7 days means a bad secret surfaces in staging first.
 
 ## Verification
 
-After seeding, confirm every secret for the target env is non-empty and ECS sees them:
+After seeding, confirm every secret for the target env is non-empty and the cluster sees them:
 
 ```bash
 ENV=staging
 
 # 1. Are all required secrets present + populated?
 for s in approvers workos-directory github linear slack notion \
-         web-config runtime-config grafana-cloud; do
+         web-config runtime-config; do
   aws secretsmanager describe-secret --region us-west-2 \
     --secret-id digest-pipeline/${ENV}/${s} \
     --query '{name:Name,lastChanged:LastChangedDate}' --output text
 done
 
-# 2. Did the ECS tasks start clean?
-CLUSTER=$(aws cloudformation describe-stacks --region us-west-2 \
-  --stack-name DigestPipeline$(echo ${ENV^}) \
-  --query "Stacks[0].Outputs[?OutputKey=='ClusterName'].OutputValue" --output text)
-aws ecs describe-services \
-  --region us-west-2 --cluster "$CLUSTER" \
-  --services DigestPipelineApiService DigestPipelineWebService \
-  --query 'services[].{name:serviceName,desired:desiredCount,running:runningCount,lastEvent:events[0].message}'
+# 2. Did External Secrets materialize the Kubernetes Secret?
+kubectl -n tenants-digest-pipeline get externalsecret digest-pipeline-secrets \
+  -o jsonpath='{.status.conditions[?(@.type=="Ready")]}'
 
-# 3. Tail the pipeline log for Zod config errors on a fresh run.
-aws logs tail /digest-pipeline/${ENV}/pipeline --follow --since 5m
+# 3. Did the workloads start clean?
+kubectl -n tenants-digest-pipeline get pods
+
+# 4. Tail the pipeline log for Zod config errors on a fresh run.
+kubectl -n tenants-digest-pipeline logs -l app.kubernetes.io/component=pipeline --tail=100 -f
 ```
 
-If the pipeline / api task crash-loops, look for `ZodError: required … missing` in CloudWatch — one of the seeded secrets has a typo or is missing a required key.
+If the pipeline / api pods crash-loop, look for `ZodError: required … missing` in the logs — one of the seeded secrets has a typo or is missing a required key.
 
 ## Security posture
 
-- Secrets Manager encrypts at rest with an AWS-managed KMS key. To use a customer-managed key, recreate each secret under a CMK via the console or CLI. CDK doesn't own the key choice because it doesn't own the secret lifecycle.
-- The pipeline / api / web task roles are each granted `secretsmanager:GetSecretValue` only on `arn:aws:secretsmanager:…:secret:digest-pipeline/{env}/*` (`infra/lib/digest-pipeline-stack.ts:183`, `:259`). No wildcards. The staging task role cannot read production secrets and vice versa.
-- CDK imports every secret via `secretsmanager.Secret.fromSecretNameV2(...)` — the secret values never transit CloudFormation. `cdk destroy` does not delete the secrets because CDK never owned them.
+- Secrets Manager encrypts at rest with an AWS-managed KMS key. To use a customer-managed key, recreate each secret under a CMK via the console or CLI. The chart doesn't own the key choice because it doesn't own the secret lifecycle.
+- The `<env>-digest-pipeline-tenant` role is granted `secretsmanager:GetSecretValue` only on `arn:aws:secretsmanager:…:secret:digest-pipeline/{env}/*`, via the landing-zone `app_access_policy_arn` managed policy attached through `Platform.spec.identity.extraPolicyArns`. No wildcards. The staging role cannot read production secrets and vice versa.
+- The chart references every secret by name through External Secrets Operator — the values never transit a Helm manifest or the ArgoCD state. Uninstalling the release does not delete the secrets, because the chart never owned them.
 - `GetSecretValue` calls are audited to CloudTrail with the invoking principal. Rotation should be performed by a dedicated deploy role, not a personal IAM user.
 - Never paste a populated secret into chat, issues, or a notebook — Secrets Manager is the authoritative store. Generated values (cookie passwords, OTLP `authHeader`) should be piped directly into `create-secret` / `put-secret-value` without being written to disk.

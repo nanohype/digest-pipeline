@@ -26,7 +26,7 @@ export AWS_REGION=us-west-2
 
 ### Third-party accounts (staging + production)
 
-Provision these **separately** per environment — staging and production each want their own Slack workspace (or at minimum a distinct bot user + review channel) / Linear workspace / Notion database / WorkOS directory / Grafana Cloud stack. Credentials land in env-scoped Secrets Manager paths (`digest-pipeline/staging/*` vs `digest-pipeline/production/*`); sharing them defeats the isolation.
+Provision these **separately** per environment — staging and production each want their own Slack workspace (or at minimum a distinct bot user + review channel) / Linear workspace / Notion database / WorkOS directory. Credentials land in env-scoped Secrets Manager paths (`digest-pipeline/staging/*` vs `digest-pipeline/production/*`); sharing them defeats the isolation.
 
 | System | What you need | Where to get it |
 |---|---|---|
@@ -35,7 +35,8 @@ Provision these **separately** per environment — staging and production each w
 | **Linear** | Personal API key, optional `askLabel` override | Linear → Settings → API → Personal API keys. The aggregator reads closed epics, upcoming milestones, and issues tagged with `askLabel` (default `ask`) from the past week. |
 | **Notion** | Internal-integration token (`secret_…`), database ID of the all-hands page | Notion → Settings → Connections → Develop or manage integrations. Share the all-hands database with the integration explicitly. |
 | **GitHub** | PAT with `repo:read` over the repos you want aggregated | GitHub → Settings → Developer settings → Personal access tokens. Read-only; used for merged-PR fetch. |
-| **Grafana Cloud** | OTLP instance ID, Cloud Access Policy token (`glc_…`, `metrics:write`+`traces:write`), OTLP endpoint URL | grafana.com → Connections → OpenTelemetry. The cluster Grafana Alloy collector (eks-gitops) reads this for its upstream auth. See [`secrets.md`](secrets.md) § "The `digest-pipeline/{env}/grafana-cloud` secret" for the JSON payload shape. |
+
+Nothing to provision for telemetry. Traces, metrics and logs land in the observability stack `eks-gitops` already runs on the cluster — Alloy on every node, Tempo and Loki in-cluster, Amazon Managed Prometheus for metrics. The app exports OTLP to the Alloy Service and holds no credential for any of it.
 
 ### Local tooling
 
@@ -74,14 +75,14 @@ The seeder (`npm run seed:{env}`) handles both first-seed (create) and rotation 
 ```bash
 cp secrets.template.json digest-pipeline-secrets.staging.json
 # Edit the file — replace every REPLACE_ME with the real value.
-# web-config.cookiePassword + grafana-cloud.authHeader auto-derive if left
+# web-config.cookiePassword auto-derives if left
 # empty. `digest-pipeline-secrets.*.json` is gitignored.
 
 npm run seed:staging:dry     # validates shape, no AWS calls
 npm run seed:staging         # creates every required secret in Secrets Manager
 ```
 
-This seeds nine secrets for `digest-pipeline/staging/`: `approvers`, `workos-directory`, `github`, `linear`, `slack`, `notion`, `web-config`, `runtime-config`, `grafana-cloud`. `db-credentials` is the exception — the `digest-pipeline-platform` rds-aurora module creates and owns it.
+This seeds eight secrets for `digest-pipeline/staging/`: `approvers`, `workos-directory`, `github`, `linear`, `slack`, `notion`, `web-config`, `runtime-config`. `db-credentials` is the exception — the `digest-pipeline-platform` rds-aurora module creates and owns it.
 
 Per-key provenance (what comes from which third-party account), JSON schema per payload, and rotation guidance are all in [`secrets.md`](secrets.md). The raw `aws secretsmanager create-secret` commands are there too if you need to seed from a machine without the repo checked out.
 
@@ -193,7 +194,7 @@ kubectl -n tenants-digest-pipeline create job digest-pipeline-pipeline-manual-$(
   --from=cronjob/digest-pipeline-pipeline
 ```
 
-Watch the run (stdout also reaches Grafana Cloud Loki — filter `service="digest-pipeline-pipeline"`):
+Watch the run (stdout also reaches Loki — filter `service="digest-pipeline-pipeline"`):
 
 ```bash
 kubectl -n tenants-digest-pipeline logs -f job/digest-pipeline-pipeline-manual-<ts>
@@ -261,7 +262,7 @@ kubectl delete -f platform.yaml
 
 # 4. Delete the operator-seeded secrets (the substrate owns db-credentials):
 for s in approvers workos-directory github linear slack notion \
-         web-config runtime-config grafana-cloud; do
+         web-config runtime-config; do
   aws secretsmanager delete-secret --region us-west-2 \
     --secret-id digest-pipeline/${ENV}/${s} --force-delete-without-recovery
 done
@@ -278,6 +279,6 @@ done
 | Pipeline Job runs once, exits, status `Failed` with `AccessDeniedException` on Bedrock | Model access not enabled across all regions the inference profile spans | Default profile is `us.anthropic.claude-sonnet-4-6` — request model access for `anthropic.claude-sonnet-4-6` in us-east-1, us-east-2, AND us-west-2. See [`troubleshooting.md`](troubleshooting.md) § "Bedrock errors" |
 | API 5xx on `/drafts/:id/approve` with `SES.MessageRejected` | `sesFromAddress` not a verified SES identity, or SES still in sandbox and the recipient isn't verified | Verify the identity in SES; request production-access or verify each recipient during bring-up |
 | WorkOS sign-in bounces with `invalid_redirect_uri` | The web's redirect URI isn't registered for the Client ID | Add `https://<host>/callback` in the WorkOS dashboard → Redirects |
-| Traces missing from Grafana Cloud | The cluster Grafana Alloy collector's upstream auth is failing | Check Alloy's logs in the `monitoring` namespace. The usual cause is a mis-computed `authHeader`; verify it's `Basic ` + base64 of `instanceId:apiToken` |
+| Traces missing from Tempo | The pods can't reach the Alloy Service, or Alloy can't reach Tempo | Check Alloy's logs in the `monitoring` namespace, then confirm the chart's NetworkPolicy allows egress to `alloy.monitoring.svc.cluster.local:4318` |
 
 For every concrete error observed during bring-up with root cause + fix, see [`troubleshooting.md`](troubleshooting.md).

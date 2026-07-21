@@ -41,9 +41,21 @@ Shipping this on a cluster means three artifacts travel together: the **Platform
 
 ### The Platform CR (`platform.yaml`)
 
-Two CRs in different groups — a `BudgetPolicy` (`governance.nanohype.dev/v1alpha1`) and the `Platform` (`platform.nanohype.dev/v1alpha1`) that references it. Both live in `tenants-growth`, the growth team's management namespace, which is separate from the workload namespace the operator provisions:
+Three CRs — a cluster-scoped `Tenant` (`platform.nanohype.dev/v1alpha1`) for the owning team, a `BudgetPolicy` (`governance.nanohype.dev/v1alpha1`), and the `Platform` (`platform.nanohype.dev/v1alpha1`) that references both. `Tenant` is cluster-scoped and takes no namespace; the BudgetPolicy and Platform live in `tenants-growth`, the growth team's management namespace, which is separate from the workload namespace the operator provisions:
 
 ```yaml
+apiVersion: platform.nanohype.dev/v1alpha1
+kind: Tenant
+metadata:
+  name: growth
+  labels:
+    agents.nanohype.dev/tenant: growth
+spec:
+  displayName: Growth
+  primaryPersona: ops
+  aggregateMonthlyBudgetUsd: '2000' # soft cap on the sum of owned Platforms' budgets
+  compliance: { soc2: true, hipaa: false }
+---
 apiVersion: governance.nanohype.dev/v1alpha1
 kind: BudgetPolicy
 metadata:
@@ -72,7 +84,9 @@ spec:
   isolation: namespace
 ```
 
-Everything the operator provisions is derived from `metadata.name`, not from `spec.tenant`: the workload namespace `tenants-digest-pipeline`, its ResourceQuota, LimitRange and default-deny NetworkPolicy, the ArgoCD AppProject `digest-pipeline`, and the tenant IAM role `<env>-digest-pipeline-tenant`. `spec.tenant` names the owning team and rides along as a label, an AWS `Team` tag, and the `agents.tenant` OTel attribute.
+Everything the operator provisions is derived from the Platform's `metadata.name`, not from `spec.tenant`: the workload namespace `tenants-digest-pipeline`, its ResourceQuota, LimitRange and default-deny NetworkPolicy, the ArgoCD AppProject `digest-pipeline`, and the tenant IAM role `<env>-digest-pipeline-tenant`. `spec.tenant` names the owning team — it must match the `Tenant`'s `metadata.name` — and rides along as a label, an AWS `Team` tag, and the `agents.tenant` OTel attribute. The Tenant itself carries the aggregate view: it sums the budgets and readiness of every Platform that names it, so a team with several apps has one place to look.
+
+`npm run platform:validate` checks all three documents against the operator's CRD schemas — including the cross-document references (`Platform.spec.tenant` → `Tenant.metadata.name`, `Platform.spec.budget.name` → the BudgetPolicy, and `agents.tenant` in the chart values) that no single-document schema can express. CI runs it on every pull request.
 
 **One Platform, one privilege domain.** All three app workloads and any AgentFleet pods run as that single `<env>-digest-pipeline-tenant` role. Its trust policy is the EKS Pod Identity service principal (`pods.eks.amazonaws.com`) — the `(namespace, service-account)` binding lives in the Pod Identity association, which the landing-zone `digest-pipeline-platform` component creates for the chart's `digest-pipeline` ServiceAccount. Bedrock invoke on the role is the agent-iam baseline clamped to `spec.identity.allowedModels`; the app's substrate grants (S3, SES, Secrets Manager, CloudWatch) arrive as the landing-zone `app_access_policy_arn` managed policy, referenced per environment from `spec.identity.extraPolicyArns`.
 
@@ -87,7 +101,7 @@ Three workloads in one chart — the weekly pipeline, the review API, and the re
 | `web-deployment.yaml` + `web-service.yaml` | The Next.js review app (WorkOS AuthKit, ClusterIP :3000; `DIGEST_PIPELINE_API_URL` wired to the api Service DNS)                                                                                                       |
 | `ingress.yaml`                             | ingress-nginx + cert-manager TLS — `/api/*` → api (rewrite-target), `/` → web                                                                                                                                          |
 | `serviceaccount.yaml`                      | Shared SA across all three workloads, name pinned to the app; bound to the tenant IAM role by a Pod Identity association                                                                                               |
-| `externalsecret.yaml`                      | ESO aggregates four Secrets Manager entries (`digest-pipeline/<env>/{approvers,workos-directory,db-credentials,grafana-cloud}`) into one Secret consumed via `envFrom`; composes `DATABASE_URL` in the template engine |
+| `externalsecret.yaml`                      | ESO aggregates three Secrets Manager entries (`digest-pipeline/<env>/{approvers,workos-directory,db-credentials}`) into one Secret consumed via `envFrom`; composes `DATABASE_URL` in the template engine |
 | `migrate-job.yaml`                         | Helm pre-install/pre-upgrade hook running `npm run migrate:up` on the api image so schema lands before new pods roll                                                                                                   |
 | `networkpolicy.yaml`                       | Default-deny + egress allow-list (DNS, HTTPS for AWS + all aggregator sources, Postgres on the VPC CIDR) + intra-pod ingress                                                                                           |
 | `prometheusrule.yaml`                      | Pipeline/Bedrock/send alerts                                                                                                                                                                                           |

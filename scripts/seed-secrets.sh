@@ -13,9 +13,8 @@
 #     a single API call goes out — guards against a half-filled template.
 #   - `--dry-run` lists what would be written without calling AWS.
 #   - Never logs secret values. Only key names + AWS action.
-#   - Two convenience fields auto-derive when left empty:
+#   - One convenience field auto-derives when left empty:
 #       * web-config.cookiePassword  → openssl rand -base64 48 (≥32 chars)
-#       * grafana-cloud.authHeader   → "Basic " + base64(instanceId:apiToken)
 #
 # Usage:
 #   scripts/seed-secrets.sh --env staging     --file digest-pipeline-secrets.staging.json
@@ -83,7 +82,6 @@ REQUIRED_KEYS=(
   "notion"
   "web-config"
   "runtime-config"
-  "grafana-cloud"
 )
 
 log "env=$ENVIRONMENT region=$REGION file=$FILE dry_run=$DRY_RUN"
@@ -125,23 +123,6 @@ if [[ -z "$cookie_password" ]]; then
   jq --arg v "$cookie_password" '."web-config".cookiePassword = $v' "$working" > "${working}.new" \
     && mv "${working}.new" "$working"
   log "web-config.cookiePassword: auto-generated (${#cookie_password} chars)"
-fi
-
-# grafana-cloud.authHeader — "Basic " + base64(instanceId:apiToken). Compute
-# if operator left it empty, matching the JSON schema the cluster OTel
-# Collector reads for its upstream Authorization header.
-auth_header="$(jq -r '."grafana-cloud".authHeader // ""' "$working")"
-if [[ -z "$auth_header" ]]; then
-  instance_id="$(jq -r '."grafana-cloud".instanceId // empty' "$working")"
-  api_token="$(jq   -r '."grafana-cloud".apiToken   // empty' "$working")"
-  if [[ -z "$instance_id" || -z "$api_token" ]]; then
-    die "grafana-cloud needs either \`authHeader\` OR both \`instanceId\` + \`apiToken\`"
-  fi
-  encoded="$(printf '%s:%s' "$instance_id" "$api_token" | base64 | tr -d '\n')"
-  auth_header="Basic ${encoded}"
-  jq --arg v "$auth_header" '."grafana-cloud".authHeader = $v' "$working" > "${working}.new" \
-    && mv "${working}.new" "$working"
-  log "grafana-cloud.authHeader: auto-computed from instanceId + apiToken"
 fi
 
 # ── 3. Seed loop ────────────────────────────────────────────────────────────

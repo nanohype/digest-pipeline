@@ -20,6 +20,7 @@ tasks:
       - task: check
       - task: build
       - task: web
+      - task: platform:validate
       - task: helm:lint
       - task: helm:template
       - task: docker:build
@@ -70,6 +71,23 @@ tasks:
       - npx tsc --noEmit
       - npm test
       - npm run build
+
+  # === Platform CR ===
+
+  platform:validate:
+    desc: 'Validate platform.yaml against the vendored eks-agent-platform CRD schemas'
+    cmds:
+      - npm run platform:validate
+
+  sync:crd:
+    desc: 'Re-vendor schemas/crd/ from an eks-agent-platform checkout'
+    cmds:
+      - npm run sync:crd
+
+  sync:crd:check:
+    desc: 'Fail if schemas/crd/ has drifted from the eks-agent-platform checkout'
+    cmds:
+      - npm run sync:crd:check
 
   # === Helm ===
 

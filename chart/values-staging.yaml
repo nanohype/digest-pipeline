@@ -9,7 +9,6 @@ externalSecret:
   approversSecret: digest-pipeline/staging/approvers
   workosSecret: digest-pipeline/staging/workos-directory
   dbCredentialsSecret: digest-pipeline/staging/db-credentials
-  grafanaCloudSecret: digest-pipeline/staging/grafana-cloud
 
 env:
   OTEL_RESOURCE_ATTRIBUTES: 'service.namespace=digest-pipeline,service.version=0.1.0,deployment.environment=staging,agents.tenant=growth,agents.platform=digest-pipeline'
