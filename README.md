@@ -71,7 +71,7 @@ A nanohype composite composing templates (`data-pipeline`, `worker-service`, `ra
 - **`src/data/`** — Postgres-backed `DraftRepository` + `AuditWriter` implementations. Status transitions (`PENDING → APPROVED → SENT`) guarded by SQL `WHERE` clauses, so a draft cannot be approved twice or sent from a non-approved state.
 - **`src/common/`** — shared Pino logger (stdout only — log shipping is an infrastructure concern), OTel bootstrap (`--import` loaded before app code), tracer + metrics accessors, Secrets Manager client with Zod-validated 5-minute cache.
 - **`chart/`** — Helm chart with `pipeline-cronjob.yaml` (weekly Friday 09:00 UTC), `api-deployment.yaml` + `api-service.yaml` (Fastify on :3001), `web-deployment.yaml` + `web-service.yaml` (Next.js on :3000), `ingress.yaml` (ingress-nginx + cert-manager: `/api/*` → api with rewrite-target, `/` → web), `externalsecret.yaml` aggregating four Secrets Manager entries, `migrate-job.yaml` Helm pre-install/pre-upgrade hook running schema migrations against Aurora. See [`chart/README.md`](chart/README.md) for the full template-by-template description.
-- **`platform.yaml`** — Platform CR (`platform.nanohype.dev/v1alpha1`) plus a co-declared BudgetPolicy (`governance.nanohype.dev/v1alpha1`) declaring digest-pipeline as a tenant of the `protohype` team on the `eks-agent-platform` operator. Operator reconciles Namespace, ResourceQuota, IAM role, KMS grants, S3 bucket policy.
+- **`platform.yaml`** — Platform CR (`platform.nanohype.dev/v1alpha1`) plus a co-declared BudgetPolicy (`governance.nanohype.dev/v1alpha1`) declaring digest-pipeline as a tenant of the `growth` team on the `eks-agent-platform` operator. Operator reconciles the workload namespace, ResourceQuota, LimitRange, default-deny NetworkPolicy, the ArgoCD AppProject, and the tenant IAM role.
 - **`gitops/applicationset-entry.yaml`** — ApplicationSet entry registered with `nanohype/eks-gitops` for ArgoCD reconciliation.
 
 ## Run locally
@@ -109,10 +109,10 @@ cd web && npm run dev    # Next.js dev server, :3000
 npm test                 # vitest run — all suites
 npm run test:watch       # interactive watch
 npm run typecheck        # tsc --noEmit
-npm run lint             # ESLint on src/
+npm run lint             # Biome lint
 ```
 
-Trophy-shaped test distribution — strict static analysis (`tsconfig` strict + NodeNext, ESLint, Prettier), integration-heavy behavioral tests at the decision points (aggregator factories, orchestrator composition, identity cache, PII regex catalogue, resilience state machines, ranker scoring, Levenshtein diff), fewer pure unit tests, no e2e beyond the manual end-to-end in [`docs/deployment-guide.md`](docs/deployment-guide.md). Details + per-file coverage: [`docs/local-development.md`](docs/local-development.md) § "Tests".
+Trophy-shaped test distribution — strict static analysis (`tsconfig` strict + NodeNext, Biome lint + format), integration-heavy behavioral tests at the decision points (aggregator factories, orchestrator composition, identity cache, PII regex catalogue, resilience state machines, ranker scoring, Levenshtein diff), fewer pure unit tests, no e2e beyond the manual end-to-end in [`docs/deployment-guide.md`](docs/deployment-guide.md). Details + per-file coverage: [`docs/local-development.md`](docs/local-development.md) § "Tests".
 
 ## Build
 
@@ -125,7 +125,7 @@ cd web && npm run build  # Next.js standalone bundle for Dockerfile.web
 
 Renders as a Platform tenant on the [`eks-agent-platform`](https://github.com/nanohype/eks-agent-platform) operator. The chart produces three workloads (pipeline CronJob + api Deployment + web Deployment), an ingress that fronts both api and web, an ExternalSecret aggregating four Secrets Manager entries into one Kubernetes Secret, and a Helm pre-install/pre-upgrade hook that runs schema migrations against Aurora before any pod from the new version rolls out.
 
-Telemetry ships to Grafana Cloud via the cluster-level OTel Collector + log forwarder installed by `eks-gitops` — no per-pod sidecars. Resource names, secret paths, and IAM policies are env-scoped (`digest-pipeline/staging/*` vs `digest-pipeline/production/*`). The staging IAM role **cannot** read production secrets and vice versa.
+Telemetry ships to Grafana Cloud via the cluster-level OTel Collector + log forwarder installed by `eks-gitops` — no per-pod sidecars. Resource names, secret paths, and IAM grants are env-scoped (`digest-pipeline/staging/*` vs `digest-pipeline/production/*`). The staging IAM role **cannot** read production secrets and vice versa.
 
 ```bash
 cp secrets.template.json digest-pipeline-secrets.staging.json
@@ -142,7 +142,7 @@ npm run chart:template:staging      # render chart with staging values
 # (apply platform.yaml → wait Ready → register ApplicationSet entry).
 ```
 
-Requires Bedrock model access enabled in the deployment region. The per-tenant AWS substrate (Aurora Serverless v2, S3 buckets, the IAM role the Platform CR references, SES verified sending identity) is provisioned by the `digest-pipeline-platform` component in [`landing-zone`](https://github.com/nanohype/landing-zone) and documented in [`chart/README.md`](chart/README.md) under "Per-tenant infra".
+Requires Bedrock model access enabled in the deployment region. The per-tenant AWS substrate (Aurora Serverless v2, S3 buckets, the app-access managed policy the Platform CR references, SES verified sending identity) is provisioned by the `digest-pipeline-platform` component in [`landing-zone`](https://github.com/nanohype/landing-zone) and documented in [`chart/README.md`](chart/README.md) under "Per-tenant infra".
 
 Full first-time walkthrough covering AWS prerequisites (Bedrock model access + on-demand-throughput caveat, SES identity verification), third-party account setup, Secrets Manager seeding, WorkOS AuthKit wiring, voice-baseline corpus bootstrap, and the promotion path to production — [`docs/deployment-guide.md`](docs/deployment-guide.md).
 
@@ -156,7 +156,7 @@ Full first-time walkthrough covering AWS prerequisites (Bedrock model access + o
 
 This repo owns the application — the aggregation pipeline, the PII filter, the WorkOS identity resolution, the Bedrock generator, the review API + web UI, and the tenant trio that deploys it. It does **not** own:
 
-- AWS substrate (Aurora Serverless v2, the two S3 buckets, the SES identity + config set, the IAM role, Secrets Manager seeding) → the `digest-pipeline-platform` component in [`landing-zone`](https://github.com/nanohype/landing-zone). It binds the role to the chart's ServiceAccount via an EKS Pod Identity association.
+- AWS substrate (Aurora Serverless v2, the two S3 buckets, the SES identity + config set, the app-access managed policy, Secrets Manager seeding) → the `digest-pipeline-platform` component in [`landing-zone`](https://github.com/nanohype/landing-zone). It binds the operator-minted `<env>-digest-pipeline-tenant` role to the chart's ServiceAccount via an EKS Pod Identity association.
 - Cluster addons (ingress-nginx, cert-manager, external-secrets, the OTel collector + log forwarder, kube-prometheus-stack) → [`eks-gitops`](https://github.com/nanohype/eks-gitops).
 
 ## Configuration
@@ -185,7 +185,7 @@ OpenTelemetry for traces + metrics. Logs are decoupled from OTel — apps emit P
 - **Spans** — pipeline phases (`pipeline.run`, `phase.aggregate`, `phase.dedupe`, `phase.rank`, `phase.generate`, `phase.audit_and_notify`) and generator sub-phases (`bedrock.load_voice_baseline`, `bedrock.invoke_model`, `bedrock.validate_output`) are explicit. Fastify auto-instrumentation wraps every API request.
 - **Metrics** (`src/common/metrics.ts`) — `digest-pipeline.run.duration_ms{status}`, `digest-pipeline.source.{items,failure}{source}`, `digest-pipeline.bedrock.{tokens{kind,model},fallback}`, `digest-pipeline.draft.edit_rate`, `digest-pipeline.email.sent`. OTLP → cluster OTel Collector → Grafana Cloud Mimir; the chart's `prometheusrule.yaml` alerts and `grafana-dashboard.yaml` (`chart/dashboards/digest-pipeline.json`) query them.
 - **Logs** — Pino → stdout → cluster log forwarder → Grafana Cloud Loki. `trace_id` / `span_id` auto-injected by `@opentelemetry/instrumentation-pino`.
-- **Resource attributes** — `agents.tenant=protohype` + `agents.platform=digest-pipeline` ride on every span/metric, keying the cluster collector pipeline + dashboard queries.
+- **Resource attributes** — `agents.tenant=growth` + `agents.platform=digest-pipeline` ride on every span/metric, keying the cluster collector pipeline + dashboard queries.
 - **Sampling** — 100% (parent-based always-on at the SDK; the collector batches but does not down-sample).
 - **Browser → API trace propagation** — W3C `traceparent` via `@opentelemetry/instrumentation-fetch`; the Next.js proxy routes and Fastify continue the trace, so a single trace spans browser → API → Postgres.
 

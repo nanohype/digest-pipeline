@@ -1,8 +1,8 @@
 /**
- * Auth helper tests — the bearer-token parser and the approver check are
- * security-critical and were previously untested. extractBearerToken is
- * additionally a ReDoS regression guard after the /^Bearer\s+(.+)$/ pattern
- * (overlapping quantifiers) was replaced with linear-time parsing.
+ * Auth helper tests — the bearer-token parser and the approver check are the
+ * security-critical surface of the API. extractBearerToken parses in linear
+ * time rather than by regex: an overlapping-quantifier pattern such as
+ * /^Bearer\s+(.+)$/ is a ReDoS risk, and these cases guard that property.
  */
 
 import { describe, expect, it } from "vitest";

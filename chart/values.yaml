@@ -17,8 +17,9 @@ serviceAccount:
   create: true
   # Pinned to the app name so it matches the service_account of the EKS Pod
   # Identity association landing-zone's digest-pipeline-platform component
-  # creates — that association binds this ServiceAccount to its IAM role, so the
-  # pod needs no role-arn annotation and the chart carries no AWS account values.
+  # creates — that association binds this ServiceAccount to the operator-minted
+  # `<env>-digest-pipeline-tenant` role, so the pod needs no role-arn annotation
+  # and the chart carries no AWS account values.
   name: digest-pipeline
   # Free-form additional annotations to merge into the ServiceAccount.
   annotations: {}
@@ -28,7 +29,7 @@ serviceAccount:
 # carries the same values into the app's OTel SDK at runtime.
 otel:
   resourceAttributes:
-    agents.tenant: protohype
+    agents.tenant: growth
     agents.platform: digest-pipeline
 
 podSecurityContext:
@@ -224,7 +225,7 @@ env:
   OTEL_METRICS_EXPORTER: otlp
   OTEL_METRIC_EXPORT_INTERVAL: '60000'
   # OTel resource attrs — agents.tenant/agents.platform required by PLATFORM_TENANT_CONTRACT
-  OTEL_RESOURCE_ATTRIBUTES: 'service.namespace=digest-pipeline,service.version=0.1.0,agents.tenant=protohype,agents.platform=digest-pipeline'
+  OTEL_RESOURCE_ATTRIBUTES: 'service.namespace=digest-pipeline,service.version=0.1.0,agents.tenant=growth,agents.platform=digest-pipeline'
 
 # Per-tenant infra references — populated by per-env values from the
 # landing-zone digest-pipeline-platform component's outputs (terragrunt run-all

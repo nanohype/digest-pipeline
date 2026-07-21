@@ -25,7 +25,7 @@ npm run dev:pipeline         # run the weekly pipeline once locally (needs DB + 
 ```bash
 npm run migrate:up           # apply pending DB migrations to DATABASE_URL
 npm test                     # vitest run
-npm run lint && npm run typecheck   # eslint + tsc --noEmit (CI parity)
+npm run lint && npm run typecheck   # biome lint + tsc --noEmit (CI parity)
 ```
 
 Helm:
@@ -41,14 +41,14 @@ Shipping this on a cluster means three artifacts travel together: the **Platform
 
 ### The Platform CR (`platform.yaml`)
 
-Two CRs in different groups — a `BudgetPolicy` (`governance.nanohype.dev/v1alpha1`) and the `Platform` (`platform.nanohype.dev/v1alpha1`) that references it:
+Two CRs in different groups — a `BudgetPolicy` (`governance.nanohype.dev/v1alpha1`) and the `Platform` (`platform.nanohype.dev/v1alpha1`) that references it. Both live in `tenants-growth`, the growth team's management namespace, which is separate from the workload namespace the operator provisions:
 
 ```yaml
 apiVersion: governance.nanohype.dev/v1alpha1
 kind: BudgetPolicy
 metadata:
   name: digest-pipeline
-  namespace: tenants-protohype
+  namespace: tenants-growth
 spec:
   platformRef: { name: digest-pipeline }
   monthlyUsd: '2000' # kill-switch fires at 120% (USD 2400); Bedrock fanout is weekly, not per-query
@@ -59,20 +59,22 @@ apiVersion: platform.nanohype.dev/v1alpha1
 kind: Platform
 metadata:
   name: digest-pipeline
-  namespace: tenants-protohype
+  namespace: tenants-growth
 spec:
   displayName: digest-pipeline
   persona: ops
-  tenant: protohype
+  tenant: growth
   budget: { name: digest-pipeline }
   identity:
-    allowedModelFamilies: [anthropic] # Claude via Bedrock
-    extraPolicyArns: [] # app pods assume the landing-zone role directly
+    allowedModels: [anthropic.claude-sonnet-4-6] # Bedrock invoke is clamped to this
+    extraPolicyArns: [] # per-env: the landing-zone app-access managed policy ARN
   compliance: { soc2: true }
   isolation: namespace
 ```
 
-The operator reconciles the namespace `tenants-protohype`, ResourceQuota, LimitRange, default-deny NetworkPolicy, ArgoCD AppProject, and a per-Platform IRSA role trusting the `tenant-runtime` SA. **digest-pipeline's own app pods don't use that operator role** — all three workloads assume the landing-zone `digest-pipeline-platform` IRSA role directly via the EKS Pod Identity association. `extraPolicyArns` stays empty for that reason.
+Everything the operator provisions is derived from `metadata.name`, not from `spec.tenant`: the workload namespace `tenants-digest-pipeline`, its ResourceQuota, LimitRange and default-deny NetworkPolicy, the ArgoCD AppProject `digest-pipeline`, and the tenant IAM role `<env>-digest-pipeline-tenant`. `spec.tenant` names the owning team and rides along as a label, an AWS `Team` tag, and the `agents.tenant` OTel attribute.
+
+**One Platform, one privilege domain.** All three app workloads and any AgentFleet pods run as that single `<env>-digest-pipeline-tenant` role. Its trust policy is the EKS Pod Identity service principal (`pods.eks.amazonaws.com`) — the `(namespace, service-account)` binding lives in the Pod Identity association, which the landing-zone `digest-pipeline-platform` component creates for the chart's `digest-pipeline` ServiceAccount. Bedrock invoke on the role is the agent-iam baseline clamped to `spec.identity.allowedModels`; the app's substrate grants (S3, SES, Secrets Manager, CloudWatch) arrive as the landing-zone `app_access_policy_arn` managed policy, referenced per environment from `spec.identity.extraPolicyArns`.
 
 ### The Helm chart (`chart/`)
 
@@ -84,14 +86,14 @@ Three workloads in one chart — the weekly pipeline, the review API, and the re
 | `api-deployment.yaml` + `api-service.yaml` | The Fastify API (JWT-gated review backend, ClusterIP :3001)                                                                                                                                                            |
 | `web-deployment.yaml` + `web-service.yaml` | The Next.js review app (WorkOS AuthKit, ClusterIP :3000; `DIGEST_PIPELINE_API_URL` wired to the api Service DNS)                                                                                                       |
 | `ingress.yaml`                             | ingress-nginx + cert-manager TLS — `/api/*` → api (rewrite-target), `/` → web                                                                                                                                          |
-| `serviceaccount.yaml`                      | Shared SA across all three workloads, name pinned to the app; bound to the landing-zone IAM role by a Pod Identity association                                                                                         |
+| `serviceaccount.yaml`                      | Shared SA across all three workloads, name pinned to the app; bound to the tenant IAM role by a Pod Identity association                                                                                               |
 | `externalsecret.yaml`                      | ESO aggregates four Secrets Manager entries (`digest-pipeline/<env>/{approvers,workos-directory,db-credentials,grafana-cloud}`) into one Secret consumed via `envFrom`; composes `DATABASE_URL` in the template engine |
 | `migrate-job.yaml`                         | Helm pre-install/pre-upgrade hook running `npm run migrate:up` on the api image so schema lands before new pods roll                                                                                                   |
 | `networkpolicy.yaml`                       | Default-deny + egress allow-list (DNS, HTTPS for AWS + all aggregator sources, Postgres on the VPC CIDR) + intra-pod ingress                                                                                           |
 | `prometheusrule.yaml`                      | Pipeline/Bedrock/send alerts                                                                                                                                                                                           |
 | `grafana-dashboard.yaml`                   | ConfigMap loading `chart/dashboards/digest-pipeline.json`                                                                                                                                                              |
 
-`values.yaml` is the base; `values-staging.yaml` / `values-production.yaml` carry the per-env deltas (image tags, `tenantInfra.*` from the landing-zone outputs, ingress host). The image is `ghcr.io/nanohype/digest-pipeline`, built per workload (`:<tag>-pipeline`, `:<tag>-api`, `:<tag>-web`). OTel attrs `agents.tenant=protohype` + `agents.platform=digest-pipeline` are set in every values file (required by the platform-tenant contract).
+`values.yaml` is the base; `values-staging.yaml` / `values-production.yaml` carry the per-env deltas (image tags, `tenantInfra.*` from the landing-zone outputs, ingress host). The image is `ghcr.io/nanohype/digest-pipeline`, built per workload (`:<tag>-pipeline`, `:<tag>-api`, `:<tag>-web`). OTel attrs `agents.tenant=growth` + `agents.platform=digest-pipeline` are set in every values file (required by the platform-tenant contract).
 
 ### Required tenant files
 
@@ -127,7 +129,7 @@ The newsletter generator (`src/pipeline/ai/generator.ts`) calls Claude via `Invo
 - **Immutable audit-event ledger.** Every draft mutation is an append-only `audit_events` row keyed on `run_id` (`DRAFT_GENERATED`, `HUMAN_EDIT`, `APPROVED`, `SENT`, `EXPIRED`, `SOURCE_FAILURE`, `PIPELINE_FAILURE`). Audit writes are always awaited — zero fire-and-forget.
 - **Resilience contract.** Every external call goes through `withTimeout` (8s default, 15s for Slack history) + `withRetry(3, jitter)` from the vendored `src/vendor/runtime/resilience.ts`. Explicit timeouts everywhere.
 - **Vendored runtime modules are read-only.** `src/vendor/runtime/` is a byte-identical copy of `nanohype/library/runtime/src` (same model as the vendored `tenant-chart-base` chart). Change the library, then `npm run sync:vendored`; CI fails on drift.
-- TypeScript strict, ESM (`"type": "module"`, `.js` extensions in relative imports), Node ≥ 24. Zod at every boundary (API bodies, config, aggregator responses). Pino JSON to stdout with OTel `trace_id`/`span_id` auto-injected. Direct Bedrock SDK via a thin interface — no LLM framework lock-in. ESLint flat config + typescript-eslint, Prettier.
+- TypeScript strict, ESM (`"type": "module"`, `.js` extensions in relative imports), Node ≥ 24. Zod at every boundary (API bodies, config, aggregator responses). Pino JSON to stdout with OTel `trace_id`/`span_id` auto-injected. Direct Bedrock SDK via a thin interface — no LLM framework lock-in. Biome for lint + format.
 
 ## Pointers
 
@@ -139,4 +141,4 @@ The newsletter generator (`src/pipeline/ai/generator.ts`) calls Claude via `Invo
 - [`docs/`](docs/) — local development, deployment guide, fork-for-a-new-client recipe
 - [Platform Reference](../nanohype/docs/platform-reference.md) — the stack-wide view
 - [`eks-agent-platform`](https://github.com/nanohype/eks-agent-platform) — the operator that reconciles the Platform CR
-- [`landing-zone`](https://github.com/nanohype/landing-zone) — the `digest-pipeline-platform` substrate the chart's IAM role and data stores live in
+- [`landing-zone`](https://github.com/nanohype/landing-zone) — the `digest-pipeline-platform` substrate: the data stores, the app-access managed policy, and the Pod Identity association

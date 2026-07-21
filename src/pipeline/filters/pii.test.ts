@@ -33,7 +33,7 @@ describe("piiFilter", () => {
     expect(piiFilter("DOB: 04/11/1986 from the spreadsheet")).toContain("[DOB]");
   });
 
-  it("redacts the union categories this app previously lacked (secrets, aws, customer/infra)", () => {
+  it("redacts the full vendored-catalog categories (secrets, aws, customer/infra)", () => {
     expect(piiFilter("rotate key AKIAIOSFODNN7EXAMPLE now")).toBe("rotate key [AWS_KEY] now");
     expect(piiFilter("leaked ghp_abcdefghijklmnopqrstuvwxyz0123456789")).toBe(
       "leaked [GITHUB_PAT]",

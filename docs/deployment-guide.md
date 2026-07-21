@@ -8,17 +8,17 @@ If you're rotating credentials on an already-running tenant, jump to [`secrets.m
 
 ### AWS side
 
-The slow-moving, per-tenant AWS substrate is owned by the landing-zone `digest-pipeline-platform` component (Aurora Serverless v2, the two S3 buckets, the SES identity + configuration set, the IAM role, and Secrets Manager wiring). You provision it with terragrunt before deploying the chart — see [`landing-zone`](https://github.com/nanohype/landing-zone). Set the region that has Bedrock access enabled:
+The slow-moving, per-tenant AWS substrate is owned by the landing-zone `digest-pipeline-platform` component (Aurora Serverless v2, the two S3 buckets, the SES identity + configuration set, the app-access managed policy, the Pod Identity association, and Secrets Manager wiring). You provision it with terragrunt before deploying the chart — see [`landing-zone`](https://github.com/nanohype/landing-zone). Set the region that has Bedrock access enabled:
 
 ```bash
 export AWS_REGION=us-west-2
 ```
 
-- **Bedrock model access** must be enabled in the deployment region for the Claude model the inference profile fans out to. Default is `us.anthropic.claude-sonnet-4-6` (US cross-region inference profile); request access for `anthropic.claude-sonnet-4-6` in **all three** US regions the profile spans (us-east-1, us-east-2, us-west-2) so AWS can route to whichever has spare capacity. Outside the US, set `BEDROCK_MODEL_ID=eu.anthropic.claude-sonnet-4-6` (or `ap.`) in the per-env chart values and request access in the matching regions.
+- **Bedrock model access** must be enabled in the deployment region for the Claude model the inference profile fans out to. Default is `us.anthropic.claude-sonnet-4-6` (US cross-region inference profile); request access for `anthropic.claude-sonnet-4-6` in **all three** US regions the profile spans (us-east-1, us-east-2, us-west-2) so AWS can route to whichever has spare capacity. Outside the US, set `BEDROCK_MODEL_ID=eu.anthropic.claude-sonnet-4-6` (or `apac.`) in the per-env chart values, add the same ID to `spec.identity.allowedModels` in `platform.yaml`, and request access in the matching regions.
 
   Enable via AWS console → Bedrock → Model access → Request access. The pipeline fails at run-time with `AccessDeniedException` during `phase.generate` if access is missing, falls back to a raw skeleton draft, and audits `PIPELINE_FAILURE`.
 
-  **Why an inference profile by default.** Claude 4.x bare model IDs (`anthropic.claude-sonnet-4-6`) only work with provisioned-throughput commitments. On-demand invocation requires a cross-region profile (`us.`/`eu.`/`ap.` prefix). The `digest-pipeline-platform` IRSA policy grants both forms so you can switch to a bare model ID when you have provisioned capacity. See [`troubleshooting.md`](troubleshooting.md) § "Bedrock errors".
+  **Why an inference profile by default.** Claude 4.x bare model IDs (`anthropic.claude-sonnet-4-6`) only work with provisioned-throughput commitments. On-demand invocation requires a cross-region profile (`us.`/`eu.`/`apac.` prefix). `platform.yaml` lists the bare ID in `spec.identity.allowedModels`, and the operator expands a bare entry into both the foundation-model ARN and the matching `us.` inference-profile ARN — so either form works without a policy edit. See [`troubleshooting.md`](troubleshooting.md) § "Bedrock errors".
 
 - **SES verified identity.** The `sesFromAddress` you will seed into `digest-pipeline/{env}/runtime-config` must be a verified SES identity (either the email or the sending domain) in the deployment region. The `digest-pipeline-platform` component (`ses.tf`) provisions the identity + configuration set and emits the DKIM tokens; if SES is still in sandbox mode, every recipient address in `newsletterRecipients` must also be verified — request production access before you promote to production.
 
@@ -50,20 +50,20 @@ The rest of this walkthrough brings up the `staging` tenant. Once staging is liv
 
 ### 1. Provision the AWS substrate
 
-The landing-zone `digest-pipeline-platform` component creates Aurora Serverless v2 (and its `digest-pipeline/<env>/db-credentials` secret), the two S3 buckets, the SES identity + configuration set, and the IAM role. Apply it via terragrunt:
+The landing-zone `digest-pipeline-platform` component creates Aurora Serverless v2 (and its `digest-pipeline/<env>/db-credentials` secret), the two S3 buckets, the SES identity + configuration set, the app-access managed policy, and the EKS Pod Identity association. The association looks up the operator-minted `<env>-digest-pipeline-tenant` role, so **apply the Platform CR (step 4) first** if this is a brand-new cluster — the rest of the component has no such dependency and can go up in either order. Apply it via terragrunt:
 
 ```bash
 cd landing-zone
 terragrunt apply --terragrunt-working-dir live/aws/workload-staging/us-west-2/staging/digest-pipeline-platform
 ```
 
-Record the IAM role ARN — the chart needs it:
+Record the app-access policy ARN — `platform.yaml` references it from `spec.identity.extraPolicyArns` so the operator attaches it to the tenant role:
 
 ```bash
-tofu -chdir=live/aws/workload-staging/us-west-2/staging/digest-pipeline-platform output -raw irsa_role_arn
+tofu -chdir=live/aws/workload-staging/us-west-2/staging/digest-pipeline-platform output -raw app_access_policy_arn
 ```
 
-The IAM role is bound to the chart's ServiceAccount by the EKS Pod Identity association landing-zone creates — there is no chart value to set. See [`../chart/README.md`](../chart/README.md) § "Pod identity".
+Nothing about the role goes into the chart: the same component creates the EKS Pod Identity association binding the chart's ServiceAccount to `<env>-digest-pipeline-tenant`. See [`../chart/README.md`](../chart/README.md) § "Pod identity".
 
 ### 2. Seed every secret
 
@@ -98,16 +98,17 @@ cd web && npm ci && npx tsc --noEmit && npm run build
 
 ### 4. Apply the Platform CR
 
-The Platform CR declares digest-pipeline as a tenant of the `protohype` team. Apply it once during initial setup:
+The Platform CR declares digest-pipeline as a tenant of the `growth` team. Both it and the BudgetPolicy live in the team's management namespace, so create that first, then apply once:
 
 ```bash
+kubectl create namespace tenants-growth --dry-run=client -o yaml | kubectl apply -f -
 kubectl apply -f platform.yaml
 ```
 
-The operator reconciles Namespace `tenants-protohype`, ResourceQuota, LimitRange, default-deny NetworkPolicy, ArgoCD AppProject `tenant-protohype`, the IAM role, KMS grants, and the S3 bucket policy. Wait for the Platform to reach `Ready`:
+The operator reconciles the workload namespace `tenants-digest-pipeline`, ResourceQuota, LimitRange, default-deny NetworkPolicy, the ArgoCD AppProject `digest-pipeline`, and the `<env>-digest-pipeline-tenant` IAM role. Wait for the Platform to reach `Ready`:
 
 ```bash
-kubectl get platform digest-pipeline -n tenants-protohype -o jsonpath='{.status.phase}'
+kubectl get platform digest-pipeline -n tenants-growth -o jsonpath='{.status.phase}'
 ```
 
 ### 5. Register the ApplicationSet entry
@@ -116,13 +117,13 @@ kubectl get platform digest-pipeline -n tenants-protohype -o jsonpath='{.status.
 
 ### 6. Let ArgoCD sync
 
-ArgoCD rolls out the chart at sync wave 100: the pipeline `CronJob`, the api + web `Deployment`s + `Service`s, the `ingress` (ingress-nginx + cert-manager TLS, `/api/*` → api with rewrite, `/` → web), the shared `serviceaccount` (IRSA), the `networkpolicy`, the `externalsecret`, the `prometheusrule` + `grafana-dashboard`, and the `rbac` (namespaced Role for the api admin Job trigger). The `migrate-job` runs as a Helm pre-install/pre-upgrade hook, applying schema migrations against Aurora before the new pods roll.
+ArgoCD rolls out the chart at sync wave 100: the pipeline `CronJob`, the api + web `Deployment`s + `Service`s, the `ingress` (ingress-nginx + cert-manager TLS, `/api/*` → api with rewrite, `/` → web), the shared `serviceaccount` (bound by Pod Identity), the `networkpolicy`, the `externalsecret`, the `prometheusrule` + `grafana-dashboard`, and the `rbac` (namespaced Role for the api admin Job trigger). The `migrate-job` runs as a Helm pre-install/pre-upgrade hook, applying schema migrations against Aurora before the new pods roll.
 
 Watch the rollout:
 
 ```bash
-kubectl -n tenants-protohype get pods -w
-argocd app get tenants-protohype-digest-pipeline    # if you have the ArgoCD CLI
+kubectl -n tenants-digest-pipeline get pods -w
+argocd app get digest-pipeline    # if you have the ArgoCD CLI
 ```
 
 The ExternalSecret materializes the in-cluster Secret from the seeded `digest-pipeline/staging/*` entries; if a key is missing the pods stay in `CreateContainerConfigError` until it's seeded and the ExternalSecret resyncs.
@@ -132,8 +133,8 @@ The ExternalSecret materializes the in-cluster Secret from the seeded `digest-pi
 The `migrate-job` hook runs `npm run migrate:up` against Aurora. Confirm it succeeded:
 
 ```bash
-kubectl -n tenants-protohype get jobs
-kubectl -n tenants-protohype logs job/digest-pipeline-migrate
+kubectl -n tenants-digest-pipeline get jobs
+kubectl -n tenants-digest-pipeline logs job/digest-pipeline-migrate
 ```
 
 If you need to run migrations by hand (e.g. from a bastion inside the VPC):
@@ -188,14 +189,14 @@ The Slack aggregator uses `withTimeout(15s)` + `withRetry(3)` per channel — a 
 The weekly `CronJob` is the scheduled runner. To kick off a one-off run before Friday, create a Job from the CronJob template:
 
 ```bash
-kubectl -n tenants-protohype create job digest-pipeline-pipeline-manual-$(date +%s) \
+kubectl -n tenants-digest-pipeline create job digest-pipeline-pipeline-manual-$(date +%s) \
   --from=cronjob/digest-pipeline-pipeline
 ```
 
 Watch the run (stdout also reaches Grafana Cloud Loki — filter `service="digest-pipeline-pipeline"`):
 
 ```bash
-kubectl -n tenants-protohype logs -f job/digest-pipeline-pipeline-manual-<ts>
+kubectl -n tenants-digest-pipeline logs -f job/digest-pipeline-pipeline-manual-<ts>
 ```
 
 Expected sequence: `pipeline.start` → `phase.aggregate` (per-source item counts) → `phase.dedupe` → `phase.rank` → `phase.generate` (Bedrock span + token usage, incl. cache-read/cache-write tokens) → `phase.audit_and_notify` → `slack.notify-draft` → `pipeline.exit` with `status: "OK"` or `"PARTIAL"`.
@@ -232,9 +233,9 @@ Production uses completely separate resources:
 | Aurora retention | 3-day backup, deletion protection OFF | 14-day backup, deletion protection ON |
 | S3 `voice-baseline` retention | destroy on teardown | retained on teardown |
 | api / web replicas | 1 / 1 | 2 / 2 |
-| IRSA policy scope | `digest-pipeline/staging/*` only | `digest-pipeline/production/*` only |
+| App-access policy scope | `digest-pipeline/staging/*` only | `digest-pipeline/production/*` only |
 
-The staging IAM role **cannot** read production secrets (and vice versa) — each environment's `digest-pipeline-platform` instance scopes its IRSA policy to its own `digest-pipeline/<env>/*` secret-ARN prefix.
+The staging tenant role **cannot** read production secrets (and vice versa) — each environment's `digest-pipeline-platform` instance scopes its app-access policy to its own `digest-pipeline/<env>/*` secret-ARN prefix.
 
 The weekly `CronJob` runs in both environments. If you want staging to skip the auto-run while you iterate, set `pipeline.suspend: true` in `chart/values-staging.yaml` (`spec.suspend` on the CronJob) and trigger manual runs via step 11.
 
@@ -248,12 +249,15 @@ ENV=staging
 # 1. Remove the ApplicationSet entry from eks-gitops, commit, push — ArgoCD prunes
 #    the chart's workloads.
 
-# 2. Delete the Platform CR (operator tears down the namespace-scoped resources):
-kubectl delete -f platform.yaml
-
-# 3. Tear down the AWS substrate:
+# 2. Tear down the AWS substrate. Do this before deleting the Platform CR: the
+#    component reads the operator-minted tenant role to build its Pod Identity
+#    association, and that role disappears with the CR.
 cd landing-zone
 terragrunt destroy --terragrunt-working-dir live/aws/workload-staging/us-west-2/${ENV}/digest-pipeline-platform
+
+# 3. Delete the Platform CR. Its finalizer removes the workload namespace and
+#    everything in it, the AppProject, and the tenant IAM role:
+kubectl delete -f platform.yaml
 
 # 4. Delete the operator-seeded secrets (the substrate owns db-credentials):
 for s in approvers workos-directory github linear slack notion \
