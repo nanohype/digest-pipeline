@@ -172,7 +172,7 @@ If the tag is missing, the image build/push hasn't completed for this revision �
 
 ### API / web pod fails its readiness probe and never becomes `Ready`
 
-**Cause:** The probe path isn't returning `200`. The API's `/health` is unauthenticated and should return immediately; the web's `/api/health` is likewise unauthenticated. If either returns 5xx, the pod is starting but the app is crashing inside, so the Deployment never reaches its ready replica count and ingress-nginx keeps the pod out of the endpoints.
+**Cause:** The probe path isn't returning `200`. The API's `/health` is unauthenticated and should return immediately; the web's `/api/health` is likewise unauthenticated. If either returns 5xx, the pod is starting but the app is crashing inside, so the Deployment never reaches its ready replica count and the ingress controller keeps the pod out of the endpoints.
 
 **Fix:** `kubectl -n tenants-digest-pipeline logs deploy/digest-pipeline-api --tail=100` (or `deploy/digest-pipeline-web`) — or query Loki for `{service="digest-pipeline-api"}` — and look for the stack trace. Most common causes:
 
@@ -422,7 +422,7 @@ After fix, `curl -i https://<host>/api/auth/sign-in` should show exactly one `Se
 
 ### After successful sign-in, browser shows `DNS_PROBE_FINISHED_NXDOMAIN` for an internal pod hostname
 
-**Cause:** AuthKit's `handleAuth()` (in `app/callback/route.ts`) constructs the post-sign-in redirect from `request.url` when no `baseURL` option is passed. Behind ingress-nginx, Next.js's `request.url` sometimes resolves the host to the pod's in-cluster identity (the pod IP or the Service's `.svc.cluster.local` name) instead of the public hostname the browser used. The 302 sends the browser to the internal name, which obviously isn't publicly resolvable.
+**Cause:** AuthKit's `handleAuth()` (in `app/callback/route.ts`) constructs the post-sign-in redirect from `request.url` when no `baseURL` option is passed. Behind a reverse-proxy ingress controller, Next.js's `request.url` sometimes resolves the host to the pod's in-cluster identity (the pod IP or the Service's `.svc.cluster.local` name) instead of the public hostname the browser used. The 302 sends the browser to the internal name, which obviously isn't publicly resolvable.
 
 **Fix (in the digest-pipeline web):** `app/callback/route.ts` derives `baseURL` from `WORKOS_REDIRECT_URI` (already set on the container as the public callback URL) and passes it to `handleAuth({ baseURL })`. Once set, AuthKit uses it as the redirect base instead of `request.url`.
 

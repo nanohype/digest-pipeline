@@ -26,8 +26,9 @@
  * ── Where the schemas come from ─────────────────────────────────────────────
  *
  * `schemas/crd/` holds byte-identical copies of the controller-gen output in
- * nanohype/eks-agent-platform, and `schemas/crd/provenance.json` records the
- * pinned commit plus a SHA-256 per file. Both halves are load-bearing:
+ * nanohype/eks-agent-platform, and `schemas/crd/source.json` records where they
+ * came from — the upstream repository, path, and pinned commit — plus a SHA-256
+ * per file. Both halves are load-bearing:
  *
  *   - This gate hashes each file and compares it to the recorded digest before
  *     parsing it. A vendored schema edited in place — an enum widened, a
@@ -84,7 +85,7 @@ import { parse, parseAllDocuments } from "yaml";
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(SCRIPT_DIR, "..");
 const SCHEMA_DIR = join(ROOT, "schemas", "crd");
-const PROVENANCE = join(SCHEMA_DIR, "provenance.json");
+const SOURCE_MANIFEST = join(SCHEMA_DIR, "source.json");
 const CHART_DIR = join(ROOT, "chart");
 const SELF_TEST = process.argv.includes("--self-test");
 // An explicit path argument is resolved against the caller's cwd, so a copy of
@@ -232,22 +233,28 @@ function walk(schema, value, path, errors) {
  * verifying each file against its recorded SHA-256 first.
  *
  * The digest check runs before the YAML is parsed, so a doctored schema never
- * reaches the walker. `provenance.json` is also the file list: a copy present on
+ * reaches the walker. `source.json` is also the file list: a copy present on
  * disk but absent from the record is unvendored and therefore untrusted, and a
  * file in the record but absent on disk is fatal.
  */
 async function loadSchemas() {
   let record;
   try {
-    record = JSON.parse(await readFile(PROVENANCE, "utf8"));
+    record = JSON.parse(await readFile(SOURCE_MANIFEST, "utf8"));
   } catch (error) {
     unusable(
-      `cannot read schemas/crd/provenance.json (${error.message})`,
-      "Restore it with `npm run schemas:crd` against an eks-agent-platform checkout.",
+      `cannot read schemas/crd/source.json (${error.message})`,
+      "Restore it with `npm run schemas:sync`.",
+    );
+  }
+  if (!record.upstream?.repository || !/^[0-9a-f]{40}$/.test(record.upstream?.ref ?? "")) {
+    unusable(
+      "schemas/crd/source.json needs `upstream.repository` and a full 40-character `upstream.ref`",
+      "A branch name pins nothing, and the digests below describe whatever commit that is.",
     );
   }
   if (!Array.isArray(record.files) || record.files.length === 0) {
-    unusable("schemas/crd/provenance.json declares no schema files");
+    unusable("schemas/crd/source.json declares no schema files");
   }
 
   const declared = new Set(record.files.map((entry) => entry.file));
@@ -257,13 +264,13 @@ async function loadSchemas() {
   } catch {
     unusable(
       `CRD schema directory not found at ${SCHEMA_DIR}`,
-      "Run `npm run schemas:crd` against an eks-agent-platform checkout.",
+      "Restore it with `npm run schemas:sync`.",
     );
   }
   for (const file of present) {
     if (!declared.has(file)) {
       unusable(
-        `schemas/crd/${file} is on disk but not recorded in provenance.json`,
+        `schemas/crd/${file} is on disk but not recorded in source.json`,
         "Every vendored schema carries a digest, or the gate cannot tell it from an edit.",
       );
     }
@@ -278,7 +285,7 @@ async function loadSchemas() {
     } catch (error) {
       unusable(
         `vendored CRD schema schemas/crd/${entry.file} is missing (${error.message})`,
-        "Restore it with `npm run schemas:crd`.",
+        "Restore it with `npm run schemas:sync`.",
       );
     }
 
@@ -289,7 +296,7 @@ async function loadSchemas() {
           `  expected ${entry.sha256}\n` +
           `  actual   ${actual}`,
         "The vendored schemas are copies of the operator's own CRDs — they are never edited here.\n" +
-          "Re-vendor with `npm run schemas:crd` so the pinned commit and the digests agree.",
+          "Re-vendor with `npm run schemas:sync` so the pinned commit and the digests agree.",
       );
     }
 
@@ -327,7 +334,7 @@ async function loadSchemas() {
       unusable(`no served CRD schema for kind ${kind} in ${SCHEMA_DIR}`);
     }
   }
-  return { registry, ref: record.ref, repository: record.repository };
+  return { registry, ref: record.upstream.ref, repository: record.upstream.repository };
 }
 
 /** Validate one document; returns {kind, name, namespace, spec} or null. */
