@@ -55,8 +55,8 @@ backupApproverIds[]}`) — it is not hardcoded and not editable from the UI.
 
 - Default-deny `NetworkPolicy` with an explicit egress allow-list: DNS, HTTPS to AWS APIs and
   the GitHub / Linear / Notion / Slack / WorkOS endpoints, and Postgres on the cluster VPC CIDR.
-  Ingress is limited to ingress-nginx and intra-pod traffic. IMDS is blocked.
-- Public surface is limited to `/health` and the review UI behind ingress-nginx + cert-manager
+  Ingress is limited to the ingress controller's namespace and intra-pod traffic. IMDS is blocked.
+- Public surface is limited to `/health` and the review UI behind the ingress controller + cert-manager TLS
   TLS (`/api/*` → API with rewrite, `/` → web).
 
 ## Known limitations

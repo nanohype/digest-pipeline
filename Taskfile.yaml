@@ -21,8 +21,7 @@ tasks:
       - task: build
       - task: web
       - task: platform:validate
-      - task: platform:self-test
-      - task: schemas:crd:check
+      - task: schemas:check
       - task: helm:lint
       - task: helm:template
       - task: docker:build
@@ -77,24 +76,27 @@ tasks:
   # === Platform CR ===
 
   platform:validate:
-    desc: 'Validate platform.yaml against the vendored eks-agent-platform CRD schemas (digest-verified)'
+    desc: 'Validate platform.yaml against the vendored eks-agent-platform CRD schemas, then self-test the gate'
     cmds:
+      # The first run is the gate. The second breaks the inputs in memory —
+      # including handing the digest check a tampered schema — and fails unless
+      # every break is rejected, so "the gate rejects" stays a tested property.
       - npm run platform:validate
 
-  platform:self-test:
-    desc: 'Prove the platform.yaml gate rejects the mistakes it claims to catch'
+  schemas:sync:
+    desc: 'Re-vendor schemas/crd/ + digests from the ref pinned in schemas/crd/source.json'
     cmds:
-      - npm run platform:validate:self-test
+      - npm run schemas:sync
 
-  schemas:crd:
-    desc: 'Re-vendor schemas/crd/ from eks-agent-platform and re-record the digests'
-    cmds:
-      - npm run schemas:crd
-
-  schemas:crd:check:
+  schemas:check:
     desc: 'Fail if schemas/crd/ differs from eks-agent-platform at the pinned commit'
     cmds:
-      - npm run schemas:crd:check
+      - npm run schemas:check
+
+  schemas:freshness:
+    desc: 'Report whether the pinned operator ref has fallen behind upstream (never a merge gate)'
+    cmds:
+      - npm run schemas:freshness
 
   # === Helm ===
 

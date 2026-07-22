@@ -62,7 +62,7 @@ A run with no approval expires rather than sending. The generator handles a Bedr
 
 - **Not its own cloud substrate.** It does not provision Aurora, the S3 buckets, the SES identity, KMS, or any IAM. Those are landing-zone and the operator (see Boundaries). The chart consumes their outputs.
 - **Not a model host.** Bedrock runs Claude inference outside the cluster on-account. No self-hosted models.
-- **Not a cluster bootstrap.** The EKS cluster, ArgoCD, and the cluster addons it depends on (ESO, ingress-nginx, cert-manager, the observability stack) must already exist (eks-gitops).
+- **Not a cluster bootstrap.** The EKS cluster, ArgoCD, and the cluster addons it depends on (ESO, cert-manager, external-dns, the AWS Load Balancer Controller, the observability stack) must already exist (eks-gitops).
 - **Not the tenant operator.** It declares a `Platform` CR; the `eks-agent-platform` operator reconciles the namespace, the tenant IAM role, and the AppProject.
 - **Not an always-on service for the pipeline.** The pipeline is a scheduled `CronJob`, not a long-running pod. Only the api and web run continuously.
 
@@ -88,5 +88,5 @@ The role itself is operator-owned: `<env>-digest-pipeline-tenant`, minted from t
 The chart assumes these cluster-level capabilities are already installed and reconciled by `eks-gitops`:
 
 - **External Secrets Operator** — backs `externalsecret.yaml` (aggregates the four `digest-pipeline/<env>/*` Secrets Manager entries into one Secret, composing `DATABASE_URL`)
-- **ingress-nginx** + **cert-manager** — back `ingress.yaml` (TLS for `/` → web and `/api/*` → api)
+- **an ingress controller** + **cert-manager** — back `ingress.yaml` (TLS for `/` → web and `/api/*` → api). cert-manager is in the eks-gitops bootstrap catalog. A controller serving the class this chart requests (`ingress.className`, default `nginx`) is **not**: the networking addons are the AWS Load Balancer Controller, Cilium, external-dns, and the mcp-tunnel. Until that gap closes, the rendered `Ingress` gets no address on an eks-gitops cluster — set `ingress.className` to a class the target cluster serves, or add a controller for `nginx` to the catalog.
 - **observability stack** — the cluster Grafana Alloy collector (`alloy.monitoring.svc.cluster.local:4318`), which fans traces out to in-cluster Tempo, metrics to Amazon Managed Prometheus over SigV4 remote-write, and tailed pod stdout to in-cluster Loki. The app emits OTLP and structured Pino JSON to stdout; there are no per-pod sidecars. The `prometheusrule.yaml` alerts and the `grafana-dashboard.yaml` dashboard (`chart/dashboards/digest-pipeline.json`) load into that stack, querying the `digest-pipeline.*` metrics.
