@@ -88,6 +88,15 @@ Everything the operator provisions is derived from the Platform's `metadata.name
 
 `npm run platform:validate` checks all three documents against the operator's CRD schemas — including the cross-document references (`Platform.spec.tenant` → `Tenant.metadata.name`, `Platform.spec.budget.name` → the BudgetPolicy, and `agents.tenant` in the chart values) that no single-document schema can express. CI runs it on every pull request.
 
+The schemas it checks against are byte-identical copies of the controller-gen output in `nanohype/eks-agent-platform`, vendored under `schemas/crd/`. Vendoring keeps the gate offline and deterministic — a validator that fetches its schema at run time reports success when the fetch fails, the one outcome a gate must never produce — and `schemas/crd/provenance.json` is what keeps the copies honest, from both directions:
+
+- **Tamper.** The record carries a SHA-256 per file. The validator hashes each schema before parsing it, so a vendored CRD edited in place — an enum widened, a `required` dropped — aborts the run with exit 2. Still valid YAML, still rejected. No network needed, so it is the same check on a laptop and on a runner.
+- **Drift.** The record also pins the operator commit. `npm run schemas:crd:check` reads the CRDs from `nanohype/eks-agent-platform` at exactly that commit and byte-compares. A pin bumped without a re-vendor, or a copy edited and its digest quietly re-recorded to match, fails here. An unreachable upstream fails too — there is no skip path.
+
+Re-vendoring is `git -C ../eks-agent-platform checkout <sha> && npm run schemas:crd`, which rewrites the copies, the ref, and the digests together so one reviewable commit carries the schema diff and the pin move.
+
+`npm run platform:validate:self-test` answers "does this gate catch anything?" — it mutates in-memory copies of `platform.yaml` and asserts each one is rejected, then asserts the committed manifest still passes. CI runs it alongside the gate.
+
 **One Platform, one privilege domain.** All three app workloads and any AgentFleet pods run as that single `<env>-digest-pipeline-tenant` role. Its trust policy is the EKS Pod Identity service principal (`pods.eks.amazonaws.com`) — the `(namespace, service-account)` binding lives in the Pod Identity association, which the landing-zone `digest-pipeline-platform` component creates for the chart's `digest-pipeline` ServiceAccount. Bedrock invoke on the role is the agent-iam baseline clamped to `spec.identity.allowedModels`; the app's substrate grants (S3, SES, Secrets Manager, CloudWatch) arrive as the landing-zone `app_access_policy_arn` managed policy, referenced per environment from `spec.identity.extraPolicyArns`.
 
 ### The Helm chart (`chart/`)
@@ -104,16 +113,16 @@ Three workloads in one chart — the weekly pipeline, the review API, and the re
 | `externalsecret.yaml`                      | ESO aggregates three Secrets Manager entries (`digest-pipeline/<env>/{approvers,workos-directory,db-credentials}`) into one Secret consumed via `envFrom`; composes `DATABASE_URL` in the template engine |
 | `migrate-job.yaml`                         | Helm pre-install/pre-upgrade hook running `npm run migrate:up` on the api image so schema lands before new pods roll                                                                                                   |
 | `networkpolicy.yaml`                       | Default-deny + egress allow-list (DNS, HTTPS for AWS + all aggregator sources, Postgres on the VPC CIDR) + intra-pod ingress                                                                                           |
-| `prometheusrule.yaml`                      | Pipeline/Bedrock/send alerts                                                                                                                                                                                           |
-| `grafana-dashboard.yaml`                   | ConfigMap loading `chart/dashboards/digest-pipeline.json`                                                                                                                                                              |
+| `prometheusrule.yaml`                      | Pipeline/Bedrock/send alert rules. `prometheusRule.enabled: false` by default — it needs a cluster running its own ruler (the local `kx` cluster does); on EKS, alerting is Grafana-managed against AMP                  |
+| `grafana-dashboard.yaml`                   | `GrafanaDashboard` CR (`grafana.integreatly.org/v1beta1`) carrying `chart/dashboards/digest-pipeline.json` inline; grafana-operator imports it into the external Amazon Managed Grafana                                 |
 
 `values.yaml` is the base; `values-staging.yaml` / `values-production.yaml` carry the per-env deltas (image tags, `tenantInfra.*` from the landing-zone outputs, ingress host). The image is `ghcr.io/nanohype/digest-pipeline`, built per workload (`:<tag>-pipeline`, `:<tag>-api`, `:<tag>-web`). OTel attrs `agents.tenant=growth` + `agents.platform=digest-pipeline` are set in every values file (required by the platform-tenant contract).
 
 ### Required tenant files
 
-A valid tenant in this repo is exactly these three, plus the chart's per-env values:
+A valid tenant in this repo is exactly these three files, plus the chart's per-env values:
 
-- `platform.yaml` — the `BudgetPolicy` + `Platform` CRs
+- `platform.yaml` — the `Tenant` + `BudgetPolicy` + `Platform` CRs
 - `chart/` — the chart above, with `values.yaml` + `values-staging.yaml` + `values-production.yaml`
 - `gitops/applicationset-entry.yaml` — the ApplicationSet entry registered into `nanohype/eks-gitops` (matrix generator over clusters × the app, Helm multi-source `$values` resolving `values.yaml` + `values-<env>.yaml`)
 

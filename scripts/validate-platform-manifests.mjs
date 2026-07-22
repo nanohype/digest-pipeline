@@ -9,33 +9,50 @@
  * before anyone notices. This runs in CI so the mistake fails a pull request
  * instead.
  *
- *   node scripts/validate-platform.mjs [path/to/platform.yaml]
+ *   node scripts/validate-platform-manifests.mjs             # the gate
+ *   node scripts/validate-platform-manifests.mjs --self-test # prove it rejects
+ *   node scripts/validate-platform-manifests.mjs <path>      # a copy elsewhere
  *
  * Exit codes are distinct on purpose:
  *   0  every document valid
  *   1  validation failures (reported per document, with paths)
- *   2  the schemas could not be loaded
+ *   2  the schemas could not be loaded or could not be trusted
  *
  * Exit 2 matters as much as exit 1. A gate that passes when it can't find its
  * schema is worse than no gate — it reports success while checking nothing.
- * Every path that fails to produce a usable schema exits 2 with the reason.
+ * Every path that fails to produce a usable, verified schema exits 2 with the
+ * reason.
  *
- * ── What gets checked ────────────────────────────────────────────────────────
+ * ── Where the schemas come from ─────────────────────────────────────────────
  *
- * 1. Structure, against the CRD schemas vendored in `schemas/crd/`
- *    (`scripts/sync-crd-schemas.mjs` keeps them in step with
- *    `nanohype/eks-agent-platform`). The walker is strict about unknown
- *    fields, which plain JSON Schema validation would not be: `controller-gen`
- *    emits no `additionalProperties: false`, so an invented field like
- *    `spec.tenantName` validates clean against the generated schema and is
- *    then dropped on the floor by the API server. Unknown properties are
+ * `schemas/crd/` holds byte-identical copies of the controller-gen output in
+ * nanohype/eks-agent-platform, and `schemas/crd/provenance.json` records the
+ * pinned commit plus a SHA-256 per file. Both halves are load-bearing:
+ *
+ *   - This gate hashes each file and compares it to the recorded digest before
+ *     parsing it. A vendored schema edited in place — an enum widened, a
+ *     `required` dropped — is still valid YAML and would otherwise be trusted
+ *     silently. Here it aborts the run. The check needs no network, so it is
+ *     the same check on a laptop and on a runner.
+ *   - `scripts/sync-crd-schemas.mjs --check` compares those same copies against
+ *     the operator repo at the pinned commit, which is what catches a stale or
+ *     hand-edited pin. CI runs both.
+ *
+ * ── What gets checked ───────────────────────────────────────────────────────
+ *
+ * 1. Structure, against the vendored CRD schemas. The walker is strict about
+ *    unknown fields, which plain JSON Schema validation would not be:
+ *    `controller-gen` emits no `additionalProperties: false`, so an invented
+ *    field like `spec.tenantName` validates clean against the generated schema
+ *    and is then dropped on the floor by the API server. Unknown properties are
  *    errors here, with a nearest-match hint.
  *
  * 2. Scope. `Tenant` is cluster-scoped and must carry no `metadata.namespace`;
  *    `Platform` and `BudgetPolicy` are namespaced and must carry one. A
  *    namespaced Tenant is accepted by `kubectl apply` (the namespace is simply
  *    ignored) and reads as correct in review, which is exactly the class of
- *    mistake worth catching mechanically.
+ *    mistake worth catching mechanically. Scope comes from each CRD's own
+ *    `spec.scope`, not from a list kept here.
  *
  * 3. Cross-document consistency, which no single-document schema can express:
  *      - `Platform.spec.tenant` names a `Tenant` declared in this file
@@ -49,7 +66,16 @@
  *    cost and ownership; if they drift from the CRs, telemetry is filed under
  *    a tenant that doesn't exist. Every `chart/values*.yaml` is checked
  *    against the names declared here.
+ *
+ * ── Self-test ───────────────────────────────────────────────────────────────
+ *
+ * `--self-test` mutates in-memory copies of the committed manifest and asserts
+ * the gate rejects each one, then asserts it still accepts the manifest as
+ * committed. It is the answer to "does this gate actually catch anything, or
+ * has it been passing because it checks nothing?" — asked and answered in CI,
+ * on every run, without committing a broken manifest to demonstrate it.
  */
+import { createHash } from "node:crypto";
 import { readFile, readdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -58,10 +84,13 @@ import { parse, parseAllDocuments } from "yaml";
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(SCRIPT_DIR, "..");
 const SCHEMA_DIR = join(ROOT, "schemas", "crd");
+const PROVENANCE = join(SCHEMA_DIR, "provenance.json");
 const CHART_DIR = join(ROOT, "chart");
+const SELF_TEST = process.argv.includes("--self-test");
 // An explicit path argument is resolved against the caller's cwd, so a copy of
 // the manifest anywhere on disk can be checked against this repo's schemas.
-const MANIFEST = process.argv[2] ? resolve(process.argv[2]) : join(ROOT, "platform.yaml");
+const POSITIONAL = process.argv.slice(2).find((arg) => !arg.startsWith("--"));
+const MANIFEST = POSITIONAL ? resolve(POSITIONAL) : join(ROOT, "platform.yaml");
 
 /** Kinds `platform.yaml` is expected to declare — absence of a schema is fatal. */
 const REQUIRED_KINDS = ["Tenant", "Platform", "BudgetPolicy"];
@@ -87,10 +116,13 @@ const METADATA_SCHEMA = {
   },
 };
 
-/** Abort with the reason the schema could not be obtained. */
-function unusable(message) {
+const out = (line) => process.stdout.write(`${line}\n`);
+
+/** Abort with the reason the schema could not be obtained or trusted. */
+function unusable(message, remedy) {
   console.error(`platform.yaml gate: ${message}`);
-  console.error("Refusing to report success without a schema to check against.");
+  if (remedy) console.error(remedy);
+  console.error("Refusing to report success without a verified schema to check against.");
   process.exit(2);
 }
 
@@ -195,46 +227,97 @@ function walk(schema, value, path, errors) {
   }
 }
 
-/** Load the vendored CRDs into a `group/version#Kind` → {scope, spec schema} map. */
+/**
+ * Load the vendored CRDs into a `group/version#Kind` → {scope, spec schema} map,
+ * verifying each file against its recorded SHA-256 first.
+ *
+ * The digest check runs before the YAML is parsed, so a doctored schema never
+ * reaches the walker. `provenance.json` is also the file list: a copy present on
+ * disk but absent from the record is unvendored and therefore untrusted, and a
+ * file in the record but absent on disk is fatal.
+ */
 async function loadSchemas() {
-  let files;
+  let record;
   try {
-    files = (await readdir(SCHEMA_DIR)).filter((f) => f.endsWith(".yaml")).sort();
-  } catch {
+    record = JSON.parse(await readFile(PROVENANCE, "utf8"));
+  } catch (error) {
     unusable(
-      `CRD schema directory not found at ${SCHEMA_DIR}. ` +
-        "Run `npm run sync:crd` against an eks-agent-platform checkout.",
+      `cannot read schemas/crd/provenance.json (${error.message})`,
+      "Restore it with `npm run schemas:crd` against an eks-agent-platform checkout.",
     );
   }
-  if (files.length === 0) unusable(`no CRD schemas in ${SCHEMA_DIR}`);
+  if (!Array.isArray(record.files) || record.files.length === 0) {
+    unusable("schemas/crd/provenance.json declares no schema files");
+  }
+
+  const declared = new Set(record.files.map((entry) => entry.file));
+  let present;
+  try {
+    present = (await readdir(SCHEMA_DIR)).filter((f) => f.endsWith(".yaml"));
+  } catch {
+    unusable(
+      `CRD schema directory not found at ${SCHEMA_DIR}`,
+      "Run `npm run schemas:crd` against an eks-agent-platform checkout.",
+    );
+  }
+  for (const file of present) {
+    if (!declared.has(file)) {
+      unusable(
+        `schemas/crd/${file} is on disk but not recorded in provenance.json`,
+        "Every vendored schema carries a digest, or the gate cannot tell it from an edit.",
+      );
+    }
+  }
 
   const registry = new Map();
-  for (const file of files) {
+  for (const entry of record.files) {
+    const path = join(SCHEMA_DIR, entry.file);
+    let raw;
+    try {
+      raw = await readFile(path);
+    } catch (error) {
+      unusable(
+        `vendored CRD schema schemas/crd/${entry.file} is missing (${error.message})`,
+        "Restore it with `npm run schemas:crd`.",
+      );
+    }
+
+    const actual = createHash("sha256").update(raw).digest("hex");
+    if (actual !== entry.sha256) {
+      unusable(
+        `vendored CRD schema schemas/crd/${entry.file} does not match its recorded digest\n` +
+          `  expected ${entry.sha256}\n` +
+          `  actual   ${actual}`,
+        "The vendored schemas are copies of the operator's own CRDs — they are never edited here.\n" +
+          "Re-vendor with `npm run schemas:crd` so the pinned commit and the digests agree.",
+      );
+    }
+
     let crd;
     try {
-      crd = parse(await readFile(join(SCHEMA_DIR, file), "utf8"));
-    } catch (e) {
-      unusable(`schemas/crd/${file} is not parseable YAML: ${e.message}`);
+      crd = parse(raw.toString("utf8"));
+    } catch (error) {
+      unusable(`schemas/crd/${entry.file} is not parseable YAML: ${error.message}`);
     }
     if (crd?.kind !== "CustomResourceDefinition") {
-      unusable(`schemas/crd/${file} is not a CustomResourceDefinition`);
+      unusable(`schemas/crd/${entry.file} is not a CustomResourceDefinition`);
     }
     const { group, names, scope, versions } = crd.spec ?? {};
     if (!group || !names?.kind || !scope || !Array.isArray(versions)) {
       unusable(
-        `schemas/crd/${file} is missing spec.group / spec.names.kind / spec.scope / versions`,
+        `schemas/crd/${entry.file} is missing spec.group / spec.names.kind / spec.scope / versions`,
       );
     }
     for (const version of versions) {
       if (version.served === false) continue;
       const root = version.schema?.openAPIV3Schema;
       if (!root?.properties?.spec) {
-        unusable(`schemas/crd/${file} version ${version.name} carries no spec schema`);
+        unusable(`schemas/crd/${entry.file} version ${version.name} carries no spec schema`);
       }
       registry.set(`${group}/${version.name}#${names.kind}`, {
         scope,
         spec: root.properties.spec,
-        file,
+        file: entry.file,
       });
     }
   }
@@ -244,7 +327,7 @@ async function loadSchemas() {
       unusable(`no served CRD schema for kind ${kind} in ${SCHEMA_DIR}`);
     }
   }
-  return registry;
+  return { registry, ref: record.ref, repository: record.repository };
 }
 
 /** Validate one document; returns {kind, name, namespace, spec} or null. */
@@ -365,17 +448,17 @@ function checkConsistency(objects, errors) {
 
 /** Parse `k=v,k=v` into a map. */
 function parseResourceAttributes(raw) {
-  const out = new Map();
+  const attrs = new Map();
   for (const pair of raw.split(",")) {
     const eq = pair.indexOf("=");
     if (eq === -1) continue;
-    out.set(pair.slice(0, eq).trim(), pair.slice(eq + 1).trim());
+    attrs.set(pair.slice(0, eq).trim(), pair.slice(eq + 1).trim());
   }
-  return out;
+  return attrs;
 }
 
-/** `agents.tenant` / `agents.platform` in every chart values file must match the CRs. */
-async function checkChartAttributes(names, errors) {
+/** Read every `chart/values*.yaml` once, so validation itself stays synchronous. */
+async function loadChartValues() {
   let files;
   try {
     files = (await readdir(CHART_DIR))
@@ -386,8 +469,16 @@ async function checkChartAttributes(names, errors) {
   }
   if (files.length === 0) unusable(`no values files in ${CHART_DIR}`);
 
+  const loaded = [];
   for (const file of files) {
-    const values = parse(await readFile(join(CHART_DIR, file), "utf8"));
+    loaded.push({ file, values: parse(await readFile(join(CHART_DIR, file), "utf8")) });
+  }
+  return loaded;
+}
+
+/** `agents.tenant` / `agents.platform` in every chart values file must match the CRs. */
+function checkChartAttributes(names, chartValues, errors) {
+  for (const { file, values } of chartValues) {
     const raw = values?.env?.OTEL_RESOURCE_ATTRIBUTES;
     if (raw === undefined) continue;
     if (typeof raw !== "string") {
@@ -414,8 +505,110 @@ async function checkChartAttributes(names, errors) {
   }
 }
 
+/**
+ * The whole gate over already-parsed documents. Pure and synchronous so
+ * `--self-test` can run it repeatedly over mutated copies.
+ */
+function validate(documents, registry, chartValues) {
+  const errors = [];
+  const objects = [];
+  documents.forEach((doc, i) => {
+    const object = validateDocument(doc, i, registry, errors);
+    if (object) objects.push(object);
+  });
+  if (objects.length === 0 && errors.length === 0) {
+    errors.push("the manifest declares no documents");
+  }
+  const names = checkConsistency(objects, errors);
+  checkChartAttributes(names, chartValues, errors);
+  return { errors, objects, names };
+}
+
+/**
+ * Prove the gate rejects the mistakes it claims to catch, using in-memory
+ * copies of the committed manifest. A gate nobody exercises decays into a
+ * gate that passes everything.
+ */
+function selfTest(documents, registry, chartValues) {
+  const clone = () => structuredClone(documents);
+  const cases = [
+    {
+      name: "an invented field on Tenant.spec",
+      mutate: (docs) => {
+        docs.find((d) => d.kind === "Tenant").spec.aggregateMonthlyBudget = "5000";
+      },
+      expect: /unknown field `aggregateMonthlyBudget`/,
+    },
+    {
+      name: "a required field removed from Platform.spec",
+      mutate: (docs) => {
+        delete docs.find((d) => d.kind === "Platform").spec.tenant;
+      },
+      expect: /missing required field `tenant`/,
+    },
+    {
+      name: "Platform.spec.tenant naming a Tenant that is not declared",
+      mutate: (docs) => {
+        docs.find((d) => d.kind === "Platform").spec.tenant = "marketing";
+      },
+      expect: /names no Tenant declared here/,
+    },
+    {
+      name: "a namespace set on the cluster-scoped Tenant",
+      mutate: (docs) => {
+        docs.find((d) => d.kind === "Tenant").metadata.namespace = "tenants-growth";
+      },
+      expect: /cluster-scoped .* but sets metadata\.namespace/,
+    },
+    {
+      name: "a BudgetPolicy pointing back at the wrong Platform",
+      mutate: (docs) => {
+        docs.find((d) => d.kind === "BudgetPolicy").spec.platformRef.name = "not-this-one";
+      },
+      expect: /names no Platform declared here/,
+    },
+  ];
+
+  const failures = [];
+  for (const { name, mutate, expect } of cases) {
+    const docs = clone();
+    mutate(docs);
+    const { errors } = validate(docs, registry, chartValues);
+    const matched = errors.find((e) => expect.test(e));
+    out(`  ${matched ? "PASS" : "FAIL"}  rejects: ${name}`);
+    if (matched) {
+      out(`          → ${matched}`);
+    } else {
+      failures.push(`${name} (gate reported: ${errors.join("; ") || "no errors"})`);
+    }
+  }
+
+  // The OTel attribute cross-check is the one rule that reaches outside
+  // platform.yaml, so it is exercised from the other side.
+  const skewed = chartValues.map(({ file, values }) => ({
+    file,
+    values: {
+      ...values,
+      env: { ...values.env, OTEL_RESOURCE_ATTRIBUTES: "agents.tenant=finance,agents.platform=x" },
+    },
+  }));
+  const skewErrors = validate(clone(), registry, skewed).errors;
+  const skewMatched = skewErrors.find((e) => /does not match platform\.yaml/.test(e));
+  out(`  ${skewMatched ? "PASS" : "FAIL"}  rejects: chart OTel attrs disagreeing with the CRs`);
+  if (skewMatched) out(`          → ${skewMatched}`);
+  else failures.push("chart OTel attribute skew was not rejected");
+
+  const clean = validate(clone(), registry, chartValues).errors;
+  out(`  ${clean.length === 0 ? "PASS" : "FAIL"}  accepts: platform.yaml as committed`);
+  if (clean.length > 0)
+    failures.push(`the committed platform.yaml was rejected: ${clean.join("; ")}`);
+
+  return failures;
+}
+
 async function main() {
-  const registry = await loadSchemas();
+  const { registry, repository, ref } = await loadSchemas();
+  const chartValues = await loadChartValues();
 
   let source;
   try {
@@ -425,27 +618,37 @@ async function main() {
     process.exit(2);
   }
 
-  const errors = [];
-  const documents = parseAllDocuments(source);
-  const objects = [];
-  documents.forEach((document, i) => {
+  const parseErrors = [];
+  const documents = [];
+  parseAllDocuments(source).forEach((document, i) => {
     for (const problem of document.errors) {
-      errors.push(`doc[${i}]: YAML parse error — ${problem.message}`);
+      parseErrors.push(`doc[${i}]: YAML parse error — ${problem.message}`);
     }
     if (document.errors.length > 0) return;
     const value = document.toJS();
     if (value === null) return; // an empty document between separators
-    const object = validateDocument(value, i, registry, errors);
-    if (object) objects.push(object);
+    documents.push(value);
   });
 
-  if (objects.length === 0 && errors.length === 0) {
-    errors.push(`${MANIFEST} declares no documents`);
+  if (parseErrors.length > 0) {
+    console.error(`platform.yaml gate: ${parseErrors.length} problem(s)\n`);
+    for (const error of parseErrors) console.error(`  ✗ ${error}`);
+    console.error("");
+    process.exit(1);
   }
 
-  const names = checkConsistency(objects, errors);
-  await checkChartAttributes(names, errors);
+  if (SELF_TEST) {
+    out("platform.yaml gate — self-test");
+    const failures = selfTest(documents, registry, chartValues);
+    if (failures.length > 0) {
+      console.error(`\ngate self-test failed:\n${failures.map((f) => `  ✗ ${f}`).join("\n")}\n`);
+      process.exit(1);
+    }
+    out("gate self-test passed");
+    return;
+  }
 
+  const { errors, objects, names } = validate(documents, registry, chartValues);
   if (errors.length > 0) {
     console.error(`platform.yaml gate: ${errors.length} problem(s)\n`);
     for (const error of errors) console.error(`  ✗ ${error}`);
@@ -453,15 +656,13 @@ async function main() {
     process.exit(1);
   }
 
-  const summary = objects.map((o) => `${o.kind}/${o.name}`).join(", ");
-  console.log(`platform.yaml gate: ok — ${summary}`);
-  console.log(
-    `  schemas: ${[...new Set([...registry.values()].map((v) => v.file))].sort().join(", ")}`,
-  );
-  console.log(`  tenant=${names.tenant} platform=${names.platform}`);
+  out(`platform.yaml gate: ok — ${objects.map((o) => `${o.kind}/${o.name}`).join(", ")}`);
+  out(`  schemas: ${[...new Set([...registry.values()].map((v) => v.file))].sort().join(", ")}`);
+  out(`  verified against ${repository}@${ref.slice(0, 12)} digests`);
+  out(`  tenant=${names.tenant} platform=${names.platform}`);
 }
 
-main().catch((e) => {
-  console.error(e);
+main().catch((error) => {
+  console.error(error);
   process.exit(1);
 });

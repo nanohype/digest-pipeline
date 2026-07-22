@@ -22,7 +22,7 @@ export AWS_REGION=us-west-2
 
 - **SES verified identity.** The `sesFromAddress` you will seed into `digest-pipeline/{env}/runtime-config` must be a verified SES identity (either the email or the sending domain) in the deployment region. The `digest-pipeline-platform` component (`ses.tf`) provisions the identity + configuration set and emits the DKIM tokens; if SES is still in sandbox mode, every recipient address in `newsletterRecipients` must also be verified — request production access before you promote to production.
 
-- **Cluster + addons.** A reachable EKS cluster with the eks-gitops addon catalog installed: ingress-nginx, cert-manager, external-secrets, the OTel collector + log forwarder, and kube-prometheus-stack. The chart assumes these exist; it does not install them.
+- **Cluster + addons.** A reachable EKS cluster with the eks-gitops addon catalog installed: ingress-nginx, cert-manager, external-secrets, Grafana Alloy (the OTLP receiver and log shipper), Tempo, Loki, and grafana-operator. The chart assumes these exist; it does not install them.
 
 ### Third-party accounts (staging + production)
 

@@ -9,7 +9,7 @@ Budget ~3 hours end-to-end: 45 min for third-party account setup, 30 min for loc
 Have ready:
 
 - An AWS account + region you own (set `AWS_REGION`). Bedrock access must be enabled in the region for the Claude model ID you pick.
-- A reachable EKS cluster with the eks-gitops addon catalog (ingress-nginx, cert-manager, external-secrets, OTel collector + log forwarder, kube-prometheus-stack) and the `eks-agent-platform` operator installed.
+- A reachable EKS cluster with the eks-gitops addon catalog (ingress-nginx, cert-manager, external-secrets, Grafana Alloy, Tempo, Loki, grafana-operator) and the `eks-agent-platform` operator installed.
 - Admin access to a Slack workspace where you can create an app. A test workspace is fine for staging.
 - A WorkOS account with one Application (Client ID) + one Directory per environment. The free tier handles drill volumes.
 - A Linear workspace with workflows + labels matching the aggregator's expectations (closed epics, upcoming milestones, optional `ask`-labeled issues).

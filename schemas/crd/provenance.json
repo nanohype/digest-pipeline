@@ -1,0 +1,21 @@
+{
+  "_README": "Provenance and integrity record for the CRD schemas vendored in this directory. The YAML files are byte-identical copies of the controller-gen output in nanohype/eks-agent-platform at the pinned ref below — never hand-edit them. `npm run schemas:crd` rewrites the copies and the digests together; `npm run schemas:crd:check` is the CI drift gate; the platform.yaml validator verifies every digest before it reads a schema. To adopt a newer operator API, bump `ref` and re-run the sync.",
+  "repository": "nanohype/eks-agent-platform",
+  "sourcePath": "operators/config/crd/bases",
+  "ref": "3ab89554fc0e79c4596367825eaff540a1a8c89b",
+  "generator": "controller-gen v0.21.0",
+  "files": [
+    {
+      "file": "platform.nanohype.dev_tenants.yaml",
+      "sha256": "09314d9c472917b3b20fe64e99bcd46d323b7684932fcdedbb923ff2f539fcbc"
+    },
+    {
+      "file": "platform.nanohype.dev_platforms.yaml",
+      "sha256": "57438968a4d80bf64086913153b323accb9c5bef67c2027fbe0e0b48f56ba6e6"
+    },
+    {
+      "file": "governance.nanohype.dev_budgetpolicies.yaml",
+      "sha256": "551183bc44d371656cb39766e48da8b0b9130b7565f6c0fbbf7a2c85f826b2bf"
+    }
+  ]
+}
