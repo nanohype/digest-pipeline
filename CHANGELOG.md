@@ -6,6 +6,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Ver
 
 ## [Unreleased]
 
+### Added
+
+- **Integrity + provenance record for the vendored CRD schemas.** `schemas/crd/provenance.json` pins the `nanohype/eks-agent-platform` commit the schemas were generated at and records a SHA-256 per file. `npm run platform:validate` verifies every digest before it parses a schema, so a vendored CRD edited in place — an enum widened, a `required` dropped — aborts the gate instead of silently widening what it accepts. `npm run schemas:crd:check` byte-compares the same copies against the operator repo at that pinned commit, which is what catches a pin bumped without a re-vendor. CI runs both; neither has a skip path.
+- **`npm run platform:validate:self-test`.** Mutates in-memory copies of `platform.yaml` and asserts the gate rejects each one (invented field, missing required field, dangling `spec.tenant`, namespaced cluster-scoped Tenant, mismatched `platformRef`, chart OTel attributes disagreeing with the CRs), then asserts the committed manifest is still accepted.
+
+### Changed
+
+- **`scripts/validate-platform.mjs` is now `scripts/validate-platform-manifests.mjs`**, and the sync scripts are `npm run schemas:crd` / `schemas:crd:check` (was `sync:crd` / `sync:crd:check`) — one naming for the platform gate across the tenant repos.
+
 ## [0.1.0] — Initial release
 
 DigestPipeline is an automated weekly newsletter pipeline for a Chief of Staff. It aggregates cross-team activity from GitHub, Linear, Notion, and Slack; resolves identities through WorkOS Directory Sync; redacts PII; generates a voice-matched draft with Claude via Bedrock; posts it to Slack for review; and sends via SES only after explicit human approval.
@@ -30,13 +39,13 @@ DigestPipeline is an automated weekly newsletter pipeline for a Chief of Staff. 
 - **Pino → stdout → Loki.** Log shipping is an infrastructure concern: apps emit structured JSON to stdout; the eks-gitops cluster Alloy collector tails it into Loki (`{service="digest-pipeline-pipeline"}` / `digest-pipeline-api`). `trace_id` / `span_id` are auto-injected by `@opentelemetry/instrumentation-pino`, so every log record joins to Tempo.
 - **Browser → API trace propagation.** W3C `traceparent` header added to fetch calls by `@opentelemetry/instrumentation-fetch`; the Next.js proxy routes and Fastify auto-instrumentation continue the trace so a single trace spans browser → API → Postgres.
 - **Custom metrics**: `digest-pipeline.run.duration_ms{status}`, `digest-pipeline.source.{items,failure}{source}`, `digest-pipeline.bedrock.{tokens{kind,model},fallback}`, `digest-pipeline.draft.edit_rate`, `digest-pipeline.email.sent`.
-- **PrometheusRule alerts** (`chart/templates/prometheusrule.yaml`) on the digest-pipeline metrics (run duration, source failures, Bedrock fallback, email sent), consumed by the cluster kube-prometheus-stack and queried from the `grafana-dashboard.yaml` ConfigMap dashboard.
+- **Dashboard + alert rules.** `chart/templates/grafana-dashboard.yaml` renders a `GrafanaDashboard` CR carrying `chart/dashboards/digest-pipeline.json`; grafana-operator imports it into the external Amazon Managed Grafana, where its panels query AMP. `chart/templates/prometheusrule.yaml` carries the same metrics as alert rules (run duration, source failures, Bedrock fallback, email sent) for a cluster that runs its own ruler — `prometheusRule.enabled: false` by default, since the eks-gitops stack evaluates alerts in Grafana rather than in-cluster.
 
 #### Infrastructure (Helm chart + Platform tenant)
 
 - **Helm chart** (`chart/`) rendering three workloads into the `tenants-digest-pipeline` namespace: the pipeline `CronJob`, the api `Deployment` (Fastify :3001), and the web `Deployment` (Next.js :3000). One base `values.yaml` plus `values-{staging,production}.yaml` delta files; env-scoped secret paths (`digest-pipeline/{env}/*`).
 - **ArgoCD ApplicationSet entry** (`gitops/applicationset-entry.yaml`) for `nanohype/eks-gitops`: matrix generator (clusters × `[digest-pipeline]`), Helm multi-source `$values` pattern, sync wave 100, automated + selfHeal, ServerSideApply, `CreateNamespace=false` (the Platform reconciler owns the Namespace).
-- **Platform CR + BudgetPolicy** (`platform.yaml`, applied in the `tenants-growth` management namespace) declaring digest-pipeline as a tenant of the `growth` team on the `eks-agent-platform` operator. The operator reconciles the `tenants-digest-pipeline` workload namespace, ResourceQuota (8 CPU / 16Gi across pipeline + api + web), LimitRange, default-deny NetworkPolicy, the ArgoCD AppProject, and the `<env>-digest-pipeline-tenant` IAM role.
+- **Tenant + BudgetPolicy + Platform CRs** (`platform.yaml`) declaring digest-pipeline as a tenant of the `growth` team on the `eks-agent-platform` operator. The `Tenant` is cluster-scoped; the `BudgetPolicy` and `Platform` are applied in the `tenants-growth` management namespace. The operator reconciles the `tenants-digest-pipeline` workload namespace, ResourceQuota (8 CPU / 16Gi across pipeline + api + web), LimitRange, default-deny NetworkPolicy, the ArgoCD AppProject, and the `<env>-digest-pipeline-tenant` IAM role.
 - **Ingress + secrets + migrations.** `ingress.yaml` (ingress-nginx + cert-manager: `/api/*` → api with rewrite-target, `/` → web); `externalsecret.yaml` aggregates three AWS Secrets Manager entries into one Secret consumed via envFrom and composes `DATABASE_URL` via the External Secrets template engine; `migrate-job.yaml` is a Helm pre-install/pre-upgrade hook running `npm run migrate:up` before the new pods roll out.
 - **Per-tenant AWS substrate** lives in the landing-zone `digest-pipeline-platform` component: Aurora Serverless v2 Postgres, the voice-baseline (versioned, retained) + raw-aggregations (90-day lifecycle) S3 buckets, the SES verified identity + configuration set, the app-access managed policy, and the EKS Pod Identity association that binds the chart's shared ServiceAccount to the tenant role. The chart carries no IAM — no role, no policy, no role-arn annotation.
 - **IAM least privilege.** The tenant role can read only `digest-pipeline/{env}/*` secrets, invoke the Bedrock models listed in `spec.identity.allowedModels`, read the voice-baseline bucket, write the raw-aggregations bucket, and `ses:SendEmail` on the verified identity. Staging and production roles do not cross-read.
@@ -50,7 +59,7 @@ DigestPipeline is an automated weekly newsletter pipeline for a Chief of Staff. 
 #### Testing + CI
 
 - Vitest suites: PII regex coverage, ranker scoring + dedupe, resilience state machines (`withTimeout`, `withRetry`), WorkOS identity caching, voice-baseline listing, aggregator → resolver → filter → ranker → mock-Bedrock → audit integration, Levenshtein diff, and a per-aggregator-factory integration test against fake services.
-- `.github/workflows/digest-pipeline-ci.yml` on PRs touching `digest-pipeline/**`: `npm audit --omit=dev --audit-level=high`, lint, typecheck, test, build, `helm lint` + chart template render (staging), web typecheck + Next.js standalone build. Node 24.
+- `.github/workflows/ci.yml` on every pull request and push to `main`: `npm audit --omit=dev --audit-level=high`, lint, typecheck, format check, test with coverage, build, the `platform.yaml` gate, `helm lint` + chart template render (staging + production), a vendored-copy drift job, web typecheck + Next.js standalone build, and a three-image Docker build. Node 24.
 
 #### Documentation
 

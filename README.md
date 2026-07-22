@@ -157,7 +157,7 @@ Full first-time walkthrough covering AWS prerequisites (Bedrock model access + o
 This repo owns the application — the aggregation pipeline, the PII filter, the WorkOS identity resolution, the Bedrock generator, the review API + web UI, and the tenant trio that deploys it. It does **not** own:
 
 - AWS substrate (Aurora Serverless v2, the two S3 buckets, the SES identity + config set, the app-access managed policy, Secrets Manager seeding) → the `digest-pipeline-platform` component in [`landing-zone`](https://github.com/nanohype/landing-zone). It binds the operator-minted `<env>-digest-pipeline-tenant` role to the chart's ServiceAccount via an EKS Pod Identity association.
-- Cluster addons (ingress-nginx, cert-manager, external-secrets, the OTel collector + log forwarder, kube-prometheus-stack) → [`eks-gitops`](https://github.com/nanohype/eks-gitops).
+- Cluster addons (ingress-nginx, cert-manager, external-secrets, Grafana Alloy — the OTLP receiver and log shipper — Tempo, Loki, and grafana-operator) → [`eks-gitops`](https://github.com/nanohype/eks-gitops).
 
 ## Configuration
 

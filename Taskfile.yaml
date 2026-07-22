@@ -21,6 +21,8 @@ tasks:
       - task: build
       - task: web
       - task: platform:validate
+      - task: platform:self-test
+      - task: schemas:crd:check
       - task: helm:lint
       - task: helm:template
       - task: docker:build
@@ -75,19 +77,24 @@ tasks:
   # === Platform CR ===
 
   platform:validate:
-    desc: 'Validate platform.yaml against the vendored eks-agent-platform CRD schemas'
+    desc: 'Validate platform.yaml against the vendored eks-agent-platform CRD schemas (digest-verified)'
     cmds:
       - npm run platform:validate
 
-  sync:crd:
-    desc: 'Re-vendor schemas/crd/ from an eks-agent-platform checkout'
+  platform:self-test:
+    desc: 'Prove the platform.yaml gate rejects the mistakes it claims to catch'
     cmds:
-      - npm run sync:crd
+      - npm run platform:validate:self-test
 
-  sync:crd:check:
-    desc: 'Fail if schemas/crd/ has drifted from the eks-agent-platform checkout'
+  schemas:crd:
+    desc: 'Re-vendor schemas/crd/ from eks-agent-platform and re-record the digests'
     cmds:
-      - npm run sync:crd:check
+      - npm run schemas:crd
+
+  schemas:crd:check:
+    desc: 'Fail if schemas/crd/ differs from eks-agent-platform at the pinned commit'
+    cmds:
+      - npm run schemas:crd:check
 
   # === Helm ===
 
