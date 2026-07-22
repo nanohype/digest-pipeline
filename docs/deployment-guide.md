@@ -155,8 +155,10 @@ npm run migrate:up
 
 In the WorkOS dashboard for the Client ID in your per-env values, add the redirect URI:
 
-- Staging: `https://<staging-host>/callback` — the cert-manager-issued ingress hostname for the env
+- Staging: `https://<staging-host>/callback` — `<staging-host>` is `ingress.host` from `chart/values-staging.yaml`, the name external-dns publishes for the ALB
 - Production: `https://<production-host>/callback`
+
+AuthKit will only redirect to an HTTPS URI, and HTTPS here is terminated by the load balancer, not in the cluster: set `ingress.tls.certificateArn` in the same per-env values file to an ACM certificate ARN covering that host — from the landing-zone `dns` component (`terragrunt output -json acm_certificate_arns`) — or leave it empty and let the AWS Load Balancer Controller match a certificate in ACM by domain. Nothing issues a certificate in-cluster, so a host with no ACM match fails the TLS handshake and sign-in dead-ends at the browser rather than at WorkOS.
 
 Until this is registered, `/callback?code=…` returns a WorkOS `invalid_redirect_uri` error and users can't complete sign-in.
 
