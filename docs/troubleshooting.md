@@ -172,7 +172,7 @@ If the tag is missing, the image build/push hasn't completed for this revision �
 
 ### API / web pod fails its readiness probe and never becomes `Ready`
 
-**Cause:** The probe path isn't returning `200`. The API's `/health` is unauthenticated and should return immediately; the web's `/api/health` is likewise unauthenticated. If either returns 5xx, the pod is starting but the app is crashing inside, so the Deployment never reaches its ready replica count and the ingress controller keeps the pod out of the endpoints.
+**Cause:** The probe path isn't returning `200`. The API's `/health` is unauthenticated and should return immediately; the web's `/api/health` is likewise unauthenticated. If either returns 5xx, the pod is starting but the app is crashing inside, so the Deployment never reaches its ready replica count and the ALB target group keeps the pod out of rotation.
 
 **Fix:** `kubectl -n tenants-digest-pipeline logs deploy/digest-pipeline-api --tail=100` (or `deploy/digest-pipeline-web`) — or query Loki for `{service="digest-pipeline-api"}` — and look for the stack trace. Most common causes:
 

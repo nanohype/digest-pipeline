@@ -43,9 +43,12 @@ spec:
               value: digest-pipeline-web
             - name: PORT
               value: {{ .Values.web.port | quote }}
-            # Next.js needs to know the API base URL it should proxy to.
-            # Same chart release, so resolve via the api Service DNS name.
-            - name: DIGEST_PIPELINE_API_URL
+            # The upstream the Next.js route handlers proxy to — the name
+            # `web/lib/api.ts` reads, and the one `docs/local-development.md`
+            # sets outside the cluster. Same chart release, so resolve via the
+            # api Service DNS name; the api is not on the Ingress and this is
+            # the only route to it.
+            - name: API_BASE_URL
               value: "http://{{ include "tenant-chart-base.fullname" . }}-api:{{ .Values.api.port }}"
           envFrom:
             - secretRef:

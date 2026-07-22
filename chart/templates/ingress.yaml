@@ -6,33 +6,41 @@ metadata:
   labels:
     {{- include "tenant-chart-base.labels" . | nindent 4 }}
   annotations:
+    # AWS Load Balancer Controller. `scheme` is also what the cluster's
+    # inject-adopt-lb-subnets policy keys off to choose public vs private
+    # subnets on a cluster that does not own its VPC.
+    alb.ingress.kubernetes.io/scheme: {{ .Values.ingress.scheme }}
+    alb.ingress.kubernetes.io/target-type: {{ .Values.ingress.targetType }}
+    alb.ingress.kubernetes.io/healthcheck-path: {{ .Values.ingress.healthcheckPath | quote }}
     {{- if .Values.ingress.tls.enabled }}
-    cert-manager.io/cluster-issuer: {{ .Values.ingress.tls.issuer | quote }}
+    # Listen on both and 301 plaintext to HTTPS at the load balancer, so a
+    # session cookie never crosses the internet in the clear.
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: "443"
+    {{- with .Values.ingress.tls.certificateArn }}
+    alb.ingress.kubernetes.io/certificate-arn: {{ . | quote }}
     {{- end }}
-    # Strip the /api prefix before forwarding to the api Service. The Fastify
-    # routes don't carry /api in their declarations.
-    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    {{- else }}
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
+    {{- end }}
+    {{- with .Values.ingress.groupName }}
+    alb.ingress.kubernetes.io/group.name: {{ . | quote }}
+    {{- end }}
 spec:
   ingressClassName: {{ .Values.ingress.className }}
-  {{- if .Values.ingress.tls.enabled }}
-  tls:
-    - hosts:
-        - {{ .Values.ingress.host | quote }}
-      secretName: {{ include "tenant-chart-base.fullname" . }}-tls
-  {{- end }}
+  # No `tls` block: TLS terminates on the ALB against an ACM certificate, which
+  # the controller resolves from the certificate-arn annotation or by matching
+  # the rule host below. A Kubernetes TLS Secret would have no reader.
   rules:
     - host: {{ .Values.ingress.host | quote }}
       http:
         paths:
-          # /api/* → api Service (path rewritten to /*)
-          - path: {{ .Values.ingress.paths.api }}(/|$)(.*)
-            pathType: ImplementationSpecific
-            backend:
-              service:
-                name: {{ include "tenant-chart-base.fullname" . }}-api
-                port:
-                  number: {{ .Values.api.port }}
-          # / → web Service
+          # Everything → web. The Next.js route handlers under /api/* are part
+          # of the web app: they read the AuthKit session cookie, attach the
+          # access token, and call the api Service over cluster DNS. Routing
+          # /api/* to the api Deployment instead would take the sign-in,
+          # sign-out, session and telemetry-proxy handlers off the air, and
+          # hand the browser an api that rejects every request it can make.
           - path: {{ .Values.ingress.paths.web }}
             pathType: Prefix
             backend:
