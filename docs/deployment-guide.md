@@ -22,7 +22,7 @@ export AWS_REGION=us-west-2
 
 - **SES verified identity.** The `sesFromAddress` you will seed into `digest-pipeline/{env}/runtime-config` must be a verified SES identity (either the email or the sending domain) in the deployment region. The `digest-pipeline-platform` component (`ses.tf`) provisions the identity + configuration set and emits the DKIM tokens; if SES is still in sandbox mode, every recipient address in `newsletterRecipients` must also be verified — request production access before you promote to production.
 
-- **Cluster + addons.** A reachable EKS cluster with the eks-gitops addon catalog installed: cert-manager, external-secrets, external-dns, the AWS Load Balancer Controller, Grafana Alloy (the OTLP receiver and log shipper), Tempo, Loki, and grafana-operator. The chart assumes these exist; it does not install them. It also needs an ingress controller serving `ingress.className` (default `nginx`), which that catalog does not include — see `chart/README.md`.
+- **Cluster + addons.** A reachable EKS cluster with the eks-gitops addon catalog installed: cert-manager, external-secrets, external-dns, the AWS Load Balancer Controller, Grafana Alloy (the OTLP receiver and log shipper), Tempo, Loki, and grafana-operator. The chart assumes these exist; it does not install them. The `Ingress` requests the `alb` class the load balancer controller serves, and needs an ACM certificate for its host — see `chart/README.md`.
 
 ### Third-party accounts (staging + production)
 
@@ -118,7 +118,7 @@ kubectl get platform digest-pipeline -n tenants-growth -o jsonpath='{.status.pha
 
 ### 6. Let ArgoCD sync
 
-ArgoCD rolls out the chart at sync wave 100: the pipeline `CronJob`, the api + web `Deployment`s + `Service`s, the `ingress` (cert-manager TLS, `/api/*` → api with rewrite, `/` → web), the shared `serviceaccount` (bound by Pod Identity), the `networkpolicy`, the `externalsecret`, the `prometheusrule` + `grafana-dashboard`, and the `rbac` (namespaced Role for the api admin Job trigger). The `migrate-job` runs as a Helm pre-install/pre-upgrade hook, applying schema migrations against Aurora before the new pods roll.
+ArgoCD rolls out the chart at sync wave 100: the pipeline `CronJob`, the api + web `Deployment`s + `Service`s, the `ingress` (ALB, ACM TLS, everything → web), the shared `serviceaccount` (bound by Pod Identity), the `networkpolicy`, the `externalsecret`, the `prometheusrule` + `grafana-dashboard`, and the `rbac` (namespaced Role for the api admin Job trigger). The `migrate-job` runs as a Helm pre-install/pre-upgrade hook, applying schema migrations against Aurora before the new pods roll.
 
 Watch the rollout:
 

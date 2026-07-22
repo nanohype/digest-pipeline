@@ -4,7 +4,9 @@
 #   - pipeline (CronJob, weekly Friday 09:00 UTC) — aggregates → ranks → generates → audits → notifies
 #   - api      (Deployment) — Fastify API for the review UI; JWT-gated, port 3001
 #   - web      (Deployment) — Next.js review app; WorkOS AuthKit, port 3000
-# Ingress routes / → web, /api → api. Pipeline is internal-only (no Service).
+# The Ingress routes everything to web, which is the only public tier. api is
+# ClusterIP-only, reached server-side by web's route handlers. Pipeline is
+# internal-only (no Service).
 
 image:
   repository: ghcr.io/nanohype/digest-pipeline
@@ -121,16 +123,45 @@ probes:
       initialDelaySeconds: 5
       periodSeconds: 10
 
+# The single public entry point. Everything under `host` goes to the web
+# Deployment: pages, and the Next.js route handlers under /api/* that hold the
+# WorkOS AuthKit session and proxy to the Fastify api server-side. The api
+# Deployment is deliberately not routed here — its every route but /health
+# requires a bearer token the browser never holds, and only web can mint one
+# from the session cookie.
+#
+# The eks-gitops catalog's ingress implementation is the AWS Load Balancer
+# Controller (addons/networking/aws-load-balancer-controller). It creates an
+# `alb` IngressClass and does not mark it the cluster default, so the class is
+# named explicitly. external-dns runs with `sources: [service, ingress]` and
+# publishes a Route53 record for `host` off this object. On a cluster
+# participating in a VPC it does not own, the Kyverno `inject-adopt-lb-subnets`
+# policy fills in the subnet annotation from the scheme set below.
 ingress:
   enabled: true
-  className: nginx
+  className: alb
+  # internal | internet-facing. The controller defaults to internal when unset;
+  # the review UI is reached from outside the VPC, so say so.
+  scheme: internet-facing
+  # Cilium runs ENI IPAM with native routing, so pod IPs are VPC IPs and the ALB
+  # registers pods directly. Instance targets would need a NodePort Service.
+  targetType: ip
   tls:
     enabled: true
-    issuer: letsencrypt-prod
+    # ACM certificate for `host`. Left empty, the controller discovers a
+    # certificate in ACM whose domain matches the host on the rule below. TLS
+    # terminates at the ALB — there is no in-cluster certificate and no Secret.
+    certificateArn: ''
+  # ALB target-group health check. Next.js answers this at
+  # web/app/api/health/route.ts, and the AuthKit middleware matcher excludes it,
+  # so the probe is not redirected to a sign-in page.
+  healthcheckPath: /api/health
+  # Set the same value on several Ingresses to put them behind one shared ALB.
+  # Empty gives this Ingress a load balancer of its own.
+  groupName: ''
   host: '' # set per-env
   paths:
     web: /
-    api: /api
 
 externalSecret:
   enabled: true

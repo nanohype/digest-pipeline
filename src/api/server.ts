@@ -55,9 +55,10 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     loggerInstance: getLogger(),
     requestTimeout: 30_000,
     connectionTimeout: 10_000,
-    // ingress-nginx terminates the client connection and forwards
-    // X-Forwarded-For; only the ingress can reach this pod (NetworkPolicy),
-    // so the proxy header is trusted for the per-client rate-limit key.
+    // The web tier's route handlers are this server's only client — they
+    // forward X-Forwarded-For, and the NetworkPolicy admits nothing else
+    // (this pod is not on the Ingress), so the proxy header is trusted for
+    // the per-client rate-limit key.
     trustProxy: true,
   });
   const authenticator =
