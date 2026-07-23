@@ -187,6 +187,6 @@ When a scheduled staging / production run fails, reproduce locally:
 ## Common dev-time gotchas
 
 - **Bedrock 403 from a local run.** Your AWS profile must have `bedrock:InvokeModel` on `anthropic.claude-*`. Request model access in the console if you haven't already, and add the permission to the IAM user or role your profile uses.
-- **Aurora-shaped `DATABASE_URL` doesn't work locally.** The `digest-pipeline/<env>/db-credentials` secret (owned by the landing-zone `digest-pipeline-platform` rds-aurora module) uses `host`, `port`, `username`, `password`, `dbname` keys; the chart's ExternalSecret composes them into a `postgres://…` URL. Locally, set the simpler `postgres://…` URL directly — it's equivalent.
+- **Aurora-shaped `DATABASE_URL` doesn't work locally.** The `digest-pipeline/<env>/db-credentials` secret (owned by the landing-zone `tenant-substrate` rds-aurora module) uses `host`, `port`, `username`, `password`, `dbname` keys; the chart's ExternalSecret composes them into a `postgres://…` URL. Locally, set the simpler `postgres://…` URL directly — it's equivalent.
 - **`dev:pipeline` runs forever.** `tsx watch` re-runs on every file change in `src/`; if a test file watcher is also running, you can see overlapping runs. Use `tsx src/pipeline/entrypoint.ts` (without `watch`) for a one-shot run.
 - **Live-edit save fails with 401 locally.** Your WorkOS access token expired. Refresh the page to trigger AuthKit re-auth.

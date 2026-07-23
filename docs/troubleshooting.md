@@ -24,7 +24,7 @@ All commands below assume the workload namespace `tenants-digest-pipeline` (the 
 
 **Cause:** The `ExternalSecret` hasn't materialised the in-cluster Secret yet, so the pods that consume it via `envFrom` can't start. The secret referenced in `chart/templates/externalsecret.yaml` points at `digest-pipeline/{env}/*` entries that don't exist in AWS Secrets Manager, or the external-secrets operator can't read them (its own cluster-level AWS identity is misconfigured).
 
-**Fix:** Create the missing AWS secrets first — see [`secrets.md`](secrets.md) § "Seed all secrets in one shot" for the full per-secret commands (`digest-pipeline/{env}/db-credentials` is the exception — the landing-zone `digest-pipeline-platform` rds-aurora module owns it; don't create by hand). Then force a resync of the ExternalSecret and confirm the Secret lands:
+**Fix:** Create the missing AWS secrets first — see [`secrets.md`](secrets.md) § "Seed all secrets in one shot" for the full per-secret commands (`digest-pipeline/{env}/db-credentials` is the exception — the landing-zone `tenant-substrate` rds-aurora module owns it; don't create by hand). Then force a resync of the ExternalSecret and confirm the Secret lands:
 
 ```bash
 kubectl -n tenants-digest-pipeline annotate externalsecret digest-pipeline \
@@ -52,8 +52,8 @@ Look for `ZodError: … required` or `ZodError: expected string`. `put-secret-va
 
 **Cause:** Aurora PostgreSQL reserves a fixed list of identifiers that cannot be used as the default database name (the list is engine-specific and grows over major versions). On Aurora PostgreSQL 16, `digest-pipeline` is reserved.
 
-**Fix:** The landing-zone `digest-pipeline-platform` component provisions the database as `digest_pipeline` (underscore, not reserved). The cluster Aurora is owned there, not in this repo. If you fork and pick a new project name, rename the database in:
-- landing-zone `components/aws/digest-pipeline-platform/` → the rds-aurora module's `database_name`
+**Fix:** The landing-zone `tenant-substrate` component provisions the database as `digest_pipeline` (underscore, not reserved). The cluster Aurora is owned there, not in this repo. If you fork and pick a new project name, rename the database in:
+- landing-zone `components/aws/tenant-substrate/` → the rds-aurora module's `database_name`
 - `.env.example`, `docs/local-development.md`, `README.md` → the local `DATABASE_URL` and `POSTGRES_DB` examples
 - The pipeline + API resolve the database name from `DATABASE_URL` (composed by the chart's ExternalSecret from the `db-credentials` secret), so no source code change is needed when you rename the default.
 
@@ -133,7 +133,7 @@ Commit the regenerated `package-lock.json`. Reverse: same trick on macOS to repo
 
 ### Pod `CrashLoopBackOff` with `AccessDeniedException … is not authorized to perform: secretsmanager:GetSecretValue`
 
-**Cause:** The app code (`src/common/secrets.ts` → `GetSecretValue`) ran but the pod's IAM role lacks `secretsmanager:GetSecretValue` on the requested ARN, or the ARN prefix doesn't match. The chart's shared ServiceAccount runs as `<env>-digest-pipeline-tenant`; the Secrets Manager grant reaches that role through the landing-zone app-access managed policy, scoped to `arn:aws:secretsmanager:…:secret:digest-pipeline/{env}/*`.
+**Cause:** The app code (`src/common/secrets.ts` → `GetSecretValue`) ran but the pod's IAM role lacks `secretsmanager:GetSecretValue` on the requested ARN, or the ARN prefix doesn't match. The pods run as the operator-owned `tenant-runtime` ServiceAccount bound to `<env>-digest-pipeline-tenant`; the Secrets Manager grant reaches that role through the operator-generated tenant policy, scoped to `arn:aws:secretsmanager:…:secret:digest-pipeline/{env}/*`.
 
 **Fix:** Start at the Pod Identity association — the ServiceAccount carries no role annotation by design, so the binding is only visible on the AWS side:
 
@@ -142,7 +142,7 @@ aws eks list-pod-identity-associations --cluster-name <cluster> \
   --namespace tenants-digest-pipeline --service-account digest-pipeline
 ```
 
-No association means landing-zone's `digest-pipeline-platform` component hasn't applied (or applied before the Platform CR was `Ready`, so the tenant-role lookup failed) — re-run it. If the association is present, the role exists but the grant is missing: confirm `spec.identity.extraPolicyArns` in `platform.yaml` carries this environment's `app_access_policy_arn`, and that the policy's Secrets Manager statement covers the env-scoped prefix.
+No association means the operator hasn't reconciled the Platform to `Ready` yet — check `Platform.status.phase` and the operator logs; the operator creates the `(namespace, tenant-runtime)` association once the tenant role is minted. If the association is present but a grant is missing, confirm the store is declared in `spec.datastores` (the operator generates datastore-access from it) and, for SES, that `spec.identity.capabilities` includes `ses`.
 
 ### Pod stuck `ContainerCreating` / `CreateContainerConfigError`: `secret "digest-pipeline" not found`
 
@@ -357,12 +357,13 @@ If you have a provisioned-throughput commitment and want to skip the profile, se
 
 ### `AccessDenied: User '...' is not authorized to perform 'ses:SendEmail' on resource 'arn:aws:ses:...:configuration-set/<name>'`
 
-**Cause:** SES `SendEmail` requires `ses:SendEmail` permission on **both** the verified identity AND any configuration set attached to it. If your SES account has a default configuration set (or the identity has one), every `SendEmail` call implicitly references the config set — and the IAM policy needs to allow it. Granting permission only on `identity/*` is insufficient.
+**Cause:** SES send is granted by the operator-generated capability-access policy from the `ses` capability. It allows `ses:SendEmail` / `ses:SendRawEmail` on Resource `*`, scoped by a `ses:FromAddress` condition to the tenant's sending domain — so the grant covers both the identity and any configuration set. An `AccessDenied` here means either the `ses` capability isn't declared, or the from-address doesn't match the tenant's domain pattern.
 
-**Fix (in the landing-zone `digest-pipeline-platform` app-access policy):** the SES statement includes both resource ARN patterns:
+**Fix:** confirm `spec.identity.capabilities` includes `ses`, and that `sesFromAddress` sends from the tenant's own sending domain. The generated statement is:
 
 ```jsonc
-// <env>-digest-pipeline-app-access (ses:SendEmail / ses:SendRawEmail)
+// capability-access (ses:SendEmail / ses:SendRawEmail), Resource "*"
+// Condition: StringLike { "ses:FromAddress": "*@digest-pipeline.*" }
 [
   "arn:aws:ses:<region>:<account>:identity/*",
   "arn:aws:ses:<region>:<account>:configuration-set/*"
@@ -580,4 +581,4 @@ docker run -d --name digest-pipeline-pg -p 5432:5432 \
 
 **Cause:** Aurora Serverless v2 at 0.5 ACU caps active connections aggressively. If the pipeline CronJob pod and the api pods open connections simultaneously during a scheduled run, you can transiently exceed the pool.
 
-**Fix:** `src/data/pool.ts` creates a single `pg.Pool` per pod with default sizing (10 connections). If you see persistent throttling, raise the pool's `max`, or scale up Aurora's min ACU to 1 in the landing-zone `digest-pipeline-platform` component.
+**Fix:** `src/data/pool.ts` creates a single `pg.Pool` per pod with default sizing (10 connections). If you see persistent throttling, raise the pool's `max`, or scale up Aurora's min ACU to 1 in the landing-zone `tenant-substrate` component.

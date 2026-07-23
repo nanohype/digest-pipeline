@@ -1,6 +1,6 @@
 # Forking DigestPipeline for a new client
 
-DigestPipeline is a nanohype composite skeleton. Forking for a different client means swapping **runtime configuration** — Secrets Manager entries, WorkOS directory, Slack workspace, Linear workspace, SES sending identity — not editing business logic. Every external integration goes through a constructor-injected client (`src/pipeline/entrypoint.ts`, `src/api/entrypoint.ts`), and every AWS resource carries an env-scoped prefix (`digest-pipeline-<env>`) set by the landing-zone `digest-pipeline-platform` component.
+DigestPipeline is a nanohype composite skeleton. Forking for a different client means swapping **runtime configuration** — Secrets Manager entries, WorkOS directory, Slack workspace, Linear workspace, SES sending identity — not editing business logic. Every external integration goes through a constructor-injected client (`src/pipeline/entrypoint.ts`, `src/api/entrypoint.ts`), and every AWS resource carries an env-scoped prefix (`digest-pipeline-<env>`) set by the landing-zone `tenant-substrate` component.
 
 Budget ~3 hours end-to-end: 45 min for third-party account setup, 30 min for local seed, 45 min for a clean staging deploy (substrate apply + chart sync), 30 min for a manual end-to-end run, 30 min to wire voice-baseline + Slack bot memberships.
 
@@ -22,8 +22,8 @@ Have ready:
 Two layers carry naming. The **product name** (`digest-pipeline`) is the GitHub repo + the docs. The **internal service handle** (`digest-pipeline`) is coupled to substrate and telemetry and stays stable unless you intentionally re-cut the whole stack. `digest-pipeline` threads through:
 
 - Secrets Manager path prefix (`digest-pipeline/{env}/...`) — the chart's ExternalSecret `remoteRef` keys
-- S3 bucket names (`digest-pipeline-voice-baseline-<account>-<env>`, `digest-pipeline-raw-aggregations-<account>-<env>`) — landing-zone `digest-pipeline-platform` outputs
-- The landing-zone `digest-pipeline-platform` component + its Pod Identity association on `(tenants-digest-pipeline, digest-pipeline)`
+- S3 bucket names (`digest-pipeline-voice-baseline-<account>-<env>`, `digest-pipeline-raw-aggregations-<account>-<env>`) — landing-zone `tenant-substrate` outputs
+- The generic `tenant-substrate` component (the declared datastores) + the operator's Pod Identity association on `(tenants-digest-pipeline, tenant-runtime)`
 - OTel `agents.platform=digest-pipeline` + the `digest-pipeline.*` metric names + the Helm `digest-pipeline.*` template helpers and `digest-pipeline.io/service` labels
 - npm package name (`digest-pipeline`), the Dockerfile non-root user (`digest-pipeline`)
 - Platform identity: Platform name `digest-pipeline`, which drives the workload namespace `tenants-digest-pipeline`, the AppProject `digest-pipeline`, and the `<env>-digest-pipeline-tenant` IAM role. (`spec.tenant: growth` names the owning team and drives none of those.)
@@ -92,14 +92,14 @@ The seeder blocks if any `REPLACE_ME` slips through. `digest-pipeline-secrets.{e
 
 ## 4. Provision the substrate, then deploy staging
 
-The per-tenant AWS substrate (Aurora, the two S3 buckets, the SES identity, the app-access managed policy, `db-credentials`) is the landing-zone `digest-pipeline-platform` component. Apply it, then reference its app-access policy from the Platform CR:
+The per-tenant AWS substrate (the `main` Aurora store and the two S3 buckets, plus the RDS-managed `db-credentials`) is declared in `spec.datastores` and provisioned by the generic `tenant-substrate` component. Apply the env's `tenant-substrate` leaf:
 
 ```bash
 cd landing-zone
-terragrunt apply --terragrunt-working-dir live/aws/workload-staging/us-west-2/staging/digest-pipeline-platform
-tofu -chdir=live/aws/workload-staging/us-west-2/staging/digest-pipeline-platform output -raw app_access_policy_arn
-# paste that ARN into spec.identity.extraPolicyArns in platform.yaml;
-# the IAM role itself is bound by landing-zone's Pod Identity association — nothing to paste into the chart
+terragrunt apply --terragrunt-working-dir live/aws/workload-staging/us-west-2/staging/tenant-substrate
+# Nothing to paste into platform.yaml or the chart: once the Platform CR is Ready,
+# the operator generates the datastore-access + capability-access (SES) policies
+# and binds the tenant-runtime ServiceAccount to the role via a Pod Identity association.
 ```
 
 Set `web.workosClientId` (and the API `WORKOS_CLIENT_ID`) and `image.tag` in `chart/values-staging.yaml`. Then bring the tenant up:
@@ -165,7 +165,7 @@ If all three of those pass, the fork is working.
 # Provision the prod substrate + seed production secrets first
 # (secrets.md — repeat with env=production).
 cd landing-zone
-terragrunt apply --terragrunt-working-dir live/aws/workload-production/us-west-2/production/digest-pipeline-platform
+terragrunt apply --terragrunt-working-dir live/aws/workload-production/us-west-2/production/tenant-substrate
 
 cd ../digest-pipeline
 npm run seed:production
@@ -180,7 +180,7 @@ The weekly `CronJob` runs in production at the next Friday 09:00 UTC after sync.
 
 - `src/pipeline/filters/pii.ts` — the regex catalogue is the vendored org-wide set (`src/vendor/runtime/pii.ts`), tuned to avoid false positives on newsletter-appropriate content. Category changes land in `nanohype/library/runtime` first, then re-sync (`npm run sync:vendored`); weakening an existing category is a security regression.
 - `src/pipeline/audit.ts` + `src/data/audit.ts` — all writes must stay awaited. Fire-and-forget on an audit event breaks the edit-rate derivation contract (the metric is computed from the ledger, not from current draft text).
-- `src/api/auth.ts` — WorkOS JWT verification + approver allow-list. Changes here are the security-critical surface of the whole system. If you simplify this to a constant token or a different auth provider, also update the landing-zone `digest-pipeline-platform` app-access policy + [`secrets.md`](secrets.md).
+- `src/api/auth.ts` — WorkOS JWT verification + approver allow-list. Changes here are the security-critical surface of the whole system. If you simplify this to a constant token or a different auth provider, also update `spec.datastores` / `spec.identity.capabilities` so the operator regenerates the grants, and [`secrets.md`](secrets.md).
 - The `SanitizedSourceItem` brand type (`src/pipeline/types.ts`). The PII filter runs before items leave the aggregator; the brand enforces this at the type level. Stripping the brand removes the compiler-enforced guarantee.
 
 ## What you might want to change

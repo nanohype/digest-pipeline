@@ -72,16 +72,15 @@ This repo owns the application — source, chart, Platform CR, gitops entry. Eve
 
 ### Substrate → `landing-zone`
 
-`landing-zone/components/aws/digest-pipeline-platform/` provisions the per-tenant AWS data plane and does not move here:
+The per-tenant AWS data plane is declared in `platform.yaml` and does not move here:
 
-- Aurora Serverless v2 Postgres (the draft store + audit ledger)
-- Two S3 buckets (voice-baseline corpus, raw aggregations)
-- SES verified identity + configuration set (the newsletter send; DKIM CNAMEs are emitted as outputs for the operator to publish)
-- The `app-access` managed policy carrying the app's substrate grants (S3, SES, Secrets Manager, CloudWatch)
-- The EKS Pod Identity association binding the chart's ServiceAccount to the tenant role
-- Secrets Manager seeding (`digest-pipeline/<env>/{approvers,workos-directory,db-credentials}`)
+- The `main` `relational` datastore — Aurora Serverless v2 Postgres (the draft store + audit ledger).
+- Two `objectStore` datastores — `voice-baseline` (corpus) and `raw-aggregations`.
+- All three declared in `spec.datastores` and provisioned by the generic `tenant-substrate` component.
+- The `ses` capability (`spec.identity.capabilities`) — the operator generates the SES send grant; the verified sending identity + DKIM is account-level mail infrastructure in landing-zone, not per-app.
+- Secrets Manager seeding (`digest-pipeline/<env>/{approvers,workos-directory}`); `db-credentials` is RDS-managed on the Aurora store.
 
-The role itself is operator-owned: `<env>-digest-pipeline-tenant`, minted from the Platform CR, carrying the Bedrock grant clamped to `spec.identity.allowedModels`. Landing-zone's managed policy attaches on top of it through `spec.identity.extraPolicyArns`. All three workloads share one ServiceAccount and therefore one role. The bucket names, channel id, and secret ids land in the chart's `tenantInfra.*`. The chart contains **no inline IAM** — no role, no policy, no role-arn annotation.
+The role is operator-owned: `<env>-digest-pipeline-tenant`, minted from the Platform CR, carrying the Bedrock grant clamped to `spec.identity.allowedModels` plus the operator-generated datastore-access + capability-access policies. All three workloads share the operator-owned `tenant-runtime` ServiceAccount and therefore one role, bound via a Pod Identity association. The bucket names, channel id, and secret ids land in the chart's `tenantInfra.*`. The chart contains **no inline IAM** — no role, no policy, no role-arn annotation.
 
 ### Cluster addons → `eks-gitops`
 

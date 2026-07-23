@@ -85,7 +85,7 @@ retries within a run.
 
 This app ships as a Platform tenant: a Helm `chart/`, a `platform.yaml` (Platform +
 BudgetPolicy CRs), and a `gitops/applicationset-entry.yaml`. Per-tenant AWS substrate lives in
-`landing-zone` (the `digest-pipeline-platform` component); cluster addons live in `eks-gitops`. Do not
+`landing-zone` (the `tenant-substrate` component); cluster addons live in `eks-gitops`. Do not
 add IAM, cloud resources, or cluster addons to the chart — see
 [ARCHITECTURE.md](./ARCHITECTURE.md#boundaries).
 
