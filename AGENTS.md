@@ -2,7 +2,7 @@
 
 You're an AI client (or the author of one) about to run this service locally, add an aggregator source, wire a Bedrock cachePoint, or ship it as a Platform tenant. This file gets you running in five minutes. For the wider picture — how this repo fits into the nanohype stack — read the [Platform Reference](../nanohype/docs/platform-reference.md).
 
-> Internal service handle: **digest-pipeline**. The GitHub repo and product name are `digest-pipeline`, but the npm package, the OTel `service.name` / `agents.platform`, the `digest-pipeline.*` metric names + template helpers + labels, and the `digest-pipeline/<env>/*` secret prefixes all stay `digest-pipeline` — they're coupled to the landing-zone `digest-pipeline-platform` substrate component.
+> Internal service handle: **digest-pipeline**. The GitHub repo and product name are `digest-pipeline`, but the npm package, the OTel `service.name` / `agents.platform`, the `digest-pipeline.*` metric names + template helpers + labels, and the `digest-pipeline/<env>/*` secret prefixes all stay `digest-pipeline` — the platform name the operator and `tenant-substrate` compose the tenant's per-datastore resource names from.
 
 ## What this repo gives you
 
@@ -79,9 +79,14 @@ spec:
   budget: { name: digest-pipeline }
   identity:
     allowedModels: [anthropic.claude-sonnet-4-6] # Bedrock invoke is clamped to this
-    extraPolicyArns: [] # per-env: the landing-zone app-access managed policy ARN
+    extraPolicyArns: [] # escape hatch; substrate + SES grants are operator-generated
+    capabilities: [ses] # SES send — operator generates the grant
   compliance: { soc2: true }
   isolation: namespace
+  datastores:
+    - { name: main, kind: relational } # Aurora Postgres — draft + audit tables
+    - { name: voice-baseline, kind: objectStore } # voice few-shot corpus
+    - { name: raw-aggregations, kind: objectStore } # raw source snapshots
 ```
 
 Everything the operator provisions is derived from the Platform's `metadata.name`, not from `spec.tenant`: the workload namespace `tenants-digest-pipeline`, its ResourceQuota, LimitRange and default-deny NetworkPolicy, the ArgoCD AppProject `digest-pipeline`, and the tenant IAM role `<env>-digest-pipeline-tenant`. `spec.tenant` names the owning team — it must match the `Tenant`'s `metadata.name` — and rides along as a label, an AWS `Team` tag, and the `agents.tenant` OTel attribute. The Tenant itself carries the aggregate view: it sums the budgets and readiness of every Platform that names it, so a team with several apps has one place to look.
@@ -99,7 +104,7 @@ Re-vendoring is `npm run schemas:sync -- --ref=<sha>`, which rewrites the copies
 
 `npm run platform:validate` also runs the gate's `--self-test`, answering "does this gate catch anything?" — it mutates in-memory copies of `platform.yaml` and asserts each one is rejected, then asserts the committed manifest still passes.
 
-**One Platform, one privilege domain.** All three app workloads and any AgentFleet pods run as that single `<env>-digest-pipeline-tenant` role. Its trust policy is the EKS Pod Identity service principal (`pods.eks.amazonaws.com`) — the `(namespace, service-account)` binding lives in the Pod Identity association, which the landing-zone `digest-pipeline-platform` component creates for the chart's `digest-pipeline` ServiceAccount. Bedrock invoke on the role is the agent-iam baseline clamped to `spec.identity.allowedModels`; the app's substrate grants (S3, SES, Secrets Manager, CloudWatch) arrive as the landing-zone `app_access_policy_arn` managed policy, referenced per environment from `spec.identity.extraPolicyArns`.
+**One Platform, one privilege domain.** All three app workloads and any AgentFleet pods run as that single `<env>-digest-pipeline-tenant` role. Its trust policy is the EKS Pod Identity service principal (`pods.eks.amazonaws.com`) — the `(namespace, service-account)` binding lives in a Pod Identity association the operator creates for the operator-owned `tenant-runtime` ServiceAccount. Bedrock invoke on the role is the agent-iam baseline clamped to `spec.identity.allowedModels`; the app's substrate grants (S3, Secrets Manager) are the datastore-access policy the operator generates from `spec.datastores`, and SES send is the capability-access policy generated from `spec.identity.capabilities`.
 
 ### The Helm chart (`chart/`)
 
@@ -166,4 +171,4 @@ The newsletter generator (`src/pipeline/ai/generator.ts`) calls Claude via `Invo
 - [`docs/`](docs/) — local development, deployment guide, fork-for-a-new-client recipe
 - [Platform Reference](../nanohype/docs/platform-reference.md) — the stack-wide view
 - [`eks-agent-platform`](https://github.com/nanohype/eks-agent-platform) — the operator that reconciles the Platform CR
-- [`landing-zone`](https://github.com/nanohype/landing-zone) — the `digest-pipeline-platform` substrate: the data stores, the app-access managed policy, and the Pod Identity association
+- [`landing-zone`](https://github.com/nanohype/landing-zone) — the generic `tenant-substrate` component that provisions the tenant's declared datastores, plus `agent-iam` for the operator's IAM substrate

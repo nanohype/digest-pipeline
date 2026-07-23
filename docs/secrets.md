@@ -20,7 +20,7 @@ External Secrets can't materialize the Kubernetes Secret until every referenced 
 | `notion` | pipeline | JSON — `{ apiKey, databaseId }`. Notion internal-integration token + the all-hands database ID. |
 | `web-config` | web | JSON — `{ workosApiKey, workosClientId, cookiePassword, redirectUri }`. WorkOS AuthKit for the review UI. `cookiePassword` must be ≥32 chars. |
 | `runtime-config` | pipeline + api | JSON — `{ slackReviewChannelId, sesFromAddress, newsletterRecipients }`. Non-credential operational config kept alongside secrets because the ExternalSecret's `remoteRef.property` projects individual JSON fields into discrete env vars. |
-| `db-credentials` | **landing-zone-managed** | JSON — `{ username, password, host, port, dbname, engine }`. Created by the `digest-pipeline-platform` component's rds-aurora module; Aurora rotates `password` on the built-in schedule. The ExternalSecret composes these fields into `DATABASE_URL`. |
+| `db-credentials` | **landing-zone-managed** | JSON — `{ username, password, host, port, dbname, engine }`. Created by the `tenant-substrate` component's rds-aurora module; Aurora rotates `password` on the built-in schedule. The ExternalSecret composes these fields into `DATABASE_URL`. |
 
 > **Different external accounts per environment.** Staging and production should have their own Slack workspace (or at minimum their own bot user + review channel), Linear workspace, Notion database, and WorkOS directory. Don't share credentials across envs — a leaked staging token would otherwise unlock production.
 
@@ -83,7 +83,7 @@ Safety rails in the seeder (`scripts/seed-secrets.sh`):
 - Never logs secret values; only key names, action taken, and character counts in dry-run mode.
 - Auto-generates `web-config.cookiePassword` if empty (openssl rand, 48-char ASCII-safe).
 
-`digest-pipeline/{env}/db-credentials` is **landing-zone-managed** and is not in the seeder's key list — the `digest-pipeline-platform` rds-aurora module creates and owns it alongside the Aurora cluster.
+`digest-pipeline/{env}/db-credentials` is **landing-zone-managed** and is not in the seeder's key list — the `tenant-substrate` rds-aurora module creates and owns it alongside the Aurora cluster.
 
 After seeding, restart the running workloads so they pick up the freshly-written values. External Secrets refreshes the Kubernetes Secret on its own interval (`externalSecret.refreshInterval`, 1h by default), but `envFrom` is read once at container start:
 
@@ -197,7 +197,7 @@ aws secretsmanager create-secret \
 
 ```
 
-`digest-pipeline/{env}/db-credentials` is **landing-zone-managed** — don't create it by hand. The `digest-pipeline-platform` rds-aurora module creates and rotates it alongside the Aurora cluster.
+`digest-pipeline/{env}/db-credentials` is **landing-zone-managed** — don't create it by hand. The `tenant-substrate` rds-aurora module creates and rotates it alongside the Aurora cluster.
 
 ## Rotate a single credential
 
@@ -263,7 +263,7 @@ If the pipeline / api pods crash-loop, look for `ZodError: required … missing`
 ## Security posture
 
 - Secrets Manager encrypts at rest with an AWS-managed KMS key. To use a customer-managed key, recreate each secret under a CMK via the console or CLI. The chart doesn't own the key choice because it doesn't own the secret lifecycle.
-- The `<env>-digest-pipeline-tenant` role is granted `secretsmanager:GetSecretValue` only on `arn:aws:secretsmanager:…:secret:digest-pipeline/{env}/*`, via the landing-zone `app_access_policy_arn` managed policy attached through `Platform.spec.identity.extraPolicyArns`. No wildcards. The staging role cannot read production secrets and vice versa.
+- The `main` relational datastore's RDS-managed master secret is read by the `<env>-digest-pipeline-tenant` role through the operator-generated datastore-access policy, scoped to `secret:rds!cluster-*`. The app's own config secrets under `digest-pipeline/{env}/*` are synced into the in-cluster Secret by the external-secrets `ClusterSecretStore` (the ESO controller's own IAM), and the tenant role reads its own `digest-pipeline/{env}/*` prefix for any direct SDK fetch. No wildcards across environments — the staging role cannot read production secrets and vice versa.
 - The chart references every secret by name through External Secrets Operator — the values never transit a Helm manifest or the ArgoCD state. Uninstalling the release does not delete the secrets, because the chart never owned them.
 - `GetSecretValue` calls are audited to CloudTrail with the invoking principal. Rotation should be performed by a dedicated deploy role, not a personal IAM user.
 - Never paste a populated secret into chat, issues, or a notebook — Secrets Manager is the authoritative store. Generated values (cookie passwords, OTLP `authHeader`) should be piped directly into `create-secret` / `put-secret-value` without being written to disk.

@@ -1,6 +1,6 @@
 # Deployment guide
 
-End-to-end walkthrough for bringing DigestPipeline up in a fresh environment. DigestPipeline ships as a **Platform tenant** on the `eks-agent-platform` operator: per-tenant AWS substrate lives in the landing-zone `digest-pipeline-platform` component, the app deploys as a Helm chart reconciled by ArgoCD, and staging + production are separate, env-scoped instances of the same trio. Stand staging up first, run a manual end-to-end, then repeat for production.
+End-to-end walkthrough for bringing DigestPipeline up in a fresh environment. DigestPipeline ships as a **Platform tenant** on the `eks-agent-platform` operator: per-tenant AWS substrate lives in the landing-zone `tenant-substrate` component, the app deploys as a Helm chart reconciled by ArgoCD, and staging + production are separate, env-scoped instances of the same trio. Stand staging up first, run a manual end-to-end, then repeat for production.
 
 If you're rotating credentials on an already-running tenant, jump to [`secrets.md`](secrets.md) instead. If a specific error has bitten you, [`troubleshooting.md`](troubleshooting.md) has concrete fixes keyed on the error text.
 
@@ -8,7 +8,7 @@ If you're rotating credentials on an already-running tenant, jump to [`secrets.m
 
 ### AWS side
 
-The slow-moving, per-tenant AWS substrate is owned by the landing-zone `digest-pipeline-platform` component (Aurora Serverless v2, the two S3 buckets, the SES identity + configuration set, the app-access managed policy, the Pod Identity association, and Secrets Manager wiring). You provision it with terragrunt before deploying the chart — see [`landing-zone`](https://github.com/nanohype/landing-zone). Set the region that has Bedrock access enabled:
+The slow-moving, per-tenant AWS substrate is declared in `spec.datastores` and provisioned by the generic `tenant-substrate` component: the `main` Aurora Serverless v2 store and the two S3 buckets. The operator generates the IAM (datastore-access + the SES `ses` capability grant) and the Pod Identity association from the Platform CR; SES's verified sending identity is account-level mail infrastructure. You apply the env's `tenant-substrate` leaf with terragrunt before deploying the chart — see [`landing-zone`](https://github.com/nanohype/landing-zone). Set the region that has Bedrock access enabled:
 
 ```bash
 export AWS_REGION=us-west-2
@@ -20,7 +20,7 @@ export AWS_REGION=us-west-2
 
   **Why an inference profile by default.** Claude 4.x bare model IDs (`anthropic.claude-sonnet-4-6`) only work with provisioned-throughput commitments. On-demand invocation requires a cross-region profile (`us.`/`eu.`/`apac.` prefix). `platform.yaml` lists the bare ID in `spec.identity.allowedModels`, and the operator expands a bare entry into both the foundation-model ARN and the matching `us.` inference-profile ARN — so either form works without a policy edit. See [`troubleshooting.md`](troubleshooting.md) § "Bedrock errors".
 
-- **SES verified identity.** The `sesFromAddress` you will seed into `digest-pipeline/{env}/runtime-config` must be a verified SES identity (either the email or the sending domain) in the deployment region. The `digest-pipeline-platform` component (`ses.tf`) provisions the identity + configuration set and emits the DKIM tokens; if SES is still in sandbox mode, every recipient address in `newsletterRecipients` must also be verified — request production access before you promote to production.
+- **SES verified identity.** The `sesFromAddress` you will seed into `digest-pipeline/{env}/runtime-config` must be a verified SES identity (either the email or the sending domain) in the deployment region. The verified sending identity + DKIM is account-level mail infrastructure in landing-zone (not per-app); the `ses` capability grants the tenant role send. If SES is still in sandbox mode, every recipient address in `newsletterRecipients` must also be verified — request production access before you promote to production.
 
 - **Cluster + addons.** A reachable EKS cluster with the eks-gitops addon catalog installed: cert-manager, external-secrets, external-dns, the AWS Load Balancer Controller, Grafana Alloy (the OTLP receiver and log shipper), Tempo, Loki, and grafana-operator. The chart assumes these exist; it does not install them. The `Ingress` requests the `alb` class the load balancer controller serves, and needs an ACM certificate for its host — see `chart/README.md`.
 
@@ -51,20 +51,14 @@ The rest of this walkthrough brings up the `staging` tenant. Once staging is liv
 
 ### 1. Provision the AWS substrate
 
-The landing-zone `digest-pipeline-platform` component creates Aurora Serverless v2 (and its `digest-pipeline/<env>/db-credentials` secret), the two S3 buckets, the SES identity + configuration set, the app-access managed policy, and the EKS Pod Identity association. The association looks up the operator-minted `<env>-digest-pipeline-tenant` role, so **apply the Platform CR (step 4) first** if this is a brand-new cluster — the rest of the component has no such dependency and can go up in either order. Apply it via terragrunt:
+The tenant's substrate is declared in `platform.yaml` (`spec.datastores`): the `main` Aurora Serverless v2 store (and its RDS-managed `digest-pipeline/<env>/db-credentials` secret) and the two S3 buckets. The generic `tenant-substrate` component provisions them from that declaration. Apply the env's `tenant-substrate` leaf via terragrunt:
 
 ```bash
 cd landing-zone
-terragrunt apply --terragrunt-working-dir live/aws/workload-staging/us-west-2/staging/digest-pipeline-platform
+terragrunt apply --terragrunt-working-dir live/aws/workload-staging/us-west-2/staging/tenant-substrate
 ```
 
-Record the app-access policy ARN — `platform.yaml` references it from `spec.identity.extraPolicyArns` so the operator attaches it to the tenant role:
-
-```bash
-tofu -chdir=live/aws/workload-staging/us-west-2/staging/digest-pipeline-platform output -raw app_access_policy_arn
-```
-
-Nothing about the role goes into the chart: the same component creates the EKS Pod Identity association binding the chart's ServiceAccount to `<env>-digest-pipeline-tenant`. See [`../chart/README.md`](../chart/README.md) § "Pod identity".
+Nothing about IAM goes into the chart or a per-app component: once the Platform CR is `Ready` (step 4), the operator generates the datastore-access policy (from `spec.datastores`) and the capability-access policy (the SES send grant, from `spec.identity.capabilities`) on the `<env>-digest-pipeline-tenant` role, and creates the EKS Pod Identity association binding the operator-owned `tenant-runtime` ServiceAccount to it. There is no `app_access_policy_arn` to record and no `extraPolicyArns` to set. See [`../chart/README.md`](../chart/README.md) § "Pod identity".
 
 ### 2. Seed every secret
 
@@ -82,7 +76,7 @@ npm run seed:staging:dry     # validates shape, no AWS calls
 npm run seed:staging         # creates every required secret in Secrets Manager
 ```
 
-This seeds eight secrets for `digest-pipeline/staging/`: `approvers`, `workos-directory`, `github`, `linear`, `slack`, `notion`, `web-config`, `runtime-config`. `db-credentials` is the exception — the `digest-pipeline-platform` rds-aurora module creates and owns it.
+This seeds eight secrets for `digest-pipeline/staging/`: `approvers`, `workos-directory`, `github`, `linear`, `slack`, `notion`, `web-config`, `runtime-config`. `db-credentials` is the exception — the `tenant-substrate` rds-aurora module creates and owns it.
 
 Per-key provenance (what comes from which third-party account), JSON schema per payload, and rotation guidance are all in [`secrets.md`](secrets.md). The raw `aws secretsmanager create-secret` commands are there too if you need to seed from a machine without the repo checked out.
 
@@ -217,7 +211,7 @@ Repeat the staging steps with `production` in place of `staging`:
 ```bash
 # 1. Provision the prod substrate.
 cd landing-zone
-terragrunt apply --terragrunt-working-dir live/aws/workload-production/us-west-2/production/digest-pipeline-platform
+terragrunt apply --terragrunt-working-dir live/aws/workload-production/us-west-2/production/tenant-substrate
 
 # 2. Seed production secrets (see secrets.md).
 cd ../digest-pipeline
@@ -238,7 +232,7 @@ Production uses completely separate resources:
 | api / web replicas | 1 / 1 | 2 / 2 |
 | App-access policy scope | `digest-pipeline/staging/*` only | `digest-pipeline/production/*` only |
 
-The staging tenant role **cannot** read production secrets (and vice versa) — each environment's `digest-pipeline-platform` instance scopes its app-access policy to its own `digest-pipeline/<env>/*` secret-ARN prefix.
+The staging tenant role **cannot** read production secrets (and vice versa) — the operator scopes each tenant role's generated policy to its own `digest-pipeline/<env>/*` secret-ARN prefix.
 
 The weekly `CronJob` runs in both environments. If you want staging to skip the auto-run while you iterate, set `pipeline.suspend: true` in `chart/values-staging.yaml` (`spec.suspend` on the CronJob) and trigger manual runs via step 11.
 
@@ -256,7 +250,7 @@ ENV=staging
 #    component reads the operator-minted tenant role to build its Pod Identity
 #    association, and that role disappears with the CR.
 cd landing-zone
-terragrunt destroy --terragrunt-working-dir live/aws/workload-staging/us-west-2/${ENV}/digest-pipeline-platform
+terragrunt destroy --terragrunt-working-dir live/aws/workload-staging/us-west-2/${ENV}/tenant-substrate
 
 # 3. Delete the Platform CR. Its finalizer removes the workload namespace and
 #    everything in it, the AppProject, and the tenant IAM role:

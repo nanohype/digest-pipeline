@@ -25,23 +25,21 @@
 #     Pod Identity associations (`tenant-runtime` by the operator, the app
 #     SA by landing-zone)
 #
-# What digest-pipeline's chart owns separately (NOT operator-reconciled):
-#   - The chart's own ServiceAccount (`digest-pipeline`) — used by all three workloads
-#     (pipeline CronJob + api + web). It is bound to the operator-reconciled
-#     `<env>-digest-pipeline-tenant` role by an EKS Pod Identity association the
-#     landing-zone digest-pipeline-platform component creates — no role-arn
-#     annotation. App pods and AgentFleet pods (`tenant-runtime` SA) share that
-#     role: one Platform, one privilege domain. Bedrock access on the role is
-#     the agent-iam baseline clamped to spec.identity below; the app's
-#     substrate grants arrive via spec.identity.extraPolicyArns.
+# Pod identity: the operator creates and owns the `tenant-runtime` ServiceAccount
+# (shared by all three workloads — pipeline CronJob + api + web) and binds it to
+# the `<env>-digest-pipeline-tenant` role via an EKS Pod Identity association —
+# no role-arn annotation. App pods and AgentFleet pods run as it: one Platform,
+# one privilege domain. Bedrock access is the agent-iam baseline clamped to
+# spec.identity below; substrate access is the datastore-access policy the
+# operator generates from spec.datastores, and SES send is the capability-access
+# policy generated from spec.identity.capabilities.
 #
-# Tenant-shared infra (Aurora Serverless v2 Postgres, S3 voice-baseline +
-# raw-aggregations, SES verified identity + configuration set, Secrets
-# Manager seeding, the app-access managed policy) — see landing-zone's
-# components/aws/digest-pipeline-platform/. Once that component's per-env entry
-# applies, the outputs are wired into the chart's per-env values
-# (`tenantInfra.*`). SES DKIM CNAME records are
-# emitted as outputs for the operator to publish to the apex DNS zone.
+# Tenant substrate is declared, not a component: spec.datastores below names the
+# Aurora Postgres store and the two S3 buckets, provisioned by the generic
+# tenant-substrate module; their endpoints wire into the chart's per-env values
+# (`tenantInfra.*`). The `ses` capability grants send; the verified sending
+# identity + DKIM is account-level mail infrastructure in landing-zone, not
+# provisioned per app.
 
 ---
 apiVersion: platform.nanohype.dev/v1alpha1
@@ -96,13 +94,26 @@ spec:
     # entry matches what the app's config invokes.
     allowedModels:
       - anthropic.claude-sonnet-4-6 # BEDROCK_MODEL_ID — newsletter generation
-    # The app's substrate grants (S3, SES, Secrets Manager, CloudWatch) —
-    # landing-zone's digest-pipeline-platform component emits the policy as
-    # `app_access_policy_arn`. Account-scoped, so it is filled per
-    # environment at apply time (landing-zone
-    # docs/first-deploy-aws.md, App platform tenants):
-    #   arn:aws:iam::<account>:policy/eks-agent-platform/<env>-digest-pipeline-app-access
+    # Escape hatch for grants outside the datastore + capability vocabularies.
+    # S3 access rides spec.datastores and SES send rides capabilities below, so
+    # nothing is needed here.
     extraPolicyArns: []
+    # Non-datastore capability: SES send. The operator generates the send grant
+    # (ses:SendEmail, FromAddress-scoped); the verified sending identity is
+    # account-level mail infrastructure in landing-zone, not provisioned per app.
+    capabilities:
+      - ses
   compliance:
     soc2: true
   isolation: namespace
+  # Stateful substrate: the Aurora Postgres store (draft + audit tables) and the
+  # two S3 buckets (voice-baseline few-shots + raw source aggregations). The
+  # tenant-substrate module provisions them and the operator generates the scoped
+  # datastore-access policy; deletionPolicy defaults to Retain.
+  datastores:
+    - name: main
+      kind: relational
+    - name: voice-baseline
+      kind: objectStore
+    - name: raw-aggregations
+      kind: objectStore

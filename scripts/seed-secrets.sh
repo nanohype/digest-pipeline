@@ -26,7 +26,7 @@
 # Requires: aws CLI (with creds that can put/create secrets), jq, base64, openssl.
 #
 # Note: digest-pipeline/${env}/db-credentials is managed by the landing-zone
-# digest-pipeline-platform rds-aurora module — this seeder does not touch it.
+# tenant-substrate rds-aurora module — this seeder does not touch it.
 
 set -euo pipefail
 
@@ -71,7 +71,7 @@ ok()   { printf '[seed] OK  : %s\n' "$*"; }
 # The canonical list of secret paths DigestPipeline expects. Must stay in lockstep
 # with `secrets.template.json` keys, the `remoteRef` keys in the chart's
 # `externalsecret.yaml`, and the inventory in `docs/secrets.md`.
-# db-credentials is excluded — the landing-zone digest-pipeline-platform rds-aurora
+# db-credentials is excluded — the landing-zone tenant-substrate rds-aurora
 # module creates and owns it alongside the Aurora cluster.
 REQUIRED_KEYS=(
   "approvers"
