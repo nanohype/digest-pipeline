@@ -103,6 +103,15 @@ spec:
     # account-level mail infrastructure in landing-zone, not provisioned per app.
     capabilities:
       - ses
+    # Secrets the pods fetch directly via the SDK rather than through the chart's
+    # ExternalSecret: the approver list and the WorkOS Directory Sync credentials,
+    # resolved at runtime by the api + pipeline (APPROVERS_SECRET_ID /
+    # WORKOS_DIRECTORY_SECRET_ID). DATABASE_URL and the rest are
+    # ExternalSecret-projected and need no grant. The operator grants read on
+    # exactly these under the tenant's own digest-pipeline/<env>/ prefix.
+    directSecretReads:
+      - approvers
+      - workos-directory
   compliance:
     soc2: true
   isolation: namespace
