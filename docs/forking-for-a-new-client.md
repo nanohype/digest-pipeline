@@ -9,7 +9,7 @@ Budget ~3 hours end-to-end: 45 min for third-party account setup, 30 min for loc
 Have ready:
 
 - An AWS account + region you own (set `AWS_REGION`). Bedrock access must be enabled in the region for the Claude model ID you pick.
-- A reachable EKS cluster with the eks-gitops addon catalog (cert-manager, external-secrets, external-dns, the AWS Load Balancer Controller, Grafana Alloy, Tempo, Loki, grafana-operator) and the `eks-agent-platform` operator installed. The chart's `Ingress` requests the `alb` class that catalog's load balancer controller serves.
+- A reachable EKS cluster with the eks-gitops addon catalog (cert-manager, external-secrets, external-dns, the AWS Load Balancer Controller, the OpenTelemetry Collector, Tempo, Loki, grafana-operator) and the `eks-agent-platform` operator installed. The chart's `Ingress` requests the `alb` class that catalog's load balancer controller serves.
 - Admin access to a Slack workspace where you can create an app. A test workspace is fine for staging.
 - A WorkOS account with one Application (Client ID) + one Directory per environment. The free tier handles drill volumes.
 - A Linear workspace with workflows + labels matching the aggregator's expectations (closed epics, upcoming milestones, optional `ask`-labeled issues).
@@ -68,7 +68,7 @@ Register the bot in each channel (`/invite @<bot>`).
 
 ### Observability
 
-Nothing to configure. The cluster's `eks-gitops` observability stack — Alloy, Tempo, Loki, Amazon Managed Prometheus — is shared infrastructure, and the fork inherits it by exporting OTLP to the in-cluster Alloy Service. There is no telemetry secret to seed and no vendor account to create. What does change per fork is the `agents.tenant` / `agents.platform` resource attributes in `chart/values*.yaml`, which is how the shared dashboards slice your fork's data out from everyone else's.
+Nothing to configure. The cluster's `eks-gitops` observability stack — the OpenTelemetry Collector, Tempo, Loki, Amazon Managed Prometheus — is shared infrastructure, and the fork inherits it by exporting OTLP to the in-cluster collector gateway Service. There is no telemetry secret to seed and no vendor account to create. What does change per fork is the `agents.tenant` / `agents.platform` resource attributes in `chart/values*.yaml`, which is how the shared dashboards slice your fork's data out from everyone else's.
 
 ### SES
 
