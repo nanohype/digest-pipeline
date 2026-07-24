@@ -22,7 +22,7 @@ export AWS_REGION=us-west-2
 
 - **SES verified identity.** The `sesFromAddress` you will seed into `digest-pipeline/{env}/runtime-config` must be a verified SES identity (either the email or the sending domain) in the deployment region. The verified sending identity + DKIM is account-level mail infrastructure in landing-zone (not per-app); the `ses` capability grants the tenant role send. If SES is still in sandbox mode, every recipient address in `newsletterRecipients` must also be verified — request production access before you promote to production.
 
-- **Cluster + addons.** A reachable EKS cluster with the eks-gitops addon catalog installed: cert-manager, external-secrets, external-dns, the AWS Load Balancer Controller, Grafana Alloy (the OTLP receiver and log shipper), Tempo, Loki, and grafana-operator. The chart assumes these exist; it does not install them. The `Ingress` requests the `alb` class the load balancer controller serves, and needs an ACM certificate for its host — see `chart/README.md`.
+- **Cluster + addons.** A reachable EKS cluster with the eks-gitops addon catalog installed: cert-manager, external-secrets, external-dns, the AWS Load Balancer Controller, the OpenTelemetry Collector (the OTLP receiver and log shipper), Tempo, Loki, and grafana-operator. The chart assumes these exist; it does not install them. The `Ingress` requests the `alb` class the load balancer controller serves, and needs an ACM certificate for its host — see `chart/README.md`.
 
 ### Third-party accounts (staging + production)
 
@@ -36,7 +36,7 @@ Provision these **separately** per environment — staging and production each w
 | **Notion** | Internal-integration token (`secret_…`), database ID of the all-hands page | Notion → Settings → Connections → Develop or manage integrations. Share the all-hands database with the integration explicitly. |
 | **GitHub** | PAT with `repo:read` over the repos you want aggregated | GitHub → Settings → Developer settings → Personal access tokens. Read-only; used for merged-PR fetch. |
 
-Nothing to provision for telemetry. Traces, metrics and logs land in the observability stack `eks-gitops` already runs on the cluster — Alloy on every node, Tempo and Loki in-cluster, Amazon Managed Prometheus for metrics. The app exports OTLP to the Alloy Service and holds no credential for any of it.
+Nothing to provision for telemetry. Traces, metrics and logs land in the observability stack `eks-gitops` already runs on the cluster — the OpenTelemetry Collector agent on every node, a gateway plus Tempo and Loki in-cluster, Amazon Managed Prometheus for metrics. The app exports OTLP to the collector gateway Service and holds no credential for any of it.
 
 ### Local tooling
 
@@ -275,6 +275,6 @@ done
 | Pipeline Job runs once, exits, status `Failed` with `AccessDeniedException` on Bedrock | Model access not enabled across all regions the inference profile spans | Default profile is `us.anthropic.claude-sonnet-4-6` — request model access for `anthropic.claude-sonnet-4-6` in us-east-1, us-east-2, AND us-west-2. See [`troubleshooting.md`](troubleshooting.md) § "Bedrock errors" |
 | API 5xx on `/drafts/:id/approve` with `SES.MessageRejected` | `sesFromAddress` not a verified SES identity, or SES still in sandbox and the recipient isn't verified | Verify the identity in SES; request production-access or verify each recipient during bring-up |
 | WorkOS sign-in bounces with `invalid_redirect_uri` | The web's redirect URI isn't registered for the Client ID | Add `https://<host>/callback` in the WorkOS dashboard → Redirects |
-| Traces missing from Tempo | The pods can't reach the Alloy Service, or Alloy can't reach Tempo | Check Alloy's logs in the `monitoring` namespace, then confirm the chart's NetworkPolicy allows egress to `alloy.monitoring.svc.cluster.local:4318` |
+| Traces missing from Tempo | The pods can't reach the collector gateway Service, or the gateway can't reach Tempo | Check the collector's logs in the `monitoring` namespace, then confirm the chart's NetworkPolicy allows egress to `telemetry.monitoring.svc.cluster.local:4318` |
 
 For every concrete error observed during bring-up with root cause + fix, see [`troubleshooting.md`](troubleshooting.md).

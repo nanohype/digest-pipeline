@@ -182,7 +182,7 @@ When a scheduled staging / production run fails, reproduce locally:
 
 3. The `details` JSON blob on `PIPELINE_FAILURE` records which phase failed and the error message. Armed with that, rerun locally with the same inputs (or copy the raw aggregation from `s3://digest-pipeline-raw-aggregations-<account>-staging/<run_id>/` if the snapshot made it that far).
 
-4. Pull the run's logs. The pipeline Job's stdout reaches Loki via the cluster Alloy collector — filter on `service="digest-pipeline-pipeline"` and the `run_id` field. For the live Job pod: `kubectl -n tenants-digest-pipeline logs job/<job-name>` (the CronJob spawns `digest-pipeline-pipeline-<timestamp>` Jobs). Every line carries `trace_id` so you can jump into Tempo.
+4. Pull the run's logs. The pipeline Job's stdout reaches Loki via the cluster OpenTelemetry Collector — filter on `service="digest-pipeline-pipeline"` and the `run_id` field. For the live Job pod: `kubectl -n tenants-digest-pipeline logs job/<job-name>` (the CronJob spawns `digest-pipeline-pipeline-<timestamp>` Jobs). Every line carries `trace_id` so you can jump into Tempo.
 
 ## Common dev-time gotchas
 

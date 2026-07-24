@@ -44,16 +44,16 @@ Repeat once per approver. DigestPipeline caches the `approvers` secret for 5 min
 ## Telemetry carries no secret
 
 Nothing in this table covers observability, and that is not an omission. The
-pods export OTLP to the Grafana Alloy collector at
-`alloy.monitoring.svc.cluster.local:4318`, an in-cluster Service whose receiver
+pods export OTLP to the OpenTelemetry Collector at
+`telemetry.monitoring.svc.cluster.local:4318`, an in-cluster Service whose receiver
 takes no authentication — it is reachable only from inside the cluster, and
-only through the egress rule in the chart's `networkpolicy.yaml`. Alloy owns
-every upstream credential from there: SigV4-signed remote-write to Amazon
+only through the egress rule in the chart's `networkpolicy.yaml`. The gateway
+owns every upstream credential from there: SigV4-signed remote-write to Amazon
 Managed Prometheus using its own EKS Pod Identity, with Tempo and Loki both
 running in-cluster. No token the app could hold would be read by anything.
 
 Logs take a separate route and also need no credential: pods write structured
-JSON to stdout, Alloy tails it off the node into Loki. Query with
+JSON to stdout, the collector agent tails it off the node into Loki. Query with
 `{service="digest-pipeline-pipeline"}`; `trace_id` rides on every line, so the
 Tempo ↔ Loki join is one click. See [`troubleshooting.md`](troubleshooting.md)
 § "Logs not in Grafana" for the cluster-side wiring.
