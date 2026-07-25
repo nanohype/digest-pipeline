@@ -23,10 +23,16 @@ digest-pipeline.io/service: {{ .service }}
   value: {{ .Values.tenantInfra.voiceBaselineBucket | quote }}
 - name: RAW_AGGREGATIONS_BUCKET
   value: {{ .Values.tenantInfra.rawAggregationsBucket | quote }}
-- name: SLACK_REVIEW_CHANNEL_ID
-  value: {{ .Values.tenantInfra.slackReviewChannelId | quote }}
 - name: APPROVERS_SECRET_ID
   value: {{ .Values.tenantInfra.approversSecretId | quote }}
 - name: WORKOS_DIRECTORY_SECRET_ID
   value: {{ .Values.tenantInfra.workosDirectorySecretId | quote }}
+- name: SLACK_SECRET_ID
+  value: {{ .Values.tenantInfra.slackSecretId | quote }}
+- name: GITHUB_SECRET_ID
+  value: {{ .Values.tenantInfra.githubSecretId | quote }}
+- name: LINEAR_SECRET_ID
+  value: {{ .Values.tenantInfra.linearSecretId | quote }}
+- name: NOTION_SECRET_ID
+  value: {{ .Values.tenantInfra.notionSecretId | quote }}
 {{- end -}}

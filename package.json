@@ -34,7 +34,8 @@
     "seed:production:dry": "bash scripts/seed-secrets.sh --env production --dry-run",
     "chart:lint": "helm lint chart",
     "chart:template:staging": "helm template digest-pipeline chart -f chart/values-staging.yaml",
-    "chart:template:production": "helm template digest-pipeline chart -f chart/values-production.yaml"
+    "chart:template:production": "helm template digest-pipeline chart -f chart/values-production.yaml",
+    "chart:check-env": "node scripts/check-chart-env-covers-config.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.700.0",
