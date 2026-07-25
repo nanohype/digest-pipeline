@@ -171,6 +171,13 @@ externalSecret:
   approversSecret: '' # digest-pipeline/<env>/approvers
   workosSecret: '' # digest-pipeline/<env>/workos-directory
   dbCredentialsSecret: '' # digest-pipeline/<env>/db-credentials
+  # Deployment-specific values that are not infrastructure outputs and are not
+  # knowable at chart-authoring time — the Slack channel the review lands in, the
+  # verified SES sender, the recipient list, the WorkOS client. seed-secrets.sh
+  # already creates both entries; the chart projects them here so a rendered pod
+  # carries them as env.
+  runtimeConfigSecret: '' # digest-pipeline/<env>/runtime-config
+  webConfigSecret: '' # digest-pipeline/<env>/web-config
 
 # Helm hook: applies pending DB migrations BEFORE the new chart version rolls
 # out, against the same Postgres the api/pipeline reach via DATABASE_URL.
@@ -271,9 +278,16 @@ env:
 tenantInfra:
   voiceBaselineBucket: ''
   rawAggregationsBucket: ''
-  slackReviewChannelId: ''
+  # Secrets Manager paths, not secret material: the pipeline resolves each of
+  # these at runtime through the tenant role. They are plain config, so they are
+  # env here rather than projected — but every one must be listed in the Platform
+  # CR's spec.identity.directSecretReads or the read is denied.
   approversSecretId: '' # passed via env, fetched at runtime
   workosDirectorySecretId: ''
+  slackSecretId: ''
+  githubSecretId: ''
+  linearSecretId: ''
+  notionSecretId: ''
 
 nodeSelector: {}
 tolerations: []

@@ -79,6 +79,13 @@ jobs:
           helm template digest-pipeline chart -f chart/values-staging.yaml > rendered/staging.yaml
           helm template digest-pipeline chart -f chart/values-production.yaml > rendered/production.yaml
 
+      # Rendering proves the YAML parses, not that the pod it describes can boot.
+      # Every entrypoint validates its environment with Zod, and a required key
+      # with no default is a crash rather than a degraded mode — so the rendered
+      # env set is compared against the schemas that read it, per environment.
+      - name: Rendered chart supplies every required env var
+        run: npm run chart:check-env
+
       # Source files are gated elsewhere; this asserts the RENDERED chart too —
       # a zero account id, placeholder token, or account-less ARN that only
       # appears after templating.

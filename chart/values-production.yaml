@@ -15,6 +15,8 @@ externalSecret:
   approversSecret: digest-pipeline/production/approvers
   workosSecret: digest-pipeline/production/workos-directory
   dbCredentialsSecret: digest-pipeline/production/db-credentials
+  runtimeConfigSecret: digest-pipeline/production/runtime-config
+  webConfigSecret: digest-pipeline/production/web-config
 
 env:
   OTEL_RESOURCE_ATTRIBUTES: 'service.namespace=digest-pipeline,service.version=0.1.0,deployment.environment=production,agents.tenant=growth,agents.platform=digest-pipeline'
@@ -23,6 +25,9 @@ tenantInfra:
   # Bucket names match landing-zone tenant-substrate outputs 1:1.
   voiceBaselineBucket: digest-pipeline-production-voice-baseline
   rawAggregationsBucket: digest-pipeline-production-raw-aggregations
-  slackReviewChannelId: ''
   approversSecretId: digest-pipeline/production/approvers
   workosDirectorySecretId: digest-pipeline/production/workos-directory
+  slackSecretId: digest-pipeline/production/slack
+  githubSecretId: digest-pipeline/production/github
+  linearSecretId: digest-pipeline/production/linear
+  notionSecretId: digest-pipeline/production/notion

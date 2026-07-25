@@ -112,6 +112,14 @@ spec:
     directSecretReads:
       - approvers
       - workos-directory
+      # The four provider tokens the pipeline resolves through the SDK at run
+      # time, one per aggregator. They are not ExternalSecret-projected because
+      # each aggregator fetches its own on demand — so without these entries the
+      # weekly run reaches Secrets Manager and gets AccessDenied, per source.
+      - github
+      - linear
+      - slack
+      - notion
   compliance:
     soc2: true
   isolation: namespace

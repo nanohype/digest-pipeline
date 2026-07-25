@@ -9,6 +9,8 @@ externalSecret:
   approversSecret: digest-pipeline/staging/approvers
   workosSecret: digest-pipeline/staging/workos-directory
   dbCredentialsSecret: digest-pipeline/staging/db-credentials
+  runtimeConfigSecret: digest-pipeline/staging/runtime-config
+  webConfigSecret: digest-pipeline/staging/web-config
 
 env:
   OTEL_RESOURCE_ATTRIBUTES: 'service.namespace=digest-pipeline,service.version=0.1.0,deployment.environment=staging,agents.tenant=growth,agents.platform=digest-pipeline'
@@ -19,6 +21,9 @@ tenantInfra:
   # channel ID + secret IDs are digest-pipeline-specific config, not infra outputs.
   voiceBaselineBucket: digest-pipeline-staging-voice-baseline
   rawAggregationsBucket: digest-pipeline-staging-raw-aggregations
-  slackReviewChannelId: '' # per-env Slack channel; fill once known
   approversSecretId: digest-pipeline/staging/approvers
   workosDirectorySecretId: digest-pipeline/staging/workos-directory
+  slackSecretId: digest-pipeline/staging/slack
+  githubSecretId: digest-pipeline/staging/github
+  linearSecretId: digest-pipeline/staging/linear
+  notionSecretId: digest-pipeline/staging/notion
