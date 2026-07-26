@@ -55,9 +55,9 @@ Core insight: **every mutation to a draft is an immutable audit event**. Human e
 - **`src/pipeline/aggregators/`** — One module per source. Each exports a factory that registers with the aggregator registry (`registry.ts`) so adding a source never edits the orchestrator. All external calls wrapped in `withTimeout` (8s default, 15s for Slack history) + `withRetry(3, jitter)`. Items are passed through `sanitizeSourceItem` before leaving the aggregator so the LLM prompt builder only ever sees PII-filtered content (enforced by the `SanitizedSourceItem` brand).
 - **`src/pipeline/filters/pii.ts`** — Redaction policy is the vendored org-wide catalog (`src/vendor/runtime/pii.ts`): secrets/tokens (JWT, AWS keys, GitHub PATs, Slack tokens, API keys), SSN, credit cards, compensation, performance/HR, HR case IDs, health, DOB, contact info, AWS account ids, customer/infrastructure identifiers. Replacements are typed per label (`[EMAIL]`, `[COMPENSATION]`, …). `assertNoPii` runs at two checkpoints: aggregation (post-piiFilter) and post-LLM output.
 - **`src/pipeline/identity/workos.ts`** — WorkOS Directory Sync-backed identity resolver with 4-hour in-memory cache and the GitHub/Linear/Slack external-id → custom-attribute mapping, over the vendored directory client (`src/vendor/runtime/workos-directory.ts`). Maps external IDs to canonical `{displayName, role, team}` via custom attributes on directory users.
-- **`src/pipeline/ai/`** — `ranker.ts` scores items on age decay + engagement + metadata completeness. `generator.ts` wraps Bedrock Claude with voice-baseline few-shots loaded from S3, PII assertion at both ends, and `withRetry` around the Bedrock call.
+- **`src/pipeline/ai/`** — `ranker.ts` scores items on age decay + engagement + metadata completeness. `generator.ts` wraps Bedrock Claude with voice-baseline few-shots loaded from S3, PII assertion at both ends, and `withRetry` around the Bedrock call. The assembled item block is fenced with the vendored `guardrails.ts` before it reaches the prompt: item titles and descriptions come from Slack, GitHub, Linear and Notion, so the `SanitizedSourceItem` brand guarantees they carry no PII but says nothing about whether they carry instructions. `evals/` measures whether the model holds that line.
 - **`src/pipeline/audit.ts`** — Awaited-only audit writes against a `DatabaseClient` interface. Zero fire-and-forget.
-- **`src/vendor/runtime/`** — vendored `@nanohype/runtime` modules (`resilience.ts`, `registry.ts`, `pii.ts`, `workos-directory.ts`), byte-identical copies of `nanohype/library/runtime/src` — the same consumption model as the vendored `chart/charts/tenant-chart-base`. `npm run sync:vendored` re-copies from the source of truth; `npm run sync:vendored:check` is the CI drift gate. Behavior changes (and their tests) land in the library first, then re-sync — never edit these copies in place. `withTimeout`/`withRetry` from here are used at every external call site.
+- **`src/vendor/runtime/`** — vendored `@nanohype/runtime` modules (`resilience.ts`, `registry.ts`, `pii.ts`, `guardrails.ts`, `workos-directory.ts`), byte-identical copies of `nanohype/library/runtime/src` — the same consumption model as the vendored `chart/charts/tenant-chart-base`. `npm run sync:vendored` re-copies from the source of truth; `npm run sync:vendored:check` is the CI drift gate. Behavior changes (and their tests) land in the library first, then re-sync — never edit these copies in place. `withTimeout`/`withRetry` from here are used at every external call site.
 - **`src/api/`** — Fastify server. Every route (except `/health`) gated by JWT middleware using `jose` against the WorkOS JWKS. Bodies validated with Zod. SIGTERM handler drains in-flight requests.
 - **`web/`** — Next.js App Router. `/review/[draftId]` page with inline edit, live edit-rate indicator, approve-and-send action. Uses WorkOS AuthKit for authentication.
 - **`src/data/`** — Postgres-backed `DraftRepository` and `AuditWriter` implementations. Migrations under `migrations/`.
@@ -76,7 +76,8 @@ npm run dev:api           # Fastify API on :3001
 npm run build             # tsc → dist/
 npm run typecheck         # tsc --noEmit
 npm run lint              # Biome on src/
-npm test                  # vitest run
+npm test                  # vitest run (unit + the offline eval tier)
+npm run eval              # the model tier — needs EVAL_LLM (see evals/README.md)
 npm run test:watch        # interactive watch
 
 npm run migrate:up        # Apply pending migrations to DATABASE_URL
@@ -102,7 +103,7 @@ All config via environment variables, validated with Zod. See `.env.example`.
 Key ones:
 
 - `AWS_REGION` — for Bedrock, S3, SES, Secrets Manager (default `us-east-1`)
-- `BEDROCK_MODEL_ID` — defaults to Claude Sonnet 4
+- `BEDROCK_MODEL_ID` — a cross-region inference profile id (the `us.` prefix is load-bearing; InvokeModel rejects a bare foundation-model id)
 - `WORKOS_ISSUER` / `WORKOS_CLIENT_ID` — JWT validation against WorkOS JWKS
 - `APPROVERS_SECRET_ID` — Secrets Manager secret with `{cosUserId, backupApproverIds[]}`
 - `WORKOS_DIRECTORY_SECRET_ID` — Secrets Manager secret with `{apiKey, directoryId}` for WorkOS Directory Sync
@@ -144,12 +145,15 @@ No telemetry secret. The gateway's OTLP receiver takes no authentication in-clus
 
 ## Testing
 
+**Evals are a separate tier** (`evals/`, see its README). A test asserts the code does what it says; an eval measures whether the *model* does, and the answer is a rate. `npm test` runs the offline half — fixture validity and the graders — on every PR. `npm run eval` runs the model half against real Bedrock, on its own CI workflow. Setting `EVAL_LLM` means the tier must run: a broken provider is a hard failure, never a skip, so a green eval check always means the evals executed.
+
 Unit tests per module with Vitest. Integration tests exercise the pipeline orchestrator (fake aggregators → real filter/ranker → mocked Bedrock → audited) and the API (Fastify `app.inject` with in-memory ports); Bedrock and the external SDKs are the only mocked boundaries. The data layer's status transitions are enforced by the database rather than by application code — conditional `WHERE` clauses plus the `status` and `event_type` CHECK constraints in `migrations/001_initial_schema.up.sql` — so the guard lives where a test could not bypass it.
 
 - `src/pipeline/filters/pii.test.ts` — the app's PII wiring over the vendored catalog (typed tokens, widened categories live, `assertNoPii` run-id semantics, `sanitizeSourceItem`)
 - `src/pipeline/ai/ranker.test.ts` — scoring, dedup, section mapping, 5-item cap
 - `src/web/lib/diff.test.ts` — Levenshtein on short + long inputs
 - `src/pipeline/pipeline.integration.test.ts` — fake aggregators → resolver → filter → ranker → mock Bedrock → audit
+- `evals/harness.test.ts` — the offline eval tier: the golden set parses, has unique ids, exercises both a full and a sparse week, stays inside the five-item cap, and gives every adversarial case something that can actually fail; the voice-baseline fixture is itself inside the word band it teaches; plus the graders and the scorer (a missing result counts as a failure, never a pass)
 
 Vendored `src/vendor/runtime/` modules are not re-tested here — their unit tests live upstream in `nanohype/library/runtime` alongside the source of truth. This suite tests the app's wiring over them.
 

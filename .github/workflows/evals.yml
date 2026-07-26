@@ -1,0 +1,75 @@
+name: evals
+
+# The model tier, on its own workflow so it reports as its own check. Folding
+# it into `ci` would let "tests passed" and "evals passed" arrive as one
+# signal, and they are not one signal — the eval measures a model, needs
+# credentials, and costs money per run.
+#
+# Triggered only by changes that can move a score: the generator and its
+# prompts, the fence between untrusted item text and those prompts, the voice
+# corpus, and the golden set. Everything else is covered by `ci`.
+on:
+  pull_request:
+    paths:
+      - 'src/pipeline/ai/**'
+      - 'src/pipeline/sections.ts'
+      - 'src/vendor/runtime/guardrails.ts'
+      - 'evals/**'
+      - '.github/workflows/evals.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'src/pipeline/ai/**'
+      - 'src/pipeline/sections.ts'
+      - 'src/vendor/runtime/guardrails.ts'
+      - 'evals/**'
+  # Prompts do not change but models do, and Bedrock retires the one this pins
+  # once the account stops calling it for 30 days. A scheduled run is what
+  # notices either without waiting for someone to edit a prompt.
+  schedule:
+    - cron: '41 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: evals-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  eval:
+    name: newsletter golden set
+    runs-on: ubuntu-latest
+    # No credentials, no run — and the check reports Skipped, not green. Fork
+    # PRs land here, which is correct: the golden set is public, the Bedrock
+    # account is not. The offline tier in `ci` still covers fixture validity
+    # and the graders on every PR, fork or not.
+    if: ${{ github.event_name == 'schedule' || vars.EVALS_ENABLED == 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - name: Install
+        run: npm ci --prefer-offline --no-audit --no-fund
+
+      - name: Assume the eval role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_EVAL_ROLE_ARN }}
+          aws-region: ${{ vars.EVAL_REGION || 'us-west-2' }}
+
+      - name: Run the golden set
+        # EVAL_LLM set means the tier must run: a broken provider fails here
+        # rather than skipping, so a green check means the evals executed.
+        run: npm run eval
+        env:
+          EVAL_LLM: bedrock
+          EVAL_MODEL: ${{ vars.EVAL_MODEL }}
+          OTEL_SDK_DISABLED: 'true'

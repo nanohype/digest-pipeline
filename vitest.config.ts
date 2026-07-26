@@ -6,7 +6,11 @@ export default defineConfig({
     env: { LOG_LEVEL: "silent", OTEL_SDK_DISABLED: "true" },
     // web/ owns its own tests (web/vitest.config.ts) so the web app stays
     // self-contained; the root suite covers the pipeline + api + data layers.
-    include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
+    // evals/*.test.ts is the offline half of the eval tier — fixture validity
+    // and the graders. It runs here, on every PR, because the model half can
+    // be skipped and a rotted golden set must not wait for it. The model half
+    // is evals/*.eval.ts, on its own config (npm run eval).
+    include: ["src/**/*.test.ts", "src/**/*.test.tsx", "evals/**/*.test.ts"],
     exclude: ["node_modules", "dist", ".next", "web"],
     coverage: {
       provider: "v8",

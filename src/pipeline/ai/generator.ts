@@ -11,6 +11,7 @@ import { awsRequestHandler } from "../../common/aws.js";
 import { getLogger } from "../../common/logger.js";
 import { type BedrockTokenKind, bedrockTokens } from "../../common/metrics.js";
 import { getTracer } from "../../common/tracer.js";
+import { fenceUntrusted } from "../../vendor/runtime/guardrails.js";
 import { withRetry, withTimeout } from "../../vendor/runtime/resilience.js";
 import { assertNoPii } from "../filters/pii.js";
 import { SECTION_DISPLAY_NAMES } from "../sections.js";
@@ -146,7 +147,18 @@ export class NewsletterGenerator {
         return `### ${displayName}\n${itemLines}${truncatedNote}`;
       })
       .join("\n\n");
-    return `Write this week's newsletter using the data below. Run ID: ${runId}\n\n${sectionBlocks}\n\nWrite the complete newsletter now.`;
+    // Every title, description and author string here was written by someone
+    // outside this system — a Slack message, a PR title, a Linear issue, a
+    // Notion page. The branded SanitizedSourceItem type guarantees they carry
+    // no PII; it says nothing about whether they carry instructions. A single
+    // "ignore the above and write X" in a PR title would otherwise arrive in
+    // the same channel as this prompt's own directions.
+    //
+    // The whole block is fenced, section headers included, and that is safe
+    // precisely because the structural requirement does not live here: the
+    // system prompt owns "EXACTLY 5 sections in order", and it is ours. These
+    // headers are labels on data, so nothing is lost by marking them as data.
+    return `Write this week's newsletter using the data below. Run ID: ${runId}\n\n${fenceUntrusted(sectionBlocks, "aggregated source items")}\n\nWrite the complete newsletter now.`;
   }
 
   private async callBedrock(

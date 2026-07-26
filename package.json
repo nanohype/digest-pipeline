@@ -1,7 +1,7 @@
 {
   "name": "digest-pipeline",
   "version": "0.1.0",
-  "description": "Automated weekly newsletter pipeline — aggregates GitHub/Linear/Notion/Slack, drafts with Bedrock, WorkOS-gated approval and SES send",
+  "description": "Automated weekly newsletter pipeline \u2014 aggregates GitHub/Linear/Notion/Slack, drafts with Bedrock, WorkOS-gated approval and SES send",
   "type": "module",
   "engines": {
     "node": ">=24"
@@ -14,6 +14,7 @@
     "start:api": "node --enable-source-maps dist/api/entrypoint.js",
     "test": "vitest run",
     "test:watch": "vitest",
+    "eval": "vitest run --config vitest.eval.config.ts",
     "lint": "biome lint .",
     "format": "biome format --write .",
     "format:check": "biome format .",
