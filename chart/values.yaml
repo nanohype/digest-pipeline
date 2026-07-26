@@ -253,7 +253,13 @@ networkPolicy:
 env:
   # Non-secret config shared by all three services.
   AWS_REGION: us-east-1
-  BEDROCK_MODEL_ID: anthropic.claude-sonnet-4-6
+  # The `us.` prefix makes this a cross-region inference profile, and it is
+  # load-bearing: InvokeModel rejects the bare foundation-model id outright
+  # ("Invocation of model ID anthropic.claude-sonnet-4-6 with on-demand
+  # throughput isn't supported"). Bedrock also marks superseded models Legacy
+  # and starts refusing them once an account has not called them for 30 days,
+  # so this pin rots on its own. `npm run eval` is what notices either.
+  BEDROCK_MODEL_ID: us.anthropic.claude-sonnet-4-6
   LOG_LEVEL: info
   NODE_ENV: production
   # OTel — exports to the cluster-level OpenTelemetry Collector (no per-pod

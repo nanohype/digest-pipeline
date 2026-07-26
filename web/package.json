@@ -37,9 +37,10 @@
   },
   "overrides": {
     "@grpc/grpc-js": "^1.14.4",
+    "brace-expansion": "^5.0.8",
+    "postcss": "^8.5.18",
     "protobufjs": "^7.6.4",
-    "postcss": "^8.5.10",
-    "vite": "^8.0.16",
-    "sharp": "^0.35.3"
+    "sharp": "^0.35.3",
+    "vite": "^8.0.16"
   }
 }
