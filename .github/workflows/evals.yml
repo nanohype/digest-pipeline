@@ -1,33 +1,22 @@
 name: evals
 
-# The model tier, on its own workflow so it reports as its own check. Folding
-# it into `ci` would let "tests passed" and "evals passed" arrive as one
-# signal, and they are not one signal — the eval measures a model, needs
-# credentials, and costs money per run.
+# The model tier, on its own workflow so it reports as its own check. Folding it
+# into `ci` would let "tests passed" and "evals passed" arrive as one signal, and
+# they are not one signal - the eval measures a model, needs credentials, and
+# costs money per run.
 #
-# Triggered only by changes that can move a score: the generator and its
-# prompts, the fence between untrusted item text and those prompts, the voice
-# corpus, and the golden set. Everything else is covered by `ci`.
+# Manual only. There is no schedule and no pull_request/push trigger, which means
+# there is no job condition either: dispatching the run IS the opt-in. That
+# removes a whole failure class - a condition that silently skips while a comment
+# claims otherwise, or a cron that goes red in a corner nobody reads. Run this
+# before trusting a model change (a new pin, a prompt edit, a provider
+# deprecation), which is when the answer actually matters. The offline tier in
+# `ci` still covers fixture validity and the graders on every PR, fork or not.
+#
+# The eval role trusts `repo:<owner>/<name>:ref:refs/heads/main` and nothing else,
+# so dispatch from main. A branch or fork cannot assume it - deliberately, because
+# this identity can spend on metered inference.
 on:
-  pull_request:
-    paths:
-      - 'src/pipeline/ai/**'
-      - 'src/pipeline/sections.ts'
-      - 'src/vendor/runtime/guardrails.ts'
-      - 'evals/**'
-      - '.github/workflows/evals.yml'
-  push:
-    branches: [main]
-    paths:
-      - 'src/pipeline/ai/**'
-      - 'src/pipeline/sections.ts'
-      - 'src/vendor/runtime/guardrails.ts'
-      - 'evals/**'
-  # Prompts do not change but models do, and Bedrock retires the one this pins
-  # once the account stops calling it for 30 days. A scheduled run is what
-  # notices either without waiting for someone to edit a prompt.
-  schedule:
-    - cron: '41 6 * * 1'
   workflow_dispatch:
 
 permissions:
@@ -42,11 +31,6 @@ jobs:
   eval:
     name: newsletter golden set
     runs-on: ubuntu-latest
-    # No credentials, no run — and the check reports Skipped, not green. Fork
-    # PRs land here, which is correct: the golden set is public, the Bedrock
-    # account is not. The offline tier in `ci` still covers fixture validity
-    # and the graders on every PR, fork or not.
-    if: ${{ github.event_name == 'schedule' || vars.EVALS_ENABLED == 'true' }}
     steps:
       - uses: actions/checkout@v4
 
