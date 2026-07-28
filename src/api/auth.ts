@@ -1,10 +1,14 @@
 /**
  * WorkOS session-token validation + approver authorization.
  *
- * Verifies the WorkOS AuthKit-issued JWT against the WorkOS JWKS, plus
- * issuer, audience (the WorkOS client_id), and expiry. On any validation
- * failure it throws — the Fastify hook turns that into a 401. Non-approver
- * authenticated callers get 403 from isApprover.
+ * Verifies the WorkOS AuthKit-issued JWT against the WorkOS JWKS, plus issuer
+ * and expiry. On any validation failure it throws — the Fastify hook turns that
+ * into a 401. Non-approver authenticated callers get 403 from isApprover.
+ *
+ * `aud` is deliberately not checked, and the reason is on the verify call below.
+ * The issuer carries the client_id (`<issuer>/user_management/<client_id>`), so
+ * a token minted for another Application still fails — which is the property
+ * an audience check would have been buying.
  */
 
 import { createRemoteJWKSet, decodeJwt, type JWTPayload, jwtVerify } from "jose";
@@ -21,14 +25,35 @@ export interface Authenticator {
   verify(token: string): Promise<SessionClaims>;
 }
 
-export function createAuthenticator(options: { issuer: string; clientId: string }): Authenticator {
+/**
+ * Resolves the signing key for a token — the shape both `createRemoteJWKSet`
+ * and `createLocalJWKSet` return.
+ */
+export type KeyResolver = Parameters<typeof jwtVerify>[1];
+
+/**
+ * Build the WorkOS session-token verifier.
+ *
+ * `jwks` is the one injectable seam, matching the equivalent in
+ * competitive-intelligence's MCP resource server: production leaves it unset and
+ * a remote key set is resolved from the AuthKit JWKS endpoint, while tests pass
+ * a local key set so the real `jose` verification path runs without touching the
+ * network. That keeps the SDK out of the mock — module-mocking `jose` here would
+ * mean the verify path had no test at all, only an assertion that a fake was
+ * called.
+ */
+export function createAuthenticator(options: {
+  issuer: string;
+  clientId: string;
+  jwks?: KeyResolver;
+}): Authenticator {
   const issuer = options.issuer.replace(/\/$/, "");
   // /sso/jwks/<client_id> serves keys for both SSO tokens and User Management
   // session JWTs from the same Application — confirmed by inspecting the
   // @workos-inc/node SDK's getJwksUrl() (which is what authkit-nextjs uses
   // internally to verify tokens).
-  const jwksUrl = new URL(`${issuer}/sso/jwks/${options.clientId}`);
-  const jwks = createRemoteJWKSet(jwksUrl);
+  const jwks =
+    options.jwks ?? createRemoteJWKSet(new URL(`${issuer}/sso/jwks/${options.clientId}`));
   // User Management session JWTs carry `iss = <issuer>/user_management/<client_id>`,
   // NOT bare `<issuer>`. Verified by decoding an actual AuthKit-issued token —
   // the `iss` claim is fully qualified per-Application. Match that format here.
