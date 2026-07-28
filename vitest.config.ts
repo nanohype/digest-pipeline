@@ -13,6 +13,12 @@ export default defineConfig({
     include: ["src/**/*.test.ts", "src/**/*.test.tsx", "evals/**/*.test.ts"],
     exclude: ["node_modules", "dist", ".next", "web"],
     coverage: {
+      // Always on, so `npm test` enforces the floor locally exactly as CI does.
+      // Without this the thresholds below were declared and never evaluated:
+      // nothing passed --coverage, no test:coverage script existed, and CI ran a
+      // bare `npm test` — so the gate could not fail and any new untested module
+      // landed free.
+      enabled: true,
       provider: "v8",
       reporter: ["text-summary"],
       include: ["src/**/*.ts"],
@@ -43,13 +49,38 @@ export default defineConfig({
       ],
       // Honest floors set just below current coverage so the gate catches a
       // regression (a new untested module) without flaking on minor
-      // fluctuation. Raise these as the data-layer + auth tests grow. Run via
-      // `npm test -- --coverage`.
+      // fluctuation. Raise these as the data-layer + auth tests grow. Enforced by
       thresholds: {
-        lines: 55,
-        functions: 50,
-        branches: 48,
-        statements: 55,
+        // A ratchet under measured whole-source coverage, not the org floor
+        // (branches 60 / functions 75 / lines 75 / statements 75 in
+        // nanohype/standards/testing-rubric.json). Closing that gap means
+        // testing the untested pipeline orchestrator, the data layer and the
+        // service adapters — real work, tracked separately. These sit just
+        // under measured so a regression fails and ordinary movement does not.
+        lines: 63, // measured 63.72
+        functions: 64, // measured 64.78
+        branches: 55, // measured 55.86
+        statements: 62, // measured 62.93
+
+        // Per-file 100%, above the global floor, on the security- and
+        // compliance-critical path. A global floor averages these files with
+        // everything around them, so the package can sit comfortably above its
+        // ratchet while an uncovered branch in the token verifier ships.
+        //
+        // auth.ts decides whether a request is authenticated at all. Its verify
+        // path had no test before — 36.8% of lines, with signature, issuer and
+        // expiry checking entirely unexercised — because the JWKS was resolved
+        // remotely and the only obvious way to test it was to mock `jose`. The
+        // key set is injectable now, so the real jose path runs against a local
+        // key.
+        "src/api/auth.ts": { branches: 100, functions: 100, lines: 100, statements: 100 },
+
+        // Both audit ledgers, on a product whose whole shape is a human
+        // approval gate. An audit write that fails silently means an approval or
+        // a send with no record, so the tests assert the writes are awaited as
+        // well as their content.
+        "src/data/audit.ts": { branches: 100, functions: 100, lines: 100, statements: 100 },
+        "src/pipeline/audit.ts": { branches: 100, functions: 100, lines: 100, statements: 100 },
       },
     },
   },
