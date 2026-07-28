@@ -16,10 +16,8 @@ import type {
   AggregatorServices,
   IdentitySource,
 } from "./aggregators/types.js";
-import type { NewsletterGenerator } from "./ai/generator.js";
 import { deduplicateItems, rankAndSection } from "./ai/ranker.js";
 import type { AuditWriter } from "./audit.js";
-import type { WorkOsIdentityResolver } from "./identity/workos.js";
 import type {
   AggregationResult,
   PipelineRunResult,
@@ -29,11 +27,34 @@ import type {
 
 const SKELETON_BANNER = "> ⚠️ Auto-generated skeleton — Bedrock failed. Edit before approving.\n\n";
 
+/**
+ * What the orchestrator needs from the generator, and nothing else.
+ *
+ * The concrete NewsletterGenerator carries private Bedrock and S3 clients, so
+ * depending on the class means the only way to run this orchestrator is with a
+ * live model behind it. The port is the same shape the class already satisfies
+ * — entrypoint.ts still passes the real one — and it is what lets the failure
+ * path below be exercised without a Bedrock client that has to fail on cue.
+ */
+export interface PipelineGenerator {
+  generate(
+    runId: string,
+    sections: RankedSection[],
+  ): Promise<{ fullText: string; sections: RankedSection[]; tokensUsed: number }>;
+}
+
+/** The three resolutions the aggregators dispatch across. */
+export interface PipelineIdentityResolver {
+  resolveGitHubUser(externalId: string): Promise<ResolvedIdentity | null>;
+  resolveLinearUser(externalId: string): Promise<ResolvedIdentity | null>;
+  resolveSlackUser(externalId: string): Promise<ResolvedIdentity | null>;
+}
+
 export interface PipelineDraftStore {
   create(input: {
     runId: string;
     weekOf: Date;
-    sections: Awaited<ReturnType<NewsletterGenerator["generate"]>>["sections"];
+    sections: RankedSection[];
     fullText: string;
   }): Promise<string>;
 }
@@ -44,8 +65,8 @@ export interface PipelineNotifier {
 }
 
 export interface PipelineDeps {
-  resolver: WorkOsIdentityResolver;
-  generator: NewsletterGenerator;
+  resolver: PipelineIdentityResolver;
+  generator: PipelineGenerator;
   auditWriter: AuditWriter;
   draftStore: PipelineDraftStore;
   notifier: PipelineNotifier;
@@ -180,7 +201,7 @@ export async function runPipeline(deps: PipelineDeps): Promise<PipelineRunResult
             itemCount: r.items.length,
             error: r.error,
           })),
-          0,
+          draft.tokensUsed,
         );
         await notifier.notifyDraftReady(runId, id, draft.fullText);
         span.setAttribute("draft.id", id);
@@ -226,6 +247,7 @@ function getThisFriday(now: Date): Date {
 function buildSkeletonDraft(sections: RankedSection[]): {
   fullText: string;
   sections: RankedSection[];
+  tokensUsed: number;
 } {
   const blocks = sections.map((section) => {
     if (section.items.length === 0) {
@@ -239,5 +261,7 @@ function buildSkeletonDraft(sections: RankedSection[]): {
     return `## ${section.displayName}\n\n${lines.join("\n")}`;
   });
   const fullText = `${SKELETON_BANNER}${blocks.join("\n\n")}\n`;
-  return { fullText, sections };
+  // Genuinely zero: the skeleton is assembled locally precisely because the
+  // model call did not complete, so there is no spend to record.
+  return { fullText, sections, tokensUsed: 0 };
 }

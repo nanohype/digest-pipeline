@@ -79,7 +79,7 @@ export class NewsletterGenerator {
   async generate(
     runId: string,
     sections: RankedSection[],
-  ): Promise<{ fullText: string; sections: RankedSection[] }> {
+  ): Promise<{ fullText: string; sections: RankedSection[]; tokensUsed: number }> {
     const cappedSections = sections.map((s) => ({
       ...s,
       truncatedCount: Math.max(0, s.items.length - MAX_ITEMS_PER_SECTION),
@@ -103,17 +103,17 @@ export class NewsletterGenerator {
     // assembled prompt before sending to Bedrock so any aggregator regression
     // blocks the call rather than leaking into the model's context.
     assertNoPii(userPrompt, runId);
-    const response = await this.callBedrock(runId, systemPrompt, userPrompt);
+    const { text, tokensUsed } = await this.callBedrock(runId, systemPrompt, userPrompt);
     const validatedText = tracer.startActiveSpan("bedrock.validate_output", (span) => {
       try {
-        const out = this.validateOutput(runId, response, cappedSections);
+        const out = this.validateOutput(runId, text, cappedSections);
         return out;
       } finally {
         span.end();
       }
     });
     assertNoPii(validatedText, runId);
-    return { fullText: validatedText, sections: cappedSections };
+    return { fullText: validatedText, sections: cappedSections, tokensUsed };
   }
 
   private buildSystemPrompt(voiceExamples: string[]): string {
@@ -165,7 +165,7 @@ export class NewsletterGenerator {
     _runId: string,
     systemPrompt: string,
     userPrompt: string,
-  ): Promise<string> {
+  ): Promise<{ text: string; tokensUsed: number }> {
     // Transient Bedrock errors (throttling, 5xx) are retried with jittered
     // exponential backoff. A validation error will still exhaust the budget
     // and throw, but adding a few seconds of delay is cheap for a weekly run.
@@ -202,6 +202,7 @@ export class NewsletterGenerator {
             const raw: unknown = JSON.parse(new TextDecoder().decode(response.body));
             const parsed = CompletionResponseSchema.parse(raw);
             const usage = parsed.usage;
+            let tokensUsed = 0;
             const recordTokens = (
               kind: BedrockTokenKind,
               count: number | undefined,
@@ -210,13 +211,18 @@ export class NewsletterGenerator {
               if (count) {
                 bedrockTokens.add(count, { kind, model: this.config.llm.modelId });
                 span.setAttribute(attribute, count);
+                tokensUsed += count;
               }
             };
             recordTokens("input", usage?.input_tokens, "tokens.input");
             recordTokens("output", usage?.output_tokens, "tokens.output");
             recordTokens("cache_read", usage?.cache_read_input_tokens, "tokens.cache_read");
             recordTokens("cache_write", usage?.cache_creation_input_tokens, "tokens.cache_write");
-            return parsed.content[0].text;
+            // All four kinds, not just input+output. The four are disjoint in
+            // Anthropic's usage block — a cached prefix is reported under
+            // cache_read and excluded from input_tokens — so summing them is
+            // the run's real token spend, which is what the ledger records.
+            return { text: parsed.content[0].text, tokensUsed };
           },
           { attempts: 3, initialDelayMs: 500, maxDelayMs: 5_000, jitter: true },
         );

@@ -149,15 +149,18 @@ No telemetry secret. The gateway's OTLP receiver takes no authentication in-clus
 
 Unit tests per module with Vitest. Integration tests exercise the pipeline orchestrator (fake aggregators → real filter/ranker → mocked Bedrock → audited) and the API (Fastify `app.inject` with in-memory ports); Bedrock and the external SDKs are the only mocked boundaries. The data layer's status transitions are enforced by the database rather than by application code — conditional `WHERE` clauses plus the `status` and `event_type` CHECK constraints in `migrations/001_initial_schema.up.sql` — so the guard lives where a test could not bypass it.
 
+- `src/pipeline/pipeline.integration.test.ts` — the weekly orchestrator end to end. Fakes sit only at the process edges (the four source SDKs, the WorkOS directory, Bedrock, Postgres, Slack); the registry, all four aggregators, the PII filter, the deduper, the ranker and a real `AuditWriter` run for real. Covers the two behaviors that exist nowhere else: one source failing leaves the run `PARTIAL` with the healthy sources still reaching the model, and Bedrock failing degrades to a skeleton draft with a `PIPELINE_FAILURE` event and a human alert rather than losing the week. Also pins the run window (the CronJob fires on Friday, and the target week must be that Friday, not the next one) and the identity dispatch per source — swapping two resolver arms still resolves every author to *somebody*, so only per-arm assertions catch a misattribution
+- `src/api/server.test.ts` — every route at the HTTP boundary via `app.inject`, with a stub `Authenticator` so no real JWKS is hit: the approve→SES→audit→confirm ordering, edit checkpointing and its 400/409 refusals, 401 for both a missing and a rejected token, 404/500 shapes, and HTML escaping of the draft body before it is mailed
+- `src/data/drafts.test.ts` — the draft state machine. Its guards are WHERE clauses, so the tests assert on the conditional UPDATE and the `rowCount` check that make a second approval fail instead of sending twice
+- `src/api/config.test.ts` — the env contract the API refuses to start without, plus the approver-secret schema
 - `src/pipeline/filters/pii.test.ts` — the app's PII wiring over the vendored catalog (typed tokens, widened categories live, `assertNoPii` run-id semantics, `sanitizeSourceItem`)
 - `src/pipeline/ai/ranker.test.ts` — scoring, dedup, section mapping, 5-item cap
 - `src/web/lib/diff.test.ts` — Levenshtein on short + long inputs
-- `src/pipeline/pipeline.integration.test.ts` — fake aggregators → resolver → filter → ranker → mock Bedrock → audit
 - `evals/harness.test.ts` — the offline eval tier: the golden set parses, has unique ids, exercises both a full and a sparse week, stays inside the five-item cap, and gives every adversarial case something that can actually fail; the voice-baseline fixture is itself inside the word band it teaches; plus the graders and the scorer (a missing result counts as a failure, never a pass)
 
 Vendored `src/vendor/runtime/` modules are not re-tested here — their unit tests live upstream in `nanohype/library/runtime` alongside the source of truth. This suite tests the app's wiring over them.
 
-Target: ≥ 42 passing assertions. Run with `npm test`.
+Coverage is enforced by `npm test` itself, not by a separate opt-in flag, against a ratchet set a point under measured plus per-file 100% pins on the four files where a gap is a compliance or security failure rather than a coverage number: `src/api/auth.ts`, both audit ledgers, and `src/data/drafts.ts`. Raise the ratchet as coverage grows; never lower it.
 
 ## Dependencies
 
