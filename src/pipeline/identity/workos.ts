@@ -57,35 +57,6 @@ export class WorkOsIdentityResolver {
     return this.resolveByExternalId("linear", linearUserId);
   }
 
-  async batchResolve(
-    handles: Array<{ type: ExternalIdType; value: string }>,
-  ): Promise<Map<string, ResolvedIdentity | null>> {
-    const results = new Map<string, ResolvedIdentity | null>();
-    const BATCH_SIZE = 10;
-    for (let i = 0; i < handles.length; i += BATCH_SIZE) {
-      const batch = handles.slice(i, i + BATCH_SIZE);
-      await Promise.all(
-        batch.map(async ({ type, value }) => {
-          const identity = await this.resolveByExternalId(type, value);
-          results.set(`${type}:${value}`, identity);
-        }),
-      );
-    }
-    return results;
-  }
-
-  async getRecentJoiners(since: Date): Promise<ResolvedIdentity[]> {
-    const users = await withRetry(
-      () => withTimeout(this.directory.listUsersSince(since), TIMEOUT_MS, "workos.listUsersSince"),
-      {
-        attempts: 3,
-        initialDelayMs: 200,
-        jitter: true,
-      },
-    );
-    return users.map((u) => this.toResolvedIdentity(u));
-  }
-
   private async resolveByExternalId(
     type: ExternalIdType,
     value: string,
