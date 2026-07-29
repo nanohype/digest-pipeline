@@ -57,7 +57,7 @@ Core insight: **every mutation to a draft is an immutable audit event**. Human e
 - **`src/pipeline/identity/workos.ts`** — WorkOS Directory Sync-backed identity resolver with 4-hour in-memory cache and the GitHub/Linear/Slack external-id → custom-attribute mapping, over the vendored directory client (`src/vendor/runtime/workos-directory.ts`). Maps external IDs to canonical `{displayName, role, team}` via custom attributes on directory users.
 - **`src/pipeline/ai/`** — `ranker.ts` scores items on age decay + engagement + metadata completeness. `generator.ts` wraps Bedrock Claude with voice-baseline few-shots loaded from S3, PII assertion at both ends, and `withRetry` around the Bedrock call. The assembled item block is fenced with the vendored `guardrails.ts` before it reaches the prompt: item titles and descriptions come from Slack, GitHub, Linear and Notion, so the `SanitizedSourceItem` brand guarantees they carry no PII but says nothing about whether they carry instructions. `evals/` measures whether the model holds that line.
 - **`src/pipeline/audit.ts`** — Awaited-only audit writes against a `DatabaseClient` interface. Zero fire-and-forget.
-- **`src/vendor/runtime/`** — vendored `@nanohype/runtime` modules (`resilience.ts`, `registry.ts`, `pii.ts`, `guardrails.ts`, `workos-directory.ts`), byte-identical copies of `nanohype/library/runtime/src` — the same consumption model as the vendored `chart/charts/tenant-chart-base`. `npm run sync:vendored` re-copies from the source of truth; `npm run sync:vendored:check` is the CI drift gate. Behavior changes (and their tests) land in the library first, then re-sync — never edit these copies in place. `withTimeout`/`withRetry` from here are used at every external call site.
+- **`src/vendor/runtime/`** — vendored `@nanohype/runtime` modules (`resilience.ts`, `registry.ts`, `pii.ts`, `guardrails.ts`, `workos-directory.ts`), byte-identical copies of `nanohype/library/runtime/src` — the same consumption model as the vendored `chart/charts/tenant-chart-base`. Copies are byte-identical to nanohype at the commit pinned in `scripts/vendored.json`. `npm run sync:vendored -- --ref=<sha>` re-vendors and moves the pin together, so the recorded commit and the bytes on disk cannot describe different things; `npm run sync:vendored:check` is the CI drift gate and reads upstream at that pin, so a merge in nanohype never turns this repo's required check red. `npm run sync:vendored:freshness` asks whether the pin has fallen behind, weekly and off the blocking path. Behavior changes (and their tests) land in the library first, then re-sync — never edit these copies in place. `withTimeout`/`withRetry` from here are used at every external call site.
 - **`src/api/`** — Fastify server. Every route (except `/health`) gated by JWT middleware using `jose` against the WorkOS JWKS. Bodies validated with Zod. SIGTERM handler drains in-flight requests.
 - **`web/`** — Next.js App Router. `/review/[draftId]` page with inline edit, live edit-rate indicator, approve-and-send action. Uses WorkOS AuthKit for authentication.
 - **`src/data/`** — Postgres-backed `DraftRepository` and `AuditWriter` implementations. Migrations under `migrations/`.
@@ -83,8 +83,11 @@ npm run test:watch        # interactive watch
 npm run migrate:up        # Apply pending migrations to DATABASE_URL
 npm run migrate:down      # Roll back most recent migration
 
-npm run sync:vendored                # re-sync vendored copies (runtime, config, chart base) from ../nanohype
-npm run sync:vendored:check          # CI drift gate: vendored copies match the source of truth
+npm run sync:vendored                # re-vendor runtime, config + chart base from nanohype at the pinned commit
+npm run sync:vendored -- --ref=<sha> # adopt a newer library: re-vendor and move the pin together
+npm run sync:vendored:check          # blocking gate: vendored bytes == nanohype at the pinned commit
+npm run sync:vendored:freshness      # scheduled-only: has the pin fallen behind upstream? never a merge gate
+npm run sync:vendored:selftest       # break the gate's inputs 17 ways; fail unless every break is rejected
 
 npm run platform:validate            # gate platform.yaml against the vendored CRD schemas, then self-test the gate
 npm run schemas:sync                 # re-vendor schemas/crd/ + re-record the digests
