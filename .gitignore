@@ -9,3 +9,8 @@ cdk.out/
 # Filled-in secret files — seed with `npm run seed:{env}` then leave the file
 # on your laptop. Template (committed) is secrets.template.json.
 digest-pipeline-secrets.*.json
+
+# Working notes. Planning state, campaign status, and remediation ledgers stay
+# out of the repo — a published record of what a repo scored and how it got
+# fixed is the accretion evidence the greenfield doctrine exists to prevent.
+.plans/
