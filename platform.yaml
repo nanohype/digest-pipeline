@@ -93,7 +93,7 @@ spec:
     # ID (bedrock-model-scoping inline policy over the baseline grant); the
     # entry matches what the app's config invokes.
     allowedModels:
-      - anthropic.claude-sonnet-4-6 # BEDROCK_MODEL_ID — newsletter generation
+      - anthropic.claude-sonnet-5 # BEDROCK_MODEL_ID — newsletter generation
     # Escape hatch for grants outside the datastore + capability vocabularies.
     # S3 access rides spec.datastores and SES send rides capabilities below, so
     # nothing is needed here.
