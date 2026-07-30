@@ -78,7 +78,7 @@ spec:
   tenant: growth
   budget: { name: digest-pipeline }
   identity:
-    allowedModels: [anthropic.claude-sonnet-4-6] # Bedrock invoke is clamped to this
+    allowedModels: [anthropic.claude-sonnet-5] # Bedrock invoke is clamped to this
     extraPolicyArns: [] # escape hatch; substrate + SES grants are operator-generated
     capabilities: [ses] # SES send — operator generates the grant
   compliance: { soc2: true }

@@ -26,7 +26,7 @@ const suite = loadSuite("newsletter.json");
 const configured = (process.env.EVAL_LLM ?? "").trim();
 
 const MODEL_ID =
-  process.env.EVAL_MODEL || process.env.BEDROCK_MODEL_ID || "us.anthropic.claude-sonnet-4-6";
+  process.env.EVAL_MODEL || process.env.BEDROCK_MODEL_ID || "us.anthropic.claude-sonnet-5";
 const REGION = process.env.AWS_REGION || "us-west-2";
 
 const CONFIG: PipelineConfig = {

@@ -513,6 +513,74 @@ function checkChartAttributes(names, chartValues, errors) {
 }
 
 /**
+ * Cross-region inference-profile geo prefixes, mirroring the operator's
+ * `inferenceProfileGeoPrefixes` (platform_model_scoping.go).
+ */
+const GEO_PREFIXES = ["us.", "eu.", "apac.", "us-gov.", "jp.", "au.", "global."];
+
+/** Chart env keys that carry a Bedrock model id the pod will invoke. */
+const MODEL_ENV_KEYS = /^BEDROCK_.*MODEL(_ID)?$/;
+
+/**
+ * Does `allowed` (an entry in spec.identity.allowedModels) grant `invoked`?
+ *
+ * This mirrors the operator's ARN expansion rather than comparing strings,
+ * because the operator is what actually decides. For each entry it emits a
+ * foundation-model ARN and an inference-profile ARN, both with a trailing `*`
+ * (wildcardSuffix), so an entry grants any id that starts with it — and a
+ * geo-prefixed entry additionally grants the de-prefixed foundation id, while a
+ * plain entry additionally grants the `us.`-prefixed profile id.
+ *
+ * Getting this wrong in the permissive direction would make the gate pass a
+ * combination the operator then denies, which is the whole failure this check
+ * exists to prevent.
+ */
+function modelGrantCovers(allowed, invoked) {
+  const geo = GEO_PREFIXES.find((p) => allowed.startsWith(p));
+  const forms = geo ? [allowed, allowed.slice(geo.length)] : [allowed, `us.${allowed}`];
+  return forms.some((f) => invoked.startsWith(f));
+}
+
+/**
+ * Every Bedrock model id the chart renders must be covered by
+ * `spec.identity.allowedModels`.
+ *
+ * The operator clamps this role with an explicit Deny over NotResource, so a
+ * model the chart sets and the CR omits is not a soft failure — it is
+ * AccessDenied on every invoke, in a deployment whose CI is green. The pairing
+ * is invisible to the CRD schema (both sides are free-form strings) and to the
+ * eval tier (CI assumes a different role entirely), so this is the only place
+ * the two can be held together.
+ *
+ * This exact drift shipped to a sibling tenant: its chart moved to a new model
+ * and `allowedModels` stayed on the old one, so every inference call in
+ * production returned AccessDenied while nothing in CI went red.
+ *
+ * Skipped when the Platform declares `allowedModelFamilies` instead: that is a
+ * prefix vocabulary with different semantics, and the CRD already forbids
+ * declaring both.
+ */
+function checkModelCoverage(objects, chartValues, errors) {
+  const platform = objects.find((o) => o.kind === "Platform");
+  const identity = platform?.spec?.identity ?? {};
+  const allowed = identity.allowedModels;
+  if (!Array.isArray(allowed) || allowed.length === 0) return;
+  if (identity.allowedModelFamilies?.length > 0) return;
+
+  for (const { file, values } of chartValues) {
+    for (const [key, invoked] of Object.entries(values?.env ?? {})) {
+      if (!MODEL_ENV_KEYS.test(key) || typeof invoked !== "string" || invoked === "") continue;
+      if (allowed.some((a) => modelGrantCovers(a, invoked))) continue;
+      errors.push(
+        `chart/${file}: env.${key}=\`${invoked}\` is not covered by ` +
+          `Platform.spec.identity.allowedModels [${allowed.join(", ")}] — the operator denies ` +
+          "every model outside that list, so this renders a pod that cannot invoke its own model",
+      );
+    }
+  }
+}
+
+/**
  * The whole gate over already-parsed documents. Pure and synchronous so
  * `--self-test` can run it repeatedly over mutated copies.
  */
@@ -528,6 +596,7 @@ function validate(documents, registry, chartValues) {
   }
   const names = checkConsistency(objects, errors);
   checkChartAttributes(names, chartValues, errors);
+  checkModelCoverage(objects, chartValues, errors);
   return { errors, objects, names };
 }
 
@@ -589,6 +658,47 @@ function selfTest(documents, registry, chartValues) {
       failures.push(`${name} (gate reported: ${errors.join("; ") || "no errors"})`);
     }
   }
+
+  // The model-coverage check reads the chart, so it is exercised by moving the
+  // chart's model rather than by mutating the CR — the direction the drift
+  // actually travels, since the chart is what gets bumped on a model change.
+  const withModel = (invoked) =>
+    chartValues.map(({ file, values }) => ({
+      file,
+      values: { ...values, env: { ...values.env, BEDROCK_MODEL_ID: invoked } },
+    }));
+
+  const modelCases = [
+    {
+      name: "a chart model id allowedModels does not grant",
+      chart: withModel("us.anthropic.claude-opus-5"),
+      expect: /is not covered by/,
+    },
+    {
+      name: "a chart model on a geo the CR's bare entry does not imply",
+      // A bare entry expands to the foundation ARN plus the `us.` profile ARN
+      // only, so an `eu.`-prefixed invoke is genuinely denied — the case an
+      // operator hits by overriding the profile prefix per env and forgetting
+      // to widen the CR.
+      chart: withModel("eu.anthropic.claude-sonnet-5"),
+      expect: /is not covered by/,
+    },
+  ];
+  for (const { name, chart, expect } of modelCases) {
+    const errs = validate(clone(), registry, chart).errors;
+    const matched = errs.find((e) => expect.test(e));
+    out(`  ${matched ? "PASS" : "FAIL"}  rejects: ${name}`);
+    if (matched) out(`          → ${matched}`);
+    else failures.push(`${name} (gate reported: ${errs.join("; ") || "no errors"})`);
+  }
+
+  // The permissive direction matters as much: a bare CR entry must still accept
+  // the `us.` profile the chart invokes, or the gate would reject the committed
+  // pairing and get relaxed until it accepted everything.
+  const bareOk = validate(clone(), registry, withModel("us.anthropic.claude-sonnet-5")).errors;
+  const bareClean = !bareOk.some((e) => /is not covered by/.test(e));
+  out(`  ${bareClean ? "PASS" : "FAIL"}  accepts: the us. profile a bare CR entry implies`);
+  if (!bareClean) failures.push("a bare allowedModels entry did not cover its us. profile");
 
   // The OTel attribute cross-check is the one rule that reaches outside
   // platform.yaml, so it is exercised from the other side.

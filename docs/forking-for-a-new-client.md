@@ -190,7 +190,7 @@ The weekly `CronJob` runs in production at the next Friday 09:00 UTC after sync.
 - **Section caps** (`src/pipeline/ai/ranker.ts`) — 5 items per section by default. Longer company, longer newsletter.
 - **Ranker weights** (`src/pipeline/ai/ranker.ts`) — age decay, engagement, metadata completeness. Tune if the generated output overweights PR activity vs. Linear closures vs. Slack wins in a way that doesn't feel right.
 - **Voice-baseline corpus size** — the generator loads every object under `baseline/` and concatenates them. Target length is implicit in the Bedrock context window; ~5-10 full examples is sensible, dozens starts saturating context.
-- **Bedrock model ID** — default `us.anthropic.claude-sonnet-4-6` (US cross-region inference profile, on-demand). Switch to `eu.anthropic.claude-sonnet-4-6` or `ap.anthropic.claude-sonnet-4-6` outside the US, or to a bare model ID (`anthropic.claude-sonnet-4-6`) if you have provisioned-throughput capacity. See [`troubleshooting.md`](troubleshooting.md) § "Bedrock errors".
+- **Bedrock model ID** — default `us.anthropic.claude-sonnet-5` (US cross-region inference profile, on-demand). Switch to `eu.anthropic.claude-sonnet-5` in eu-central-1, `au.anthropic.claude-sonnet-5` in ap-southeast-2, or `global.anthropic.claude-sonnet-5` elsewhere. There is no bare-ID option — the current Claude family is inference-profile-only. See [`troubleshooting.md`](troubleshooting.md) § "Bedrock errors".
 - **Approval UI copy** (`web/components/*.tsx`, `web/app/review/[draftId]/page.tsx`) — the "Approve & Send" button copy, the confirmation dialog wording. Customer-visible UX; change to match your tone.
 
 ## Support contract
