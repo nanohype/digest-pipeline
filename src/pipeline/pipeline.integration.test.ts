@@ -2,7 +2,7 @@
  * Integration test: the weekly orchestrator, end to end.
  *
  * This drives the real `runPipeline` with fakes only at the process edges —
- * the four source SDKs, the WorkOS directory, Bedrock, Postgres and Slack.
+ * the four source SDKs, the WorkOS directory, the model gateway, Postgres and Slack.
  * Everything between them runs for real: the aggregator registry, all four
  * aggregators, the PII filter, the deduper, the ranker, and the audit ledger
  * (a real AuditWriter over a fake DatabaseClient), so an event the ledger
@@ -10,15 +10,15 @@
  *
  * The two behaviors that only exist in the orchestrator are the reason this
  * file is worth its length. "One failed source does not fail the run" and
- * "Bedrock failing degrades to a skeleton rather than losing the week" are
+ * "the model failing degrades to a skeleton rather than losing the week" are
  * both claims the README makes and both are invisible to a unit test of any
  * single module — they are properties of how the modules are wired, which is
  * the definition of what an integration test is for.
  */
 
 import { describe, expect, it, vi } from "vitest";
-import { AuditWriter, type DatabaseClient } from "./audit.js";
 import type { AggregatorConfig, AggregatorServices } from "./aggregators/types.js";
+import { AuditWriter, type DatabaseClient } from "./audit.js";
 import {
   type PipelineDeps,
   type PipelineDraftStore,
@@ -348,9 +348,9 @@ describe("runPipeline — one source down", () => {
   });
 });
 
-describe("runPipeline — Bedrock down", () => {
+describe("runPipeline — model gateway down", () => {
   it("posts a skeleton draft rather than losing the week", async () => {
-    const h = harness({ prs: [mergedPR()], generatorFails: "Bedrock throttled" });
+    const h = harness({ prs: [mergedPR()], generatorFails: "model gateway throttled" });
     const result = await runPipeline(h.deps);
 
     expect(result.status).toBe("PARTIAL");
@@ -365,19 +365,19 @@ describe("runPipeline — Bedrock down", () => {
   });
 
   it("writes PIPELINE_FAILURE and alerts a human with the reason", async () => {
-    const h = harness({ generatorFails: "Bedrock throttled" });
+    const h = harness({ generatorFails: "model gateway throttled" });
     await runPipeline(h.deps);
 
     const failure = h.events.find((e) => e.eventType === "PIPELINE_FAILURE");
     expect(failure).toMatchObject({
       actor: "system",
-      payload: { phase: "generation", error: "Bedrock throttled", fallback: "skeleton" },
+      payload: { phase: "generation", error: "model gateway throttled", fallback: "skeleton" },
     });
-    expect(h.alerts[0].message).toContain("Bedrock throttled");
+    expect(h.alerts[0].message).toContain("model gateway throttled");
   });
 
   it("records zero tokens rather than a stale count when no model call landed", async () => {
-    const h = harness({ generatorFails: "Bedrock throttled" });
+    const h = harness({ generatorFails: "model gateway throttled" });
     await runPipeline(h.deps);
 
     const drafted = h.events.find((e) => e.eventType === "DRAFT_GENERATED");
@@ -385,7 +385,7 @@ describe("runPipeline — Bedrock down", () => {
   });
 
   it("still notifies the reviewer, because a skeleton nobody is told about is a lost week", async () => {
-    const h = harness({ generatorFails: "Bedrock throttled" });
+    const h = harness({ generatorFails: "model gateway throttled" });
     const result = await runPipeline(h.deps);
 
     expect(h.notified).toHaveLength(1);

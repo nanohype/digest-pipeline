@@ -1,4 +1,4 @@
-import { BedrockRuntimeClient } from "@aws-sdk/client-bedrock-runtime";
+import Anthropic from "@anthropic-ai/sdk";
 import { beforeAll, describe, expect, it } from "vitest";
 import { NewsletterGenerator } from "../src/pipeline/ai/generator.js";
 import type { VoiceBaselineService } from "../src/pipeline/services/voice-baseline.js";
@@ -25,16 +25,21 @@ import {
 const suite = loadSuite("newsletter.json");
 const configured = (process.env.EVAL_LLM ?? "").trim();
 
-const MODEL_ID =
-  process.env.EVAL_MODEL || process.env.BEDROCK_MODEL_ID || "us.anthropic.claude-sonnet-5";
-const REGION = process.env.AWS_REGION || "us-west-2";
+// The generator speaks the Anthropic Messages API to a ModelGateway, so the eval
+// needs one to point at. Upstream ships `aigw`, a standalone binary that runs the
+// same translation without Kubernetes — that is what a CI run should stand up.
+const GATEWAY = process.env.MODEL_GATEWAY_ENDPOINT ?? "";
+// A route on that gateway. The gateway decides which model the route resolves
+// to, which is the point: the eval measures the route production uses rather
+// than a model id duplicated here.
+const ROUTE = process.env.EVAL_MODEL_ROUTE || "default";
 
 const CONFIG: PipelineConfig = {
   slackReviewChannelId: "C-EVAL",
   backupApproverIds: [],
   voiceBaselineBucket: "eval-voice-baseline",
   rawAggregationsBucket: "eval-raw-aggregations",
-  llm: { modelId: MODEL_ID, region: REGION, maxTokens: 2048, temperature: 0.4 },
+  llm: { route: ROUTE, gatewayEndpoint: GATEWAY, maxTokens: 2048, temperature: 0.4 },
   schedule: {
     timezone: "America/Los_Angeles",
     dayOfWeek: "Friday",
@@ -68,10 +73,17 @@ describe.skipIf(configured === "")(`eval: ${suite.name}`, () => {
   const results = new Map<string, GradeResult>();
 
   beforeAll(async () => {
-    if (configured !== "bedrock") {
+    if (configured !== "gateway") {
       throw new Error(
-        `EVAL_LLM="${configured}" is not supported here — this generator speaks Bedrock InvokeModel directly. ` +
-          `Use EVAL_LLM=bedrock, or unset it to skip the model tier.`,
+        `EVAL_LLM="${configured}" is not supported here — this generator speaks the Anthropic ` +
+          `Messages API to a ModelGateway. Use EVAL_LLM=gateway, or unset it to skip the model tier.`,
+      );
+    }
+    // Fail here rather than at the first case: an unset endpoint would otherwise
+    // surface as N identical connection errors that read like model failures.
+    if (GATEWAY === "") {
+      throw new Error(
+        "EVAL_LLM=gateway requires MODEL_GATEWAY_ENDPOINT — the base URL of a reachable ModelGateway.",
       );
     }
 
@@ -79,13 +91,18 @@ describe.skipIf(configured === "")(`eval: ${suite.name}`, () => {
     const generator = new NewsletterGenerator({
       config: CONFIG,
       voiceBaseline,
-      bedrock: new BedrockRuntimeClient({ region: REGION, maxAttempts: 1 }),
+      model: new Anthropic({
+        baseURL: GATEWAY,
+        // The gateway holds the upstream credential; this is never read.
+        apiKey: "unused-the-gateway-holds-the-credential",
+        maxRetries: 0,
+      }),
       // biome-ignore lint/suspicious/noExplicitAny: a two-method S3 stand-in, not a real client
       s3: s3 as any,
     });
 
     // Bounded concurrency: a golden set that grows would otherwise open one
-    // model call per case at once and trip Bedrock throttling, which reads as
+    // model call per case at once and trip upstream throttling, which reads as
     // an eval failure rather than what it is. Drafts are long, so keep it low.
     const queue = [...suite.cases];
     const workers = Array.from({ length: 3 }, async () => {

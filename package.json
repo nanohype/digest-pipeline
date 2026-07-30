@@ -1,7 +1,7 @@
 {
   "name": "digest-pipeline",
   "version": "0.1.0",
-  "description": "Automated weekly newsletter pipeline \u2014 aggregates GitHub/Linear/Notion/Slack, drafts with Bedrock, WorkOS-gated approval and SES send",
+  "description": "Automated weekly newsletter pipeline — aggregates GitHub/Linear/Notion/Slack, drafts with Bedrock, WorkOS-gated approval and SES send",
   "type": "module",
   "engines": {
     "node": ">=24"
@@ -41,7 +41,7 @@
     "chart:check-env": "node scripts/check-chart-env-covers-config.mjs"
   },
   "dependencies": {
-    "@aws-sdk/client-bedrock-runtime": "^3.700.0",
+    "@anthropic-ai/sdk": "^0.115.0",
     "@aws-sdk/client-s3": "^3.700.0",
     "@aws-sdk/client-secrets-manager": "^3.700.0",
     "@aws-sdk/client-ses": "^3.700.0",

@@ -223,8 +223,16 @@ networkPolicy:
       ports:
         - protocol: UDP
           port: 53
-    # HTTPS — Bedrock, S3, Secrets Manager, SES, WorkOS, GitHub, Linear,
-    # Notion, Slack (all external aggregator sources + AWS APIs)
+    # HTTPS — S3, Secrets Manager, SES, WorkOS, GitHub, Linear, Notion, Slack
+    # (the external aggregator sources plus the AWS APIs this app calls directly).
+    #
+    # NOT the model: inference goes to the in-cluster ModelGateway on 8080, which
+    # the operator's tenant-egress policy allows. This rule is deliberately broad
+    # because the aggregators reach arbitrary SaaS endpoints, so it cannot
+    # distinguish Bedrock from GitHub — meaning the gateway is this app's
+    # code path to a model, not a network-enforced one. A tenant with no
+    # general-internet need gets the stronger property for free by dropping this
+    # rule.
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0
@@ -253,15 +261,14 @@ networkPolicy:
 env:
   # Non-secret config shared by all three services.
   AWS_REGION: us-east-1
-  # The `us.` prefix makes this a cross-region inference profile, and it is
-  # load-bearing: the current Claude family reports
-  # inferenceTypesSupported: [INFERENCE_PROFILE], so InvokeModel rejects the bare
-  # foundation-model id outright ("Invocation of model ID
-  # anthropic.claude-sonnet-5 with on-demand throughput isn't supported").
-  # Bedrock also marks superseded models Legacy
-  # and starts refusing them once an account has not called them for 30 days,
-  # so this pin rots on its own. `npm run eval` is what notices either.
-  BEDROCK_MODEL_ID: us.anthropic.claude-sonnet-5
+  # The Platform's ModelGateway. Published on ModelGateway.status.endpoint; the
+  # operator derives it from the Platform name, so it is stable per tenant.
+  MODEL_GATEWAY_ENDPOINT: http://digest-pipeline-gateway.tenants-digest-pipeline.svc.cluster.local:8080
+  # A route on that gateway, not a Bedrock model id. The ModelGateway CR maps the
+  # route to a concrete inference profile and rewrites the request upstream, so
+  # model selection — and the `us.` inference-profile prefix the Claude family
+  # requires — lives in one CR instead of in every tenant's chart values.
+  MODEL_ROUTE: default
   LOG_LEVEL: info
   NODE_ENV: production
   # OTel — exports to the cluster-level OpenTelemetry Collector (no per-pod

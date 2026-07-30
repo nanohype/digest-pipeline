@@ -93,7 +93,7 @@ spec:
     # ID (bedrock-model-scoping inline policy over the baseline grant); the
     # entry matches what the app's config invokes.
     allowedModels:
-      - anthropic.claude-sonnet-5 # BEDROCK_MODEL_ID — newsletter generation
+      - anthropic.claude-sonnet-5 # the ModelGateway route's model — newsletter generation
     # Escape hatch for grants outside the datastore + capability vocabularies.
     # S3 access rides spec.datastores and SES send rides capabilities below, so
     # nothing is needed here.
@@ -134,3 +134,39 @@ spec:
       kind: objectStore
     - name: raw-aggregations
       kind: objectStore
+---
+# The model plane. The app names a route, never a model: this CR maps `default`
+# to a concrete Bedrock inference profile, and the gateway rewrites the request
+# upstream. Model selection, the `us.` inference-profile prefix the Claude family
+# requires, the guardrail and the rate limit all live here rather than in chart
+# values, so changing a model is a CR edit rather than a redeploy of the app.
+#
+# The operator reconciles this into an Envoy AI Gateway data plane in
+# `tenants-digest-pipeline`, running under the tenant ServiceAccount — so the
+# gateway reaches Bedrock as this tenant and the app itself holds no AWS model
+# credential. `MODEL_GATEWAY_ENDPOINT` in the chart is this gateway's published
+# endpoint.
+apiVersion: agents.nanohype.dev/v1alpha1
+kind: ModelGateway
+metadata:
+  name: digest-pipeline
+  namespace: tenants-growth
+spec:
+  platformRef:
+    name: digest-pipeline
+  routes:
+    # The weekly newsletter draft. One route, because the pipeline makes exactly
+    # one model call per run.
+    - name: default
+      modelSource: foundation
+      modelFamily: anthropic
+      modelId: anthropic.claude-sonnet-5
+      # The current Claude family reports inferenceTypesSupported:
+      # [INFERENCE_PROFILE], so the bare foundation-model id is rejected by
+      # InvokeModel. Outside the US switch this to `eu.` / `global.` and widen
+      # spec.identity.allowedModels on the Platform to match.
+      crossRegionProfile: us.anthropic.claude-sonnet-5
+      # The pipeline runs once a week and makes one call. A limit this loose is
+      # a runaway guard, not a quota — it exists so a retry storm cannot bill
+      # unbounded, and any normal run is nowhere near it.
+      rateLimit: 30

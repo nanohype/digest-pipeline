@@ -14,7 +14,7 @@ The slow-moving, per-tenant AWS substrate is declared in `spec.datastores` and p
 export AWS_REGION=us-west-2
 ```
 
-- **Bedrock model access** must be enabled in the deployment region for the Claude model the inference profile fans out to. Default is `us.anthropic.claude-sonnet-5` (US cross-region inference profile); request access for `anthropic.claude-sonnet-5` in **all three** US regions the profile spans (us-east-1, us-east-2, us-west-2) so AWS can route to whichever has spare capacity. Outside the US, set `BEDROCK_MODEL_ID=eu.anthropic.claude-sonnet-5` (or `global.` in Asia Pacific) in the per-env chart values, add the same ID to `spec.identity.allowedModels` in `platform.yaml`, and request access in the matching regions.
+- **Bedrock model access** must be enabled in the deployment region for the Claude model the inference profile fans out to. Default is `us.anthropic.claude-sonnet-5` (US cross-region inference profile); request access for `anthropic.claude-sonnet-5` in **all three** US regions the profile spans (us-east-1, us-east-2, us-west-2) so AWS can route to whichever has spare capacity. Outside the US, set the route's `crossRegionProfile` to `eu.anthropic.claude-sonnet-5` (or `global.` in Asia Pacific) on the `ModelGateway` CR, add the same ID to `spec.identity.allowedModels` in `platform.yaml`, and request access in the matching regions. The app is unaffected — it names a route, not a model.
 
   Enable via AWS console → Bedrock → Model access → Request access. The pipeline fails at run-time with `AccessDeniedException` during `phase.generate` if access is missing, falls back to a raw skeleton draft, and audits `PIPELINE_FAILURE`.
 

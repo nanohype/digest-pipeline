@@ -325,13 +325,13 @@ The API's `SecretsClient` caches approvers with a 5-minute TTL, so the new value
 
 **Cause:** Bedrock model access isn't enabled in the deployment region.
 
-**Fix:** AWS console → Bedrock → Model access → Request access for `anthropic.claude-sonnet-5` (or whatever `BEDROCK_MODEL_ID` resolves to).
+**Fix:** AWS console → Bedrock → Model access → Request access for `anthropic.claude-sonnet-5` (or whatever the `ModelGateway` route resolves to). The gateway makes the call, so the grant it needs is on the tenant role the gateway runs as.
 
 ### `Invocation of model ID anthropic.claude-sonnet-5 with on-demand throughput isn't supported`
 
 **Cause:** You're invoking a bare foundation-model ID (no geo prefix). Bedrock reports `inferenceTypesSupported: [INFERENCE_PROFILE]` for the whole current Claude family, so there is no on-demand path and no provisioned-throughput path — a cross-region inference profile is the only way to invoke these models.
 
-**Fix (already in the defaults):** `BEDROCK_MODEL_ID` defaults to `us.anthropic.claude-sonnet-5`, and `platform.yaml` lists the bare ID in `spec.identity.allowedModels`. The operator expands a bare entry into both the foundation-model ARN and the `us.` inference-profile ARN, and writes them into the tenant role's `bedrock-model-scoping` inline policy:
+**Fix (already in the defaults):** the `ModelGateway` route resolves to `us.anthropic.claude-sonnet-5`, and `platform.yaml` lists the bare ID in `spec.identity.allowedModels`. The operator expands a bare entry into both the foundation-model ARN and the `us.` inference-profile ARN, and writes them into the tenant role's `bedrock-model-scoping` inline policy:
 
 ```jsonc
 // <env>-digest-pipeline-tenant, bedrock-model-scoping (resources for bedrock:InvokeModel)
@@ -343,7 +343,7 @@ The API's `SecretsClient` caches approvers with a 5-minute TTL, so the new value
 
 If you see this error after a sync, the pods picked up an older revision with a bare model ID. Force a fresh roll: `kubectl -n tenants-digest-pipeline rollout restart deploy/digest-pipeline-api` (and re-run the pipeline CronJob).
 
-Outside the US, override the profile prefix per env: set `BEDROCK_MODEL_ID=eu.anthropic.claude-sonnet-5` (or `global.` in Asia Pacific) in `chart/values-{env}.yaml`. The scoping policy is generated from `spec.identity.allowedModels`, so add the same geo-prefixed ID there too — a bare entry only implies the `us.` profile.
+Outside the US, override the profile prefix on the `ModelGateway` route: `crossRegionProfile: eu.anthropic.claude-sonnet-5` (or `global.` in Asia Pacific). The scoping policy is generated from `spec.identity.allowedModels`, so add the same geo-prefixed ID there too — a bare entry only implies the `us.` profile.
 
 There is no way to skip the profile for this model: the bare foundation-model ARN stays in the IAM grant (the operator emits both), but `InvokeModel` on the bare ID is refused regardless of the policy, because the model has no non-profile inference type.
 
