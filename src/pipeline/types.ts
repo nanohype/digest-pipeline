@@ -82,8 +82,10 @@ export interface PipelineConfig {
   voiceBaselineBucket: string;
   rawAggregationsBucket: string;
   llm: {
-    modelId: string;
-    region: string;
+    /** A route name on the Platform's ModelGateway, not a Bedrock model id. */
+    route: string;
+    /** Base URL of the ModelGateway; the Messages API path is appended to it. */
+    gatewayEndpoint: string;
     maxTokens: number;
     temperature: number;
   };

@@ -1,6 +1,6 @@
 # digest-pipeline
 
-Automated weekly newsletter pipeline — aggregates cross-team activity, drafts with Claude via Bedrock, and gates on human approval before SES send.
+Automated weekly newsletter pipeline — aggregates cross-team activity, drafts with Claude through the Platform's ModelGateway, and gates on human approval before SES send.
 
 > Internal service handle: `digest-pipeline`. The npm package, the OTel `service.name` / `agents.platform`, the `digest-pipeline.*` metric names + Helm helpers + labels, and the `digest-pipeline/<env>/*` secret prefixes all stay `digest-pipeline` — the platform name the operator and the `tenant-substrate` module compose the tenant's per-datastore resource names from.
 
@@ -28,7 +28,7 @@ Runs every Friday morning. Pulls from GitHub, Linear, Notion, and Slack; resolve
  │  → WorkOS Directory identity resolver          │
  │  → PII filter (pre AND post generation)       │
  │  → Ranker + deduper                           │
- │  → NewsletterGenerator (Bedrock + voice)      │
+ │  → NewsletterGenerator (gateway + voice)      │
  │  → Draft written to Aurora + audit event      │
  └──────────┬────────────────────────────────────┘
             │
@@ -55,7 +55,7 @@ Core insight: **every mutation to a draft is an immutable audit event**. Human e
 - **`src/pipeline/aggregators/`** — One module per source. Each exports a factory that registers with the aggregator registry (`registry.ts`) so adding a source never edits the orchestrator. All external calls wrapped in `withTimeout` (8s default, 15s for Slack history) + `withRetry(3, jitter)`. Items are passed through `sanitizeSourceItem` before leaving the aggregator so the LLM prompt builder only ever sees PII-filtered content (enforced by the `SanitizedSourceItem` brand).
 - **`src/pipeline/filters/pii.ts`** — Redaction policy is the vendored org-wide catalog (`src/vendor/runtime/pii.ts`): secrets/tokens (JWT, AWS keys, GitHub PATs, Slack tokens, API keys), SSN, credit cards, compensation, performance/HR, HR case IDs, health, DOB, contact info, AWS account ids, customer/infrastructure identifiers. Replacements are typed per label (`[EMAIL]`, `[COMPENSATION]`, …). `assertNoPii` runs at two checkpoints: aggregation (post-piiFilter) and post-LLM output.
 - **`src/pipeline/identity/workos.ts`** — WorkOS Directory Sync-backed identity resolver with 4-hour in-memory cache and the GitHub/Linear/Slack external-id → custom-attribute mapping, over the vendored directory client (`src/vendor/runtime/workos-directory.ts`). Maps external IDs to canonical `{displayName, role, team}` via custom attributes on directory users.
-- **`src/pipeline/ai/`** — `ranker.ts` scores items on age decay + engagement + metadata completeness. `generator.ts` wraps Bedrock Claude with voice-baseline few-shots loaded from S3, PII assertion at both ends, and `withRetry` around the Bedrock call. The assembled item block is fenced with the vendored `guardrails.ts` before it reaches the prompt: item titles and descriptions come from Slack, GitHub, Linear and Notion, so the `SanitizedSourceItem` brand guarantees they carry no PII but says nothing about whether they carry instructions. `evals/` measures whether the model holds that line.
+- **`src/pipeline/ai/`** — `ranker.ts` scores items on age decay + engagement + metadata completeness. `generator.ts` calls Claude through the Platform's ModelGateway with voice-baseline few-shots loaded from S3, PII assertion at both ends, and `withRetry` around the model call. The assembled item block is fenced with the vendored `guardrails.ts` before it reaches the prompt: item titles and descriptions come from Slack, GitHub, Linear and Notion, so the `SanitizedSourceItem` brand guarantees they carry no PII but says nothing about whether they carry instructions. `evals/` measures whether the model holds that line.
 - **`src/pipeline/audit.ts`** — Awaited-only audit writes against a `DatabaseClient` interface. Zero fire-and-forget.
 - **`src/vendor/runtime/`** — vendored `@nanohype/runtime` modules (`resilience.ts`, `registry.ts`, `pii.ts`, `guardrails.ts`, `workos-directory.ts`), byte-identical copies of `nanohype/library/runtime/src` — the same consumption model as the vendored `chart/charts/tenant-chart-base`. Copies are byte-identical to nanohype at the commit pinned in `scripts/vendored.json`. `npm run sync:vendored -- --ref=<sha>` re-vendors and moves the pin together, so the recorded commit and the bytes on disk cannot describe different things; `npm run sync:vendored:check` is the CI drift gate and reads upstream at that pin, so a merge in nanohype never turns this repo's required check red. `npm run sync:vendored:freshness` asks whether the pin has fallen behind, weekly and off the blocking path. Behavior changes (and their tests) land in the library first, then re-sync — never edit these copies in place. `withTimeout`/`withRetry` from here are used at every external call site.
 - **`src/api/`** — Fastify server. Every route (except `/health`) gated by JWT middleware using `jose` against the WorkOS JWKS. Bodies validated with Zod. SIGTERM handler drains in-flight requests.
@@ -105,8 +105,9 @@ All config via environment variables, validated with Zod. See `.env.example`.
 
 Key ones:
 
-- `AWS_REGION` — for Bedrock, S3, SES, Secrets Manager (default `us-east-1`)
-- `BEDROCK_MODEL_ID` — a cross-region inference profile id (the `us.` prefix is load-bearing; InvokeModel rejects a bare foundation-model id)
+- `AWS_REGION` — for S3, SES, Secrets Manager (default `us-east-1`)
+- `MODEL_GATEWAY_ENDPOINT` — the Platform's ModelGateway (`ModelGateway.status.endpoint`). The app holds no AWS model credential; the gateway signs for Bedrock with its own Pod Identity
+- `MODEL_ROUTE` — a route name on that gateway, not a Bedrock model id. The ModelGateway CR maps it to a concrete inference profile
 - `WORKOS_ISSUER` / `WORKOS_CLIENT_ID` — JWT validation against WorkOS JWKS
 - `APPROVERS_SECRET_ID` — Secrets Manager secret with `{cosUserId, backupApproverIds[]}`
 - `WORKOS_DIRECTORY_SECRET_ID` — Secrets Manager secret with `{apiKey, directoryId}` for WorkOS Directory Sync
@@ -124,7 +125,7 @@ Go subsystem later is "emit JSON to stdout, done" with zero per-language
 transport plumbing.
 
 - **Bootstrap**: `src/common/otel-bootstrap.ts` loaded via `--import` in the pipeline + API Dockerfiles. Web uses `web/instrumentation.ts` (Next.js convention) for server-side and `web/lib/otel-browser.ts` (mounted via `OtelInit` client component in `app/layout.tsx`) for browser-side.
-- **Tracer**: `getTracer()` from `src/common/tracer.ts`. Pipeline phases (`pipeline.run`, `phase.aggregate`, `phase.dedupe`, `phase.rank`, `phase.generate`, `phase.audit_and_notify`) and generator sub-phases (`bedrock.load_voice_baseline`, `bedrock.invoke_model`, `bedrock.validate_output`) are explicit spans.
+- **Tracer**: `getTracer()` from `src/common/tracer.ts`. Pipeline phases (`pipeline.run`, `phase.aggregate`, `phase.dedupe`, `phase.rank`, `phase.generate`, `phase.audit_and_notify`) and generator sub-phases (`generator.load_voice_baseline`, `model.messages`, `generator.validate_output`) are explicit spans.
 - **Metrics**: defined in `src/common/metrics.ts`. `digest-pipeline.run.duration_ms{status}`, `digest-pipeline.source.{items,failure}{source}`, `digest-pipeline.bedrock.{tokens{kind,model},fallback}`, `digest-pipeline.draft.edit_rate{run_id}`, `digest-pipeline.email.sent{run_id}`. Exported OTLP to the cluster's OpenTelemetry Collector → Amazon Managed Prometheus; the `prometheusrule.yaml` alerts and the `grafana-dashboard.yaml` dashboard (`chart/dashboards/digest-pipeline.json`) query them.
 - **Logs**: Pino → stdout → cluster OpenTelemetry Collector → Loki. Trace context (`trace_id`, `span_id`) is auto-injected into log records by `@opentelemetry/instrumentation-pino`, so every line carries the trace_id you need to jump into Tempo. One shared Pino factory (`getLogger()`) is used by both the pipeline orchestrator and the Fastify API (`Fastify({ logger: getLogger() })`); the `OTEL_SERVICE_NAME` env var drives the `service` field, so the same factory tags pipeline logs `digest-pipeline-pipeline` and API logs `digest-pipeline-api`.
 - **Resource attributes**: `agents.tenant=growth` + `agents.platform=digest-pipeline` ride on every span/metric, keying the cluster collector pipeline + dashboard queries.
@@ -144,7 +145,7 @@ No telemetry secret. The gateway's OTLP receiver takes no authentication in-clus
 - Provider registry pattern (`createRegistry<T>`) for aggregators and identity resolvers
 - Resilience contract: every external call uses `withTimeout` (8s default, 15s for Slack history) + `withRetry(3, jitter)`
 - Audit writes are always awaited
-- No framework lock-in for LLMs — direct Bedrock SDK via a thin interface
+- No framework lock-in for LLMs — the Anthropic Messages client against the Platform's gateway, injected as a port
 
 ## Testing
 
@@ -170,7 +171,7 @@ Coverage is enforced by `npm test` itself, not by a separate opt-in flag, agains
 - `fastify` — API server
 - `jose` — JWT validation against WorkOS JWKS
 - `zod` — input validation
-- `@aws-sdk/client-bedrock-runtime` — Claude via Bedrock
+- `@anthropic-ai/sdk` — Claude, through the Platform's ModelGateway
 - `@aws-sdk/client-s3` — voice baseline corpus
 - `@aws-sdk/client-secrets-manager` — approver list, WorkOS directory credentials, provider tokens
 - `@aws-sdk/client-ses` — newsletter send

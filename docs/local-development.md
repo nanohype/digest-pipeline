@@ -53,7 +53,8 @@ The default `DATABASE_URL` in `.env.example` matches this setup. If you prefer a
 
 ```bash
 # .env overrides for local + staging-creds dev:
-BEDROCK_MODEL_ID=us.anthropic.claude-sonnet-5
+MODEL_GATEWAY_ENDPOINT=http://localhost:8080
+MODEL_ROUTE=default
 GITHUB_SECRET_ID=digest-pipeline/staging/github
 LINEAR_SECRET_ID=digest-pipeline/staging/linear
 SLACK_SECRET_ID=digest-pipeline/staging/slack

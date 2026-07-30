@@ -35,9 +35,17 @@ import type { PipelineConfig } from "./types.js";
 
 const PipelineEnvSchema = z.object({
   AWS_REGION: z.string().min(1).default("us-east-1"),
-  BEDROCK_MODEL_ID: z.string().min(1),
-  BEDROCK_MAX_TOKENS: z.coerce.number().int().positive().default(2000),
-  BEDROCK_TEMPERATURE: z.coerce.number().default(0.4),
+  // The Platform's ModelGateway, published on ModelGateway.status.endpoint. The
+  // app talks to this instead of to Bedrock: the gateway holds the AWS identity,
+  // applies the route's guardrail, and is the only path out of the namespace to
+  // a model.
+  MODEL_GATEWAY_ENDPOINT: z.string().url(),
+  // A route name on that gateway, not a Bedrock model id. The gateway rewrites
+  // it to the real inference-profile id, so model selection lives in the
+  // ModelGateway CR rather than in this app's config.
+  MODEL_ROUTE: z.string().min(1),
+  MODEL_MAX_TOKENS: z.coerce.number().int().positive().default(2000),
+  MODEL_TEMPERATURE: z.coerce.number().default(0.4),
   WORKOS_DIRECTORY_SECRET_ID: z.string().min(1),
   DATABASE_URL: z.string().min(1).optional(),
   DATABASE_SECRET_ID: z.string().min(1).optional(),
@@ -124,10 +132,10 @@ async function buildDeps(): Promise<PipelineDeps> {
     voiceBaselineBucket: env.VOICE_BASELINE_BUCKET,
     rawAggregationsBucket: env.RAW_AGGREGATIONS_BUCKET,
     llm: {
-      modelId: env.BEDROCK_MODEL_ID,
-      region: env.AWS_REGION,
-      maxTokens: env.BEDROCK_MAX_TOKENS,
-      temperature: env.BEDROCK_TEMPERATURE,
+      route: env.MODEL_ROUTE,
+      gatewayEndpoint: env.MODEL_GATEWAY_ENDPOINT,
+      maxTokens: env.MODEL_MAX_TOKENS,
+      temperature: env.MODEL_TEMPERATURE,
     },
     schedule: {
       timezone: "America/Los_Angeles",

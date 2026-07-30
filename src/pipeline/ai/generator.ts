@@ -1,10 +1,10 @@
 /**
  * Newsletter Draft Generator
- * Claude via Amazon Bedrock with few-shot voice baseline examples
+ * Claude through the Platform's ModelGateway, with few-shot voice baseline examples
  * Agent: eng-ai
  */
 
-import { BedrockRuntimeClient, InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime";
+import Anthropic from "@anthropic-ai/sdk";
 import { GetObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { z } from "zod";
 import { awsRequestHandler } from "../../common/aws.js";
@@ -21,18 +21,20 @@ import type { PipelineConfig, RankedSection } from "../types.js";
 const tracer = getTracer("digest-pipeline.generator");
 
 const MAX_ITEMS_PER_SECTION = 5;
-// Bedrock model inference is slower than the aggregator calls; S3 voice-baseline
-// reads are quick. Each bounds the AWS SDK socket and backs the withTimeout wrap.
-const BEDROCK_TIMEOUT_MS = 60_000;
+// Model inference is slower than the aggregator calls; S3 voice-baseline reads
+// are quick. Each bounds its client's socket and backs the withTimeout wrap.
+const MODEL_TIMEOUT_MS = 60_000;
 const S3_TIMEOUT_MS = 8_000;
 
-// Claude-on-Bedrock response envelope, scoped to what this generator consumes:
-// the first content block's text (the draft) and the token accounting. `usage`
-// is optional — error shapes omit it. Parsed with `parse` inside the retry so
-// a malformed envelope (e.g. a Bedrock error body) fails the run loudly
-// instead of flowing an empty draft into section validation.
+// What this generator consumes from a Messages response: the first content
+// block's text (the draft) and the token accounting. The SDK types the response,
+// but it types `content` as a union of block kinds — a model that answered with
+// a non-text block would otherwise flow an empty draft into section validation,
+// so the shape is asserted here rather than assumed.
 const CompletionResponseSchema = z.object({
-  content: z.array(z.object({ text: z.string() })).min(1, "Bedrock returned empty content array"),
+  content: z
+    .array(z.object({ type: z.string(), text: z.string().optional() }))
+    .min(1, "the gateway returned an empty content array"),
   usage: z
     .object({
       input_tokens: z.number().optional(),
@@ -46,12 +48,13 @@ const CompletionResponseSchema = z.object({
 export interface NewsletterGeneratorDeps {
   config: PipelineConfig;
   voiceBaseline: VoiceBaselineService;
-  bedrock?: BedrockRuntimeClient;
+  /** Overridable so tests can drive the generator without a gateway. */
+  model?: Anthropic;
   s3?: S3Client;
 }
 
 export class NewsletterGenerator {
-  private bedrock: BedrockRuntimeClient;
+  private model: Anthropic;
   private s3: S3Client;
   private config: PipelineConfig;
   private voiceBaseline: VoiceBaselineService;
@@ -59,19 +62,26 @@ export class NewsletterGenerator {
   constructor(deps: NewsletterGeneratorDeps) {
     this.config = deps.config;
     this.voiceBaseline = deps.voiceBaseline;
-    this.bedrock =
-      deps.bedrock ??
-      new BedrockRuntimeClient({
-        region: deps.config.llm.region,
-        requestHandler: awsRequestHandler(BEDROCK_TIMEOUT_MS),
+    this.model =
+      deps.model ??
+      new Anthropic({
+        baseURL: deps.config.llm.gatewayEndpoint,
+        // The gateway authenticates to Bedrock with its own Pod Identity
+        // credentials, so this app holds no key. The SDK requires the field to
+        // be set, and the gateway ignores it.
+        apiKey: "unused-the-gateway-holds-the-credential",
+        timeout: MODEL_TIMEOUT_MS,
         // withRetry owns retries; keep the SDK to a single attempt so the two
         // layers don't multiply (3 x 3 = 9 calls).
-        maxAttempts: 1,
+        maxRetries: 0,
       });
     this.s3 =
       deps.s3 ??
       new S3Client({
-        region: deps.config.llm.region,
+        // Region resolves from the ambient AWS configuration. The composition
+        // root injects a configured client; this fallback exists for tests and
+        // has no business taking its region from the model's settings, which is
+        // where it used to come from.
         requestHandler: awsRequestHandler(S3_TIMEOUT_MS),
       });
   }
@@ -86,7 +96,7 @@ export class NewsletterGenerator {
       items: s.items.slice(0, MAX_ITEMS_PER_SECTION),
     }));
     const voiceExamples = await tracer.startActiveSpan(
-      "bedrock.load_voice_baseline",
+      "generator.load_voice_baseline",
       async (span) => {
         try {
           const examples = await this.loadVoiceBaseline(runId);
@@ -103,8 +113,8 @@ export class NewsletterGenerator {
     // assembled prompt before sending to Bedrock so any aggregator regression
     // blocks the call rather than leaking into the model's context.
     assertNoPii(userPrompt, runId);
-    const { text, tokensUsed } = await this.callBedrock(runId, systemPrompt, userPrompt);
-    const validatedText = tracer.startActiveSpan("bedrock.validate_output", (span) => {
+    const { text, tokensUsed } = await this.callModel(runId, systemPrompt, userPrompt);
+    const validatedText = tracer.startActiveSpan("generator.validate_output", (span) => {
       try {
         const out = this.validateOutput(runId, text, cappedSections);
         return out;
@@ -161,46 +171,41 @@ export class NewsletterGenerator {
     return `Write this week's newsletter using the data below. Run ID: ${runId}\n\n${fenceUntrusted(sectionBlocks, "aggregated source items")}\n\nWrite the complete newsletter now.`;
   }
 
-  private async callBedrock(
+  private async callModel(
     _runId: string,
     systemPrompt: string,
     userPrompt: string,
   ): Promise<{ text: string; tokensUsed: number }> {
-    // Transient Bedrock errors (throttling, 5xx) are retried with jittered
+    // Transient upstream errors (throttling, 5xx) are retried with jittered
     // exponential backoff. A validation error will still exhaust the budget
     // and throw, but adding a few seconds of delay is cheap for a weekly run.
-    return tracer.startActiveSpan("bedrock.invoke_model", async (span) => {
-      span.setAttribute("model.id", this.config.llm.modelId);
+    return tracer.startActiveSpan("model.messages", async (span) => {
+      span.setAttribute("model.route", this.config.llm.route);
       span.setAttribute("max_tokens", this.config.llm.maxTokens);
       try {
         return await withRetry(
           async () => {
-            const body = JSON.stringify({
-              anthropic_version: "bedrock-2023-05-31",
-              max_tokens: this.config.llm.maxTokens,
-              temperature: this.config.llm.temperature,
-              // Prompt-cache breakpoint on the stable system prefix. The system
-              // prompt embeds the voice-baseline few-shot examples, which are
-              // large and identical across the weekly run and across retries —
-              // marking it ephemeral-cacheable means the few-shot corpus is read
-              // from cache instead of re-billed on every call. The per-run user
-              // turn stays after the breakpoint, uncached.
-              system: [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }],
-              messages: [{ role: "user", content: userPrompt }],
-            });
-            const command = new InvokeModelCommand({
-              modelId: this.config.llm.modelId,
-              contentType: "application/json",
-              accept: "application/json",
-              body,
-            });
             const response = await withTimeout(
-              this.bedrock.send(command),
-              BEDROCK_TIMEOUT_MS,
-              "bedrock.invoke_model",
+              this.model.messages.create({
+                // A route on the ModelGateway. The gateway rewrites it to the
+                // real inference-profile id before the request reaches Bedrock,
+                // so this app never names a model.
+                model: this.config.llm.route,
+                max_tokens: this.config.llm.maxTokens,
+                temperature: this.config.llm.temperature,
+                // Prompt-cache breakpoint on the stable system prefix. The system
+                // prompt embeds the voice-baseline few-shot examples, which are
+                // large and identical across the weekly run and across retries —
+                // marking it ephemeral-cacheable means the few-shot corpus is read
+                // from cache instead of re-billed on every call. The per-run user
+                // turn stays after the breakpoint, uncached.
+                system: [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }],
+                messages: [{ role: "user", content: userPrompt }],
+              }),
+              MODEL_TIMEOUT_MS,
+              "model.messages",
             );
-            const raw: unknown = JSON.parse(new TextDecoder().decode(response.body));
-            const parsed = CompletionResponseSchema.parse(raw);
+            const parsed = CompletionResponseSchema.parse(response);
             const usage = parsed.usage;
             let tokensUsed = 0;
             const recordTokens = (
@@ -209,7 +214,7 @@ export class NewsletterGenerator {
               attribute: string,
             ) => {
               if (count) {
-                bedrockTokens.add(count, { kind, model: this.config.llm.modelId });
+                bedrockTokens.add(count, { kind, model: this.config.llm.route });
                 span.setAttribute(attribute, count);
                 tokensUsed += count;
               }
@@ -222,7 +227,11 @@ export class NewsletterGenerator {
             // Anthropic's usage block — a cached prefix is reported under
             // cache_read and excluded from input_tokens — so summing them is
             // the run's real token spend, which is what the ledger records.
-            return { text: parsed.content[0].text, tokensUsed };
+            const text = parsed.content.find((b) => b.type === "text")?.text;
+            if (!text) {
+              throw new Error("the gateway returned a response with no text block");
+            }
+            return { text, tokensUsed };
           },
           { attempts: 3, initialDelayMs: 500, maxDelayMs: 5_000, jitter: true },
         );
@@ -274,7 +283,7 @@ export class NewsletterGenerator {
       const response = await withTimeout(
         this.s3.send(new GetObjectCommand({ Bucket: this.config.voiceBaselineBucket, Key: key })),
         S3_TIMEOUT_MS,
-        "bedrock.load_voice_baseline",
+        "generator.load_voice_baseline",
       );
       return (await response.Body?.transformToString()) ?? null;
     } catch {

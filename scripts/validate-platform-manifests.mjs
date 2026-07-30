@@ -519,7 +519,6 @@ function checkChartAttributes(names, chartValues, errors) {
 const GEO_PREFIXES = ["us.", "eu.", "apac.", "us-gov.", "jp.", "au.", "global."];
 
 /** Chart env keys that carry a Bedrock model id the pod will invoke. */
-const MODEL_ENV_KEYS = /^BEDROCK_.*MODEL(_ID)?$/;
 
 /**
  * Does `allowed` (an entry in spec.identity.allowedModels) grant `invoked`?
@@ -542,39 +541,96 @@ function modelGrantCovers(allowed, invoked) {
 }
 
 /**
- * Every Bedrock model id the chart renders must be covered by
+ * Every Bedrock model id a ModelGateway route resolves to must be covered by
  * `spec.identity.allowedModels`.
  *
- * The operator clamps this role with an explicit Deny over NotResource, so a
- * model the chart sets and the CR omits is not a soft failure — it is
- * AccessDenied on every invoke, in a deployment whose CI is green. The pairing
- * is invisible to the CRD schema (both sides are free-form strings) and to the
- * eval tier (CI assumes a different role entirely), so this is the only place
+ * The gateway runs under the tenant ServiceAccount, so it invokes Bedrock as the
+ * tenant and the operator's explicit Deny over NotResource applies to it. A
+ * model a route names and the CR omits is not a soft failure — it is
+ * AccessDenied on every call, in a deployment whose CI is green. The pairing is
+ * invisible to the CRD schema (both sides are free-form strings) and to the eval
+ * tier (which points at whatever gateway it is given), so this is the only place
  * the two can be held together.
  *
- * This exact drift shipped to a sibling tenant: its chart moved to a new model
- * and `allowedModels` stayed on the old one, so every inference call in
- * production returned AccessDenied while nothing in CI went red.
+ * This exact drift shipped to a sibling tenant: its model moved and
+ * `allowedModels` stayed on the old one, so every inference call in production
+ * returned AccessDenied while nothing in CI went red.
+ *
+ * Both the route's `modelId` and its `crossRegionProfile` are checked. A bare
+ * `allowedModels` entry implies the `us.` profile and nothing else, so a route
+ * that switches to `eu.` without widening the CR is precisely the case that
+ * fails silently at run time.
  *
  * Skipped when the Platform declares `allowedModelFamilies` instead: that is a
  * prefix vocabulary with different semantics, and the CRD already forbids
  * declaring both.
  */
-function checkModelCoverage(objects, chartValues, errors) {
+function checkModelCoverage(objects, errors) {
   const platform = objects.find((o) => o.kind === "Platform");
   const identity = platform?.spec?.identity ?? {};
   const allowed = identity.allowedModels;
   if (!Array.isArray(allowed) || allowed.length === 0) return;
   if (identity.allowedModelFamilies?.length > 0) return;
 
+  for (const gateway of objects.filter((o) => o.kind === "ModelGateway")) {
+    for (const route of gateway.spec?.routes ?? []) {
+      // An imported route names a model ARN rather than a Bedrock model id;
+      // allowedModels does not describe it.
+      if (route.modelSource === "imported") continue;
+      for (const [field, invoked] of [
+        ["modelId", route.modelId],
+        ["crossRegionProfile", route.crossRegionProfile],
+      ]) {
+        if (typeof invoked !== "string" || invoked === "") continue;
+        if (allowed.some((a) => modelGrantCovers(a, invoked))) continue;
+        errors.push(
+          `ModelGateway/${gateway.name}: routes[${route.name}].${field}=\`${invoked}\` ` +
+            `is not covered by Platform.spec.identity.allowedModels [${allowed.join(", ")}] — the ` +
+            "gateway invokes Bedrock as the tenant, and the operator denies every model outside " +
+            "that list, so this renders a gateway that cannot invoke its own route",
+        );
+      }
+    }
+  }
+}
+
+/**
+ * The chart's `MODEL_GATEWAY_ENDPOINT` must be the endpoint the operator will
+ * actually publish, and `MODEL_ROUTE` must name a route the ModelGateway
+ * declares.
+ *
+ * The operator derives the endpoint from the Platform name
+ * (`<platform>-gateway.tenants-<platform>.svc.cluster.local:8080`) and never
+ * reads the chart, so the two are coupled by convention alone. A rename on
+ * either side, or a route the CR does not declare, produces pods that start
+ * cleanly and fail every inference call — connection refused for a wrong
+ * endpoint, or a 404 from the gateway for a route with no matching rule.
+ * Neither shows up until traffic arrives.
+ */
+function checkGatewayWiring(objects, chartValues, errors) {
+  const platform = objects.find((o) => o.kind === "Platform");
+  if (!platform) return;
+  const gateways = objects.filter((o) => o.kind === "ModelGateway");
+  const routes = new Set(gateways.flatMap((g) => (g.spec?.routes ?? []).map((r) => r.name)));
+  const expected =
+    `http://${platform.name}-gateway.tenants-${platform.name}` +
+    ".svc.cluster.local:8080";
+
   for (const { file, values } of chartValues) {
-    for (const [key, invoked] of Object.entries(values?.env ?? {})) {
-      if (!MODEL_ENV_KEYS.test(key) || typeof invoked !== "string" || invoked === "") continue;
-      if (allowed.some((a) => modelGrantCovers(a, invoked))) continue;
+    const endpoint = values?.env?.MODEL_GATEWAY_ENDPOINT;
+    if (typeof endpoint === "string" && endpoint !== "" && endpoint !== expected) {
       errors.push(
-        `chart/${file}: env.${key}=\`${invoked}\` is not covered by ` +
-          `Platform.spec.identity.allowedModels [${allowed.join(", ")}] — the operator denies ` +
-          "every model outside that list, so this renders a pod that cannot invoke its own model",
+        `chart/${file}: env.MODEL_GATEWAY_ENDPOINT=\`${endpoint}\` is not the endpoint the ` +
+          `operator publishes for Platform \`${platform.name}\` (\`${expected}\`) — the app would ` +
+          "start cleanly and fail every inference call with a connection error",
+      );
+    }
+    const route = values?.env?.MODEL_ROUTE;
+    if (typeof route === "string" && route !== "" && routes.size > 0 && !routes.has(route)) {
+      errors.push(
+        `chart/${file}: env.MODEL_ROUTE=\`${route}\` names no route on the ModelGateway ` +
+          `(declared: ${[...routes].join(", ")}) — the gateway has no rule matching it, so every ` +
+          "request is refused at the gateway rather than reaching a model",
       );
     }
   }
@@ -596,7 +652,8 @@ function validate(documents, registry, chartValues) {
   }
   const names = checkConsistency(objects, errors);
   checkChartAttributes(names, chartValues, errors);
-  checkModelCoverage(objects, chartValues, errors);
+  checkModelCoverage(objects, errors);
+  checkGatewayWiring(objects, chartValues, errors);
   return { errors, objects, names };
 }
 
@@ -659,33 +716,36 @@ function selfTest(documents, registry, chartValues) {
     }
   }
 
-  // The model-coverage check reads the chart, so it is exercised by moving the
-  // chart's model rather than by mutating the CR — the direction the drift
-  // actually travels, since the chart is what gets bumped on a model change.
-  const withModel = (invoked) =>
-    chartValues.map(({ file, values }) => ({
-      file,
-      values: { ...values, env: { ...values.env, BEDROCK_MODEL_ID: invoked } },
-    }));
+  // Model coverage is driven by moving the route the ModelGateway declares —
+  // the direction the drift actually travels, since the CR is what gets bumped
+  // on a model change now that the app names a route rather than a model.
+  const withRouteProfile = (profile) => {
+    const docs = clone();
+    for (const doc of docs) {
+      if (doc?.kind !== "ModelGateway") continue;
+      for (const route of doc.spec?.routes ?? []) route.crossRegionProfile = profile;
+    }
+    return docs;
+  };
 
   const modelCases = [
     {
-      name: "a chart model id allowedModels does not grant",
-      chart: withModel("us.anthropic.claude-opus-5"),
+      name: "a route model allowedModels does not grant",
+      docs: withRouteProfile("us.anthropic.claude-opus-5"),
       expect: /is not covered by/,
     },
     {
-      name: "a chart model on a geo the CR's bare entry does not imply",
+      name: "a route on a geo the CR's bare entry does not imply",
       // A bare entry expands to the foundation ARN plus the `us.` profile ARN
-      // only, so an `eu.`-prefixed invoke is genuinely denied — the case an
-      // operator hits by overriding the profile prefix per env and forgetting
-      // to widen the CR.
-      chart: withModel("eu.anthropic.claude-sonnet-5"),
+      // only, so an `eu.`-prefixed route is genuinely denied — the case an
+      // operator hits by moving the profile prefix for a region and forgetting
+      // to widen allowedModels.
+      docs: withRouteProfile("eu.anthropic.claude-sonnet-5"),
       expect: /is not covered by/,
     },
   ];
-  for (const { name, chart, expect } of modelCases) {
-    const errs = validate(clone(), registry, chart).errors;
+  for (const { name, docs, expect } of modelCases) {
+    const errs = validate(docs, registry, chartValues).errors;
     const matched = errs.find((e) => expect.test(e));
     out(`  ${matched ? "PASS" : "FAIL"}  rejects: ${name}`);
     if (matched) out(`          → ${matched}`);
@@ -693,12 +753,42 @@ function selfTest(documents, registry, chartValues) {
   }
 
   // The permissive direction matters as much: a bare CR entry must still accept
-  // the `us.` profile the chart invokes, or the gate would reject the committed
-  // pairing and get relaxed until it accepted everything.
-  const bareOk = validate(clone(), registry, withModel("us.anthropic.claude-sonnet-5")).errors;
+  // the `us.` profile the route resolves to, or the gate would reject the
+  // committed pairing and get relaxed until it accepted everything.
+  const bareOk = validate(
+    withRouteProfile("us.anthropic.claude-sonnet-5"),
+    registry,
+    chartValues,
+  ).errors;
   const bareClean = !bareOk.some((e) => /is not covered by/.test(e));
   out(`  ${bareClean ? "PASS" : "FAIL"}  accepts: the us. profile a bare CR entry implies`);
   if (!bareClean) failures.push("a bare allowedModels entry did not cover its us. profile");
+
+  // The gateway wiring is two conventions with nothing but this gate holding
+  // them together, so both are exercised from the chart side.
+  const withEnv = (patch) =>
+    chartValues.map(({ file, values }) => ({
+      file,
+      values: { ...values, env: { ...values.env, ...patch } },
+    }));
+  for (const [name, patch, expect] of [
+    [
+      "a gateway endpoint that is not the one the operator publishes",
+      { MODEL_GATEWAY_ENDPOINT: "http://model-gateway.default.svc.cluster.local:8080" },
+      /is not the endpoint the operator publishes/,
+    ],
+    [
+      "a route the ModelGateway does not declare",
+      { MODEL_ROUTE: "escalation" },
+      /names no route on the ModelGateway/,
+    ],
+  ]) {
+    const errs = validate(clone(), registry, withEnv(patch)).errors;
+    const matched = errs.find((e) => expect.test(e));
+    out(`  ${matched ? "PASS" : "FAIL"}  rejects: ${name}`);
+    if (matched) out(`          → ${matched}`);
+    else failures.push(`${name} (gate reported: ${errs.join("; ") || "no errors"})`);
+  }
 
   // The OTel attribute cross-check is the one rule that reaches outside
   // platform.yaml, so it is exercised from the other side.
