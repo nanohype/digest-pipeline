@@ -17,8 +17,8 @@
  */
 
 import { describe, expect, it, vi } from "vitest";
-import { AuditWriter, type DatabaseClient } from "./audit.js";
 import type { AggregatorConfig, AggregatorServices } from "./aggregators/types.js";
+import { AuditWriter, type DatabaseClient } from "./audit.js";
 import {
   type PipelineDeps,
   type PipelineDraftStore,

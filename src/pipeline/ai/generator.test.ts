@@ -20,7 +20,8 @@ const CONFIG: PipelineConfig = {
   rawAggregationsBucket: "digest-pipeline-raw-aggregations",
   llm: {
     route: "default",
-    gatewayEndpoint: "http://digest-pipeline-gateway.tenants-digest-pipeline.svc.cluster.local:8080",
+    gatewayEndpoint:
+      "http://digest-pipeline-gateway.tenants-digest-pipeline.svc.cluster.local:8080",
     maxTokens: 2048,
     temperature: 0.4,
   },

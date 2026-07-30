@@ -199,7 +199,9 @@ export class NewsletterGenerator {
                 // marking it ephemeral-cacheable means the few-shot corpus is read
                 // from cache instead of re-billed on every call. The per-run user
                 // turn stays after the breakpoint, uncached.
-                system: [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }],
+                system: [
+                  { type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } },
+                ],
                 messages: [{ role: "user", content: userPrompt }],
               }),
               MODEL_TIMEOUT_MS,

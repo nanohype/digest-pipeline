@@ -77,7 +77,7 @@
  * on every run, without committing a broken manifest to demonstrate it.
  */
 import { createHash } from "node:crypto";
-import { readFile, readdir } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse, parseAllDocuments } from "yaml";
@@ -613,8 +613,7 @@ function checkGatewayWiring(objects, chartValues, errors) {
   const gateways = objects.filter((o) => o.kind === "ModelGateway");
   const routes = new Set(gateways.flatMap((g) => (g.spec?.routes ?? []).map((r) => r.name)));
   const expected =
-    `http://${platform.name}-gateway.tenants-${platform.name}` +
-    ".svc.cluster.local:8080";
+    `http://${platform.name}-gateway.tenants-${platform.name}` + ".svc.cluster.local:8080";
 
   for (const { file, values } of chartValues) {
     const endpoint = values?.env?.MODEL_GATEWAY_ENDPOINT;
