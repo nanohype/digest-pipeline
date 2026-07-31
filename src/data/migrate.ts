@@ -1,12 +1,19 @@
 /**
  * Minimal forward-only + single-step-rollback migrator.
  *
- *   npm run migrate:up    — applies every *.up.sql not yet recorded
- *   npm run migrate:down  — reverses the most recently applied migration
+ *   npm run migrate:up        — applies every *.up.sql not yet recorded
+ *   npm run migrate:down      — reverses the most recently applied migration
+ *   npm run dev:migrate:up    — the same, straight from source via tsx
  *
  * Applied migrations are tracked in the schema_migrations table, which the
  * runner creates on first use. Each migration runs in its own transaction;
  * a failed migration rolls back and the run aborts.
+ *
+ * This lives under src/ because it has to ship. The chart runs `migrate:up` as
+ * a pre-install/pre-upgrade hook inside the api image, and that image is built
+ * with `npm prune --omit=dev` — so a migrator invoked through tsx, or one
+ * sitting outside the compiled output, is not present at the moment the hook
+ * needs it. Compiling it with everything else is what makes the hook runnable.
  */
 
 import { readdirSync, readFileSync } from "node:fs";
@@ -15,7 +22,13 @@ import { fileURLToPath } from "node:url";
 import { Pool } from "pg";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const MIGRATIONS_DIR = resolve(__dirname, "..", "migrations");
+
+// Two levels up is the package root from both `src/data/` and `dist/data/`,
+// which is why this file sits where it does: running from source under tsx and
+// running the compiled copy in the image resolve to the same `migrations/`.
+// The image gets that directory via an explicit COPY in Dockerfile.api — .sql
+// files are data, so nothing in the TypeScript build would carry them.
+const MIGRATIONS_DIR = resolve(__dirname, "..", "..", "migrations");
 
 async function ensureMigrationsTable(pool: Pool): Promise<void> {
   await pool.query(`
@@ -102,7 +115,7 @@ async function down(pool: Pool): Promise<void> {
 async function main(): Promise<void> {
   const command = process.argv[2];
   if (command !== "up" && command !== "down") {
-    console.error("Usage: tsx scripts/migrate.ts up|down");
+    console.error("Usage: migrate up|down");
     process.exit(2);
   }
   const url = process.env.DATABASE_URL;

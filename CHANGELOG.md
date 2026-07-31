@@ -53,7 +53,7 @@ DigestPipeline is an automated weekly newsletter pipeline for a Chief of Staff. 
 
 #### Operator surface
 
-- `scripts/migrate.ts` — up/down runner against `DATABASE_URL`.
+- `src/data/migrate.ts` — up/down runner against `DATABASE_URL`. Compiled with the rest of `src/`, because the chart's pre-install hook runs it inside the api image.
 - `migrations/001_initial_schema.{up,down}.sql` — `drafts`, `audit_events` (append-only + status-transition check), `email_analytics`.
 - Operator-facing secret shape is documented in [`docs/secrets.md`](docs/secrets.md); rotation + seeding commands live there too.
 

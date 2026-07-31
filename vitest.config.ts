@@ -38,6 +38,14 @@ export default defineConfig({
         "src/common/logger.ts",
         "src/common/secrets.ts",
         "src/data/pool.ts",
+        // The migration runner is a CLI that calls main() at import, so a unit
+        // test would exercise a refactored shape rather than the shipped one.
+        // It is covered where it actually matters instead: the `docker` CI job
+        // runs `migrate:up` inside the built api image against a real Postgres
+        // and asserts the migration is recorded and its tables exist. That
+        // proves the thing a unit test cannot — that the image contains a
+        // runnable migrator — which is precisely how this broke.
+        "src/data/migrate.ts",
         "src/pipeline/types.ts",
         "src/ports.ts",
         // Vendored @nanohype/runtime modules — byte-identical copies of

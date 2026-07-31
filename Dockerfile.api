@@ -28,6 +28,11 @@ RUN addgroup -S digest-pipeline && adduser -S digest-pipeline -G digest-pipeline
 COPY --from=build --chown=digest-pipeline:digest-pipeline /app/node_modules ./node_modules
 COPY --from=build --chown=digest-pipeline:digest-pipeline /app/dist ./dist
 COPY --from=build --chown=digest-pipeline:digest-pipeline /app/package.json ./package.json
+# The chart's pre-install/pre-upgrade hook runs `migrate:up` against this image,
+# and dist/data/migrate.js reads these .sql files at runtime. They are data, not
+# TypeScript, so nothing in the build output carries them — without this COPY the
+# migration Job fails on every ArgoCD PreSync and the release never rolls out.
+COPY --chown=digest-pipeline:digest-pipeline migrations ./migrations
 
 EXPOSE 3001
 USER digest-pipeline

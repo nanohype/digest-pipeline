@@ -1,9 +1,14 @@
 {{- if .Values.migrate.enabled }}
 # Helm pre-install / pre-upgrade hook: applies pending DB migrations BEFORE
-# the new chart version's pipeline/api/web pods roll out. The api image
-# carries `scripts/migrate.ts` + tsx, so we reuse it as the migration runner.
-# Without this hook, a chart upgrade could cut over to code that references a
-# schema column the migrations haven't created yet.
+# the new chart version's pipeline/api/web pods roll out. Without this hook, a
+# chart upgrade could cut over to code that references a schema column the
+# migrations haven't created yet.
+#
+# `migrate:up` runs the compiled `dist/data/migrate.js`, and Dockerfile.api
+# COPYs `migrations/` into the runtime stage. Both matter: the image is built
+# with `npm prune --omit=dev`, so anything reached through tsx — or living
+# outside the compiled output — is absent here, and the .sql files are data the
+# TypeScript build would not carry on its own.
 
 apiVersion: batch/v1
 kind: Job

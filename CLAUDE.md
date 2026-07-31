@@ -80,8 +80,10 @@ npm test                  # vitest run (unit + the offline eval tier)
 npm run eval              # the model tier — needs EVAL_LLM (see evals/README.md)
 npm run test:watch        # interactive watch
 
-npm run migrate:up        # Apply pending migrations to DATABASE_URL
+npm run migrate:up        # Apply pending migrations to DATABASE_URL (runs dist/, needs a build)
 npm run migrate:down      # Roll back most recent migration
+npm run dev:migrate:up    # The same, straight from source via tsx — no build needed
+npm run dev:migrate:down
 
 npm run sync:vendored                # re-vendor runtime, config + chart base from nanohype at the pinned commit
 npm run sync:vendored -- --ref=<sha> # adopt a newer library: re-vendor and move the pin together
