@@ -4,7 +4,7 @@
  * normalised messages without Slack's shape bleeding through.
  */
 
-import { WebClient } from "@slack/web-api";
+import { createBoundedSlackClient } from "../../common/slack.js";
 
 export interface SlackMessage {
   ts: string;
@@ -24,7 +24,10 @@ export interface SlackServiceConfig {
 }
 
 export function createSlackService(config: SlackServiceConfig): SlackService {
-  const client = new WebClient(config.botToken);
+  // 15s: conversations.history pulls up to 200 messages, so it is the slowest
+  // Slack call here. The aggregator layers its own withTimeout on top; this is
+  // the socket-level floor under it.
+  const client = createBoundedSlackClient(config.botToken, 15_000);
 
   return {
     async listChannelHistory(channelId, since) {

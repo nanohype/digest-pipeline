@@ -8,10 +8,10 @@
 
 import "dotenv/config";
 import { SESClient, SendEmailCommand } from "@aws-sdk/client-ses";
-import { WebClient as SlackWebClient } from "@slack/web-api";
 import { z } from "zod";
 import { awsRequestHandler } from "../common/aws.js";
 import { getLogger } from "../common/logger.js";
+import { createBoundedSlackClient } from "../common/slack.js";
 import { createPostgresAuditWriter } from "../data/audit.js";
 import { createPostgresDraftRepository } from "../data/drafts.js";
 import { createDbPool } from "../data/pool.js";
@@ -90,7 +90,7 @@ function createSesEmailSender(region: string, env: RuntimeEnv): EmailSender {
 }
 
 function createSlackConfirmerFromBot(botToken: string, channelId: string): SlackConfirmer {
-  const client = new SlackWebClient(botToken);
+  const client = createBoundedSlackClient(botToken);
   return {
     async confirmSent(runId, draftId, recipientCount) {
       try {
