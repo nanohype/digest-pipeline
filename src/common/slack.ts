@@ -18,19 +18,34 @@
 
 import { retryPolicies, WebClient } from "@slack/web-api";
 
-/** Matches the AWS-side bound. Slack posts return in tens of milliseconds. */
-const DEFAULT_TIMEOUT_MS = 10_000;
-
 /**
- * Build a bounded Slack client.
+ * The bounds every Slack client here is built with, exported because they are
+ * the decision worth pinning. WebClient keeps both `timeout` and `retryConfig`
+ * private, so a test cannot read them back off a constructed client without
+ * reaching through the type — and a test that asserts an SDK's private field is
+ * measuring the SDK rather than this choice.
  *
  * `fiveRetriesInFiveMinutes` rather than the default thirty-minute policy: a
  * notification that has been retried for five minutes has missed the moment it
  * existed to announce, and continuing to retry only delays the caller.
  */
-export function createBoundedSlackClient(token: string, timeoutMs = DEFAULT_TIMEOUT_MS): WebClient {
+export const SLACK_CLIENT_BOUNDS = {
+  /** Matches the AWS-side bound. Slack posts return in tens of milliseconds. */
+  timeout: 10_000,
+  retryConfig: retryPolicies.fiveRetriesInFiveMinutes,
+} as const;
+
+/**
+ * Build a bounded Slack client. Pass `timeoutMs` only for an endpoint whose
+ * deadline genuinely differs — `conversations.history` pulling 200 messages,
+ * say, where the default would cut off a healthy call.
+ */
+export function createBoundedSlackClient(
+  token: string,
+  timeoutMs: number = SLACK_CLIENT_BOUNDS.timeout,
+): WebClient {
   return new WebClient(token, {
     timeout: timeoutMs,
-    retryConfig: retryPolicies.fiveRetriesInFiveMinutes,
+    retryConfig: SLACK_CLIENT_BOUNDS.retryConfig,
   });
 }
