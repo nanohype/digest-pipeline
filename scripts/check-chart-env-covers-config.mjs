@@ -26,6 +26,29 @@ const EXTERNAL_SECRET = "chart/templates/externalsecret.yaml";
 const ENVIRONMENTS = ["development", "staging", "production"];
 
 /**
+ * The web workload's requirements, which the scan above cannot reach: it is a
+ * Next.js app with no Zod env schema, so its contract belongs to AuthKit rather
+ * than to any file in this repository. Listing them here is the only way this
+ * gate can see them, and it is why the list is spelled out rather than derived
+ * — a derivation would have to read node_modules, which is not the artifact the
+ * chart has to satisfy.
+ *
+ * The failure mode is quiet. `updateSessionMiddleware` throws when the cookie
+ * password is missing or under 32 characters, and the middleware matcher in
+ * web/middleware.ts excludes api/health — so the readiness probe answers 200
+ * while every page in the review UI returns a 500. Nothing reports unhealthy.
+ *
+ * NEXT_PUBLIC_WORKOS_REDIRECT_URI is deliberately absent: Next.js inlines
+ * NEXT_PUBLIC_* at build time, so it is a Dockerfile.web build-arg, not
+ * something the chart can supply at runtime.
+ */
+const WEB_REQUIRED = new Map([
+  ["WORKOS_API_KEY", "@workos-inc/authkit-nextjs — WorkOS API calls"],
+  ["WORKOS_CLIENT_ID", "@workos-inc/authkit-nextjs — identifies the AuthKit application"],
+  ["WORKOS_COOKIE_PASSWORD", "@workos-inc/authkit-nextjs — seals the session cookie; >= 32 chars"],
+]);
+
+/**
  * Required keys are `NAME: z.<something>` with neither `.optional()` nor
  * `.default(...)` on the same line. Anything with a default cannot crash the
  * pod, so it is out of scope here.
@@ -111,6 +134,7 @@ function checkRemoteProperties() {
 
 const required = new Map();
 for (const f of SCHEMA_FILES) for (const [k, v] of requiredKeys(f)) required.set(k, v);
+for (const [k, why] of WEB_REQUIRED) required.set(k, `web/middleware.ts (${why})`);
 
 const fromSecret = suppliedBySecret();
 let failed = false;
@@ -125,9 +149,11 @@ for (const environment of ENVIRONMENTS) {
   }
 
   failed = true;
-  console.error(`\n✗ ${environment}: the rendered chart cannot start the app.`);
+  console.error(`\n✗ ${environment}: the rendered chart cannot run the app.`);
   console.error(
-    "  These are required with no default, so the pod fails Zod validation at startup:",
+    "  Each is required with no default. The Node services fail Zod validation at\n" +
+      "  startup; the web workload throws inside AuthKit's middleware, which its\n" +
+      "  readiness probe does not exercise — so that one fails silently:",
   );
   for (const k of missing) console.error(`    ${k}  (declared in ${required.get(k)})`);
   console.error(
