@@ -12,6 +12,7 @@ import { getLogger } from "../../common/logger.js";
 import { type BedrockTokenKind, bedrockTokens } from "../../common/metrics.js";
 import { getTracer } from "../../common/tracer.js";
 import { fenceUntrusted } from "../../vendor/runtime/guardrails.js";
+import { anthropicBaseUrl } from "./gateway-url.js";
 import { withRetry, withTimeout } from "../../vendor/runtime/resilience.js";
 import { assertNoPii } from "../filters/pii.js";
 import { SECTION_DISPLAY_NAMES } from "../sections.js";
@@ -65,7 +66,7 @@ export class NewsletterGenerator {
     this.model =
       deps.model ??
       new Anthropic({
-        baseURL: deps.config.llm.gatewayEndpoint,
+        baseURL: anthropicBaseUrl(deps.config.llm.gatewayEndpoint),
         // The gateway authenticates to Bedrock with its own Pod Identity
         // credentials, so this app holds no key. The SDK requires the field to
         // be set, and the gateway ignores it.
