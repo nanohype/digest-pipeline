@@ -128,6 +128,9 @@ export function loadVoiceBaseline(): string {
 export function toRankedSections(c: EvalCase): RankedSection[] {
   return c.sections.map((section, si) => ({
     name: section.name as SectionName,
+    // Built the way the ranker builds it, so the harness feeds the generator the
+    // same shape production does rather than a near-miss.
+    displayName: SECTION_DISPLAY_NAMES[section.name as SectionName],
     truncatedCount: 0,
     items: section.items.map((item, ii) =>
       sanitizeSourceItem({
@@ -154,7 +157,15 @@ export function toRankedSections(c: EvalCase): RankedSection[] {
 }
 
 export interface GradeFailure {
-  check: "headers" | "noHeaders" | "words" | "mentions" | "absent" | "opener" | "throws";
+  check:
+    | "headers"
+    | "noHeaders"
+    | "words"
+    | "mentions"
+    | "absent"
+    | "absentPatterns"
+    | "opener"
+    | "throws";
   detail: string;
 }
 
