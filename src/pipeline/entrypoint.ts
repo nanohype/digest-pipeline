@@ -7,11 +7,11 @@
 
 import "dotenv/config";
 import { S3Client } from "@aws-sdk/client-s3";
-import { WebClient as SlackWebClient } from "@slack/web-api";
 import { z } from "zod";
 import { awsRequestHandler } from "../common/aws.js";
 import { getLogger } from "../common/logger.js";
 import { createSecretsClient } from "../common/secrets.js";
+import { createBoundedSlackClient } from "../common/slack.js";
 import { createPostgresAuditDatabase } from "../data/audit.js";
 import { createPostgresDraftRepository } from "../data/drafts.js";
 import { createDbPool } from "../data/pool.js";
@@ -181,7 +181,7 @@ async function buildDeps(): Promise<PipelineDeps> {
   const draftRepo = createPostgresDraftRepository(pool);
   const draftStore: PipelineDraftStore = { create: (input) => draftRepo.create(input) };
 
-  const slackNotifyClient = new SlackWebClient(slack.botToken);
+  const slackNotifyClient = createBoundedSlackClient(slack.botToken);
   const log = getLogger();
   const notifier: PipelineNotifier = {
     async notifyDraftReady(runId, draftId, fullText) {
