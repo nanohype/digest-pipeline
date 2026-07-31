@@ -244,8 +244,57 @@ jobs:
   docker:
     name: docker build (no push)
     runs-on: ubuntu-latest
+    services:
+      # Backs the migration-hook check below. The hook is the first thing every
+      # install and upgrade runs, so it is worth a real database rather than a
+      # smoke test against a stub.
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: digest_pipeline_ci
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+        ports:
+          - 5432:5432
     steps:
       - uses: actions/checkout@v4
       - run: docker build -f Dockerfile.api -t digest-pipeline-api:ci .
       - run: docker build -f Dockerfile.pipeline -t digest-pipeline-pipeline:ci .
       - run: docker build -f Dockerfile.web -t digest-pipeline-web:ci .
+
+      # The chart's pre-install/pre-upgrade hook runs `migrate:up` inside this
+      # image. Building the image proves the code compiles; only running the
+      # hook's own command proves the image contains what the hook needs at the
+      # moment it runs. Those are different questions, and the gap between them
+      # is where this broke: the migrator was invoked through tsx — a
+      # devDependency stripped by `npm prune --omit=dev` — from a directory the
+      # runtime stage never copied. Every ArgoCD PreSync failed while every gate
+      # here stayed green.
+      - name: the migration hook runs inside the api image
+        run: |
+          set -euo pipefail
+          docker run --rm --network host \
+            -e DATABASE_URL='postgres://postgres:ci@127.0.0.1:5432/digest_pipeline_ci' \
+            digest-pipeline-api:ci npm run migrate:up
+
+      # Exiting 0 is not the same as having done something. A migrator that
+      # found an empty directory would also succeed, so assert the run was
+      # recorded and the schema it creates is really present.
+      - name: the migration actually landed
+        run: |
+          set -euo pipefail
+          psql() {
+            docker run --rm --network host -e PGPASSWORD=ci postgres:17-alpine \
+              psql -h 127.0.0.1 -U postgres -d digest_pipeline_ci -tAc "$1"
+          }
+          applied=$(psql "SELECT count(*) FROM schema_migrations")
+          [ "$applied" -ge 1 ] || { echo "::error::migrate:up recorded no migrations"; exit 1; }
+          for table in drafts audit_events email_analytics; do
+            present=$(psql "SELECT to_regclass('public.$table') IS NOT NULL")
+            [ "$present" = "t" ] || { echo "::error::table $table missing after migrate:up"; exit 1; }
+          done
+          echo "$applied migration(s) applied; drafts, audit_events, email_analytics all present"
