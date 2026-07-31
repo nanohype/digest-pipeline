@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { beforeAll, describe, expect, it } from "vitest";
 import { NewsletterGenerator } from "../src/pipeline/ai/generator.js";
+import { anthropicBaseUrl } from "../src/pipeline/ai/gateway-url.js";
 import type { VoiceBaselineService } from "../src/pipeline/services/voice-baseline.js";
 import type { PipelineConfig } from "../src/pipeline/types.js";
 import {
@@ -92,7 +93,7 @@ describe.skipIf(configured === "")(`eval: ${suite.name}`, () => {
       config: CONFIG,
       voiceBaseline,
       model: new Anthropic({
-        baseURL: GATEWAY,
+        baseURL: anthropicBaseUrl(GATEWAY),
         // The gateway holds the upstream credential; this is never read.
         apiKey: "unused-the-gateway-holds-the-credential",
         maxRetries: 0,

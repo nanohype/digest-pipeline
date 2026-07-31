@@ -39,7 +39,14 @@ const PipelineEnvSchema = z.object({
   // app talks to this instead of to Bedrock: the gateway holds the AWS identity,
   // applies the route's guardrail, and is the only path out of the namespace to
   // a model.
-  MODEL_GATEWAY_ENDPOINT: z.string().url(),
+  MODEL_GATEWAY_ENDPOINT: z
+    .string()
+    .url()
+    // .url() alone accepts `host:8080` as a URL whose scheme is `host:`, which
+    // the Messages client would only fail on at request time.
+    .refine((v) => /^https?:\/\//.test(v), {
+      message: "MODEL_GATEWAY_ENDPOINT must be an http(s) URL",
+    }),
   // A route name on that gateway, not a Bedrock model id. The gateway rewrites
   // it to the real inference-profile id, so model selection lives in the
   // ModelGateway CR rather than in this app's config.
