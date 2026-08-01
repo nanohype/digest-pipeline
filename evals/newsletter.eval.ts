@@ -5,6 +5,7 @@ import { anthropicBaseUrl } from "../src/pipeline/ai/gateway-url.js";
 import type { VoiceBaselineService } from "../src/pipeline/services/voice-baseline.js";
 import type { PipelineConfig } from "../src/pipeline/types.js";
 import {
+  EVAL_BACKENDS,
   type GradeResult,
   grade,
   loadSuite,
@@ -74,10 +75,11 @@ describe.skipIf(configured === "")(`eval: ${suite.name}`, () => {
   const results = new Map<string, GradeResult>();
 
   beforeAll(async () => {
-    if (configured !== "gateway") {
+    if (!(EVAL_BACKENDS as readonly string[]).includes(configured)) {
       throw new Error(
-        `EVAL_LLM="${configured}" is not supported here — this generator speaks the Anthropic ` +
-          `Messages API to a ModelGateway. Use EVAL_LLM=gateway, or unset it to skip the model tier.`,
+        `EVAL_LLM="${configured}" is not a known eval backend (${EVAL_BACKENDS.join(" | ")}). ` +
+          `This generator speaks the Anthropic Messages API to a ModelGateway. ` +
+          `Unset EVAL_LLM to skip the model tier; setting it means it must run.`,
       );
     }
     // Fail here rather than at the first case: an unset endpoint would otherwise
