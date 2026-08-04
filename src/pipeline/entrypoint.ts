@@ -52,7 +52,6 @@ const PipelineEnvSchema = z.object({
   // ModelGateway CR rather than in this app's config.
   MODEL_ROUTE: z.string().min(1),
   MODEL_MAX_TOKENS: z.coerce.number().int().positive().default(2000),
-  MODEL_TEMPERATURE: z.coerce.number().default(0.4),
   WORKOS_DIRECTORY_SECRET_ID: z.string().min(1),
   DATABASE_URL: z.string().min(1).optional(),
   DATABASE_SECRET_ID: z.string().min(1).optional(),
@@ -142,7 +141,6 @@ async function buildDeps(): Promise<PipelineDeps> {
       route: env.MODEL_ROUTE,
       gatewayEndpoint: env.MODEL_GATEWAY_ENDPOINT,
       maxTokens: env.MODEL_MAX_TOKENS,
-      temperature: env.MODEL_TEMPERATURE,
     },
     schedule: {
       timezone: "America/Los_Angeles",

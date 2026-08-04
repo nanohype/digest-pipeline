@@ -193,7 +193,12 @@ export class NewsletterGenerator {
                 // so this app never names a model.
                 model: this.config.llm.route,
                 max_tokens: this.config.llm.maxTokens,
-                temperature: this.config.llm.temperature,
+                // No temperature. The current Sonnet generation rejects the
+                // knob outright — `400 \`temperature\` is deprecated for this
+                // model` — so sending one fails every call rather than tuning
+                // it. Default sampling is the only sampling available, which
+                // is also why the eval scores a rate against a floor instead
+                // of asserting case by case.
                 // Prompt-cache breakpoint on the stable system prefix. The system
                 // prompt embeds the voice-baseline few-shot examples, which are
                 // large and identical across the weekly run and across retries —
