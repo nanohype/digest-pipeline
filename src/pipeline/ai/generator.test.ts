@@ -23,7 +23,6 @@ const CONFIG: PipelineConfig = {
     gatewayEndpoint:
       "http://digest-pipeline-gateway.tenants-digest-pipeline.svc.cluster.local:8080",
     maxTokens: 2048,
-    temperature: 0.4,
   },
   schedule: {
     timezone: "America/Los_Angeles",
@@ -140,7 +139,12 @@ describe("NewsletterGenerator", () => {
     // protocol detail it no longer owns.
     expect(body).not.toHaveProperty("anthropic_version");
     expect(body.max_tokens).toBe(CONFIG.llm.maxTokens);
-    expect(body.temperature).toBe(CONFIG.llm.temperature);
+    // temperature is deliberately absent, and this assertion used to require
+    // the opposite. The current Sonnet generation answers `400 \`temperature\`
+    // is deprecated for this model`, so a request carrying one fails outright
+    // — every newsletter, not an edge case. The old expectation held the bug
+    // in place, and nothing caught it because the model tier had never run.
+    expect(body).not.toHaveProperty("temperature");
     // The route name, not a Bedrock model id. The gateway rewrites it upstream,
     // so a real model id here would bypass the CR that owns model selection.
     expect(body.model).toBe("default");

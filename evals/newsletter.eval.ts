@@ -41,7 +41,7 @@ const CONFIG: PipelineConfig = {
   backupApproverIds: [],
   voiceBaselineBucket: "eval-voice-baseline",
   rawAggregationsBucket: "eval-raw-aggregations",
-  llm: { route: ROUTE, gatewayEndpoint: GATEWAY, maxTokens: 2048, temperature: 0.4 },
+  llm: { route: ROUTE, gatewayEndpoint: GATEWAY, maxTokens: 2048 },
   schedule: {
     timezone: "America/Los_Angeles",
     dayOfWeek: "Friday",
