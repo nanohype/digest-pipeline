@@ -19,9 +19,19 @@ import { createMetrics } from "../vendor/runtime/metrics.js";
 
 const metrics = createMetrics({ meterName: "digest-pipeline", namespace: "digest-pipeline" });
 
-export const runDuration: Histogram = metrics.histogramInstrument("run.duration_ms", {
+/**
+ * Bucket edges for a pipeline run, in seconds. A run is minutes; OTel's default
+ * edges top out at 10000, and `histogram_quantile` cannot return a value above
+ * the highest finite edge — so without these the p95 alert below could never
+ * reach its threshold whatever the real duration was. It was 60x past the
+ * default top edge.
+ */
+export const RUN_DURATION_BUCKETS = [10, 30, 60, 120, 300, 600, 900, 1800];
+
+export const runDuration: Histogram = metrics.histogramInstrument("run.duration_seconds", {
   description: "Pipeline run wall-clock time",
-  unit: "ms",
+  unit: "s",
+  boundaries: RUN_DURATION_BUCKETS,
 });
 
 export const sourceItems: Counter = metrics.counterInstrument("source.items", {

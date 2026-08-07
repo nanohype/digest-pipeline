@@ -214,7 +214,10 @@ export async function runPipeline(deps: PipelineDeps): Promise<PipelineRunResult
     const durationMs = Date.now() - start;
     const status: PipelineRunResult["status"] =
       usedSkeleton || sourceResults.some((r) => r.error) ? "PARTIAL" : "SUCCESS";
-    runDuration.record(durationMs, { status });
+    // Seconds, matching the instrument's declared unit. Renaming without
+    // converting here would put every observation 1000x high in a series whose
+    // name and unit both promise seconds.
+    runDuration.record(durationMs / 1000, { status });
     rootSpan.setAttribute("status", status);
     rootSpan.setAttribute("duration_ms", durationMs);
     rootSpan.end();

@@ -1,6 +1,6 @@
 {{- if .Values.prometheusRule.enabled -}}
 # PromQL rules over OTel metrics exported by src/common/metrics.ts:
-#   digest-pipeline.run.duration_ms{status}
+#   digest-pipeline.run.duration_seconds{status}
 #   digest-pipeline.source.{items,failure}{source}
 #   digest-pipeline.bedrock.{tokens{kind,model},fallback}
 #   digest-pipeline.draft.edit_rate{run_id}
@@ -30,8 +30,8 @@ spec:
           # 4 weekly runs (28 days) is suspicious — sources are degraded
           # or the generator is regressing.
           expr: |
-            (sum(increase(digest_pipeline_run_duration_ms_count{status!="SUCCESS"}[28d]))
-             / sum(increase(digest_pipeline_run_duration_ms_count[28d]))) > 0.5
+            (sum(increase(digest_pipeline_run_duration_seconds_count{status!="SUCCESS"}[28d]))
+             / sum(increase(digest_pipeline_run_duration_seconds_count[28d]))) > 0.5
           for: 1h
           labels:
             severity: page
@@ -44,7 +44,7 @@ spec:
               Runbook: docs/troubleshooting.md § "Pipeline run failures"
 
         - alert: DigestPipelineRunDurationP95Breach
-          expr: histogram_quantile(0.95, sum by (le) (rate(digest_pipeline_run_duration_ms_bucket[28d]))) > 600000
+          expr: histogram_quantile(0.95, sum by (le) (rate(digest_pipeline_run_duration_seconds_bucket[28d]))) > 600
           for: 1h
           labels:
             severity: warn
