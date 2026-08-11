@@ -91,6 +91,37 @@ jobs:
           helm template digest-pipeline chart -f chart/values-staging.yaml > rendered/staging.yaml
           helm template digest-pipeline chart -f chart/values-production.yaml > rendered/production.yaml
 
+      # DATABASE_URL is composed by the External Secrets controller at runtime,
+      # so what ships is a template — helm never sees the password and the Zod
+      # schema that validates the result runs in the pod, long after CI. That
+      # makes this the one value in the chart no gate here can otherwise reach.
+      #
+      # A credential interpolated raw is valid YAML and produces a broken URL as
+      # soon as the password holds a character URLs reserve. Aurora draws from
+      # "any printable ASCII except /, ", @, or space", leaving # ? : [ ] in
+      # play; # is the worst, because a parser reads it as the fragment
+      # delimiter and drops the rest of the string, @host included. The result
+      # is still a well-formed URL, so Zod passes it, and the failure lands at
+      # connect time naming the username as the host.
+      #
+      # Asserting the absence of the bare form as well as the presence of the
+      # piped one means a newly added unescaped credential fails too, not only a
+      # regression of these two.
+      - name: Composed DATABASE_URL percent-encodes its credentials
+        run: |
+          fail=0
+          for cred in pgUser pgPassword; do
+            if grep -Eq "\{\{[[:space:]]*\.${cred}[[:space:]]*\}\}" rendered/staging.yaml rendered/production.yaml; then
+              echo "::error::${cred} is interpolated into DATABASE_URL without urlquery — a password containing # or ? silently truncates the URL"
+              fail=1
+            fi
+            grep -q "\.${cred} | urlquery" rendered/staging.yaml || {
+              echo "::error::expected ${cred} to be piped through urlquery in the composed URL"
+              fail=1
+            }
+          done
+          exit $fail
+
       # Rendering proves the YAML parses, not that the pod it describes can boot.
       # Every entrypoint validates its environment with Zod, and a required key
       # with no default is a crash rather than a degraded mode — so the rendered
