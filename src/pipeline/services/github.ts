@@ -6,6 +6,10 @@
  */
 
 import { Octokit } from "@octokit/rest";
+import { boundedFetch, DEFAULT_REQUEST_TIMEOUT_MS } from "../../common/http.js";
+
+/** Socket-level floor under the aggregator's `withTimeout` wrap. */
+const REQUEST_TIMEOUT_MS = DEFAULT_REQUEST_TIMEOUT_MS;
 
 export interface GitHubMergedPR {
   number: number;
@@ -34,7 +38,14 @@ export interface GitHubServiceConfig {
 }
 
 export function createOctokitGitHubService(config: GitHubServiceConfig): GitHubService {
-  const octokit = new Octokit({ auth: config.token });
+  // Octokit applies no request timeout of its own. `request.fetch` is the
+  // documented injection point, and it is the right one here: `request.signal`
+  // would take a single AbortSignal for the client's whole lifetime, which
+  // expires the client rather than bounding each call.
+  const octokit = new Octokit({
+    auth: config.token,
+    request: { fetch: boundedFetch(REQUEST_TIMEOUT_MS) },
+  });
   const perRepoLimit = config.perRepoLimit ?? 50;
 
   return {
