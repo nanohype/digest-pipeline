@@ -17,6 +17,10 @@ Cross-cutting (`src/common/`): `otel-bootstrap.ts` (loaded via `--import` in the
 
 Vendored (`src/vendor/runtime/`): byte-identical copies of the `@nanohype/runtime` modules this app consumes — `resilience.ts` (`withTimeout`/`withRetry`), `registry.ts` (`createRegistry<T>`), `pii.ts` (the org-wide redaction catalog), `workos-directory.ts` (the Directory Sync client). Same consumption model as the vendored `tenant-chart-base` chart: `nanohype/library/runtime` is the single source of truth (with the unit tests), `npm run sync:vendored` re-copies, and CI's `sync:vendored:check` job fails on drift.
 
+The security reasoning that sits over these contexts — trust boundaries, the ranked
+risks, and what each control does not cover — is in
+[`docs/threat-model.md`](docs/threat-model.md).
+
 ## Key decisions
 
 ### Immutable audit-event ledger keyed on `run_id`
