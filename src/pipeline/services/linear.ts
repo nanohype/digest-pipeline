@@ -70,6 +70,13 @@ export function createLinearService(config: LinearServiceConfig): LinearService 
    * amortise, so the cost is three object allocations on a job that runs once a
    * week.
    *
+   * Do not hoist this back to a single client. It reads like an obvious
+   * allocation to save, and the saving is three objects a week; what it costs is
+   * the deadline. A hoisted client shares one signal, and a shared signal is an
+   * expiry date rather than a per-request bound — the first call would be
+   * bounded and every later one would fail before it was sent, which looks like
+   * a Linear outage rather than a local bug.
+   *
    * The deadline covers the method rather than each HTTP round trip, which is
    * the useful scope — `listClosedEpicsSince` follows each project with a
    * `lead` fetch, and bounding those individually would leave the method
