@@ -37,7 +37,7 @@ The pipeline ships as a `CronJob` (Friday 09:00 UTC, `concurrencyPolicy: Forbid`
 
 ### Human-approval gate before SES send
 
-The pipeline never sends. It writes the draft, records `DRAFT_GENERATED`, and posts "draft ready" to the Slack review channel — then stops. Sending happens only when a named approver (checked against the approver allow-list loaded from Secrets Manager) hits `POST /drafts/:id/approve` in the api, which records `APPROVED`, runs the SES send, and records `SENT` with the SES message id. A draft that nobody approves expires (`EXPIRED`) and never goes out. The whole product is "a machine drafts, a human ships" — the gate is the point, not a safety net bolted on.
+The pipeline never sends. It writes the draft, records `DRAFT_GENERATED`, and posts "draft ready" to the Slack review channel — then stops. Sending happens only when a named approver (checked against the approver allow-list loaded from Secrets Manager) hits `POST /drafts/:id/approve` in the api, which records `APPROVED`, runs the SES send, and records `SENT` with the SES message id. A draft that nobody approves expires (`EXPIRED`) and never goes out — swept by the next weekly run, which marks every still-`PENDING` draft from an earlier week `EXPIRED` before it writes the current one. No separate scheduler: the CronJob that generates the newsletter is the same clock that retires the one it replaces, so the only `PENDING` draft at any moment is the current week's. The `EXPIRED` event is written against the run that produced the draft, not the run doing the sweep, because the ledger is keyed on the run a draft belongs to. The whole product is "a machine drafts, a human ships" — the gate is the point, not a safety net bolted on.
 
 ## Data flow: a single weekly run
 
