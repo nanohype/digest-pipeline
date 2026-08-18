@@ -1,4 +1,4 @@
-import { AuthStatus } from '@/components/AuthStatus';
+import { AuthStatus } from "@/components/AuthStatus";
 
 // Static server component. Auth status renders client-side via AuthStatus,
 // because AuthKit's withAuth() / getSignInUrl() both want to mutate cookies

@@ -1,4 +1,4 @@
-import { authkitMiddleware } from '@workos-inc/authkit-nextjs';
+import { authkitMiddleware } from "@workos-inc/authkit-nextjs";
 
 // Pass redirectUri explicitly. AuthKit reads from NEXT_PUBLIC_WORKOS_REDIRECT_URI
 // (NOT WORKOS_REDIRECT_URI — see authkit-nextjs's env-variables.js). Next.js
@@ -18,6 +18,6 @@ export const config = {
   // returns user: null — the AuthStatus header then shows "Sign in" even
   // when the user is signed in.
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|callback|api/health|api/auth/sign-in|api/auth/sign-out).*)',
+    "/((?!_next/static|_next/image|favicon.ico|callback|api/health|api/auth/sign-in|api/auth/sign-out).*)",
   ],
 };

@@ -4,11 +4,11 @@
  * collector off the public LB and avoids CORS configuration.
  */
 
-import { NextResponse } from 'next/server';
+import { NextResponse } from "next/server";
 
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
-const COLLECTOR_BASE = process.env.OTEL_EXPORTER_OTLP_ENDPOINT ?? 'http://localhost:4318';
+const COLLECTOR_BASE = process.env.OTEL_EXPORTER_OTLP_ENDPOINT ?? "http://localhost:4318";
 
 // The collector is a localhost sidecar — anything slower than this means it's
 // down, and telemetry must fail fast rather than pin route-handler workers.
@@ -22,10 +22,10 @@ export async function POST(
   const body = await req.arrayBuffer();
   let response: Response;
   try {
-    response = await fetch(`${COLLECTOR_BASE}/v1/${path.join('/')}`, {
-      method: 'POST',
+    response = await fetch(`${COLLECTOR_BASE}/v1/${path.join("/")}`, {
+      method: "POST",
       headers: {
-        'content-type': req.headers.get('content-type') ?? 'application/x-protobuf',
+        "content-type": req.headers.get("content-type") ?? "application/x-protobuf",
       },
       body,
       signal: AbortSignal.timeout(COLLECTOR_TIMEOUT_MS),
@@ -39,7 +39,7 @@ export async function POST(
   return new NextResponse(responseBody, {
     status: response.status,
     headers: {
-      'content-type': response.headers.get('content-type') ?? 'application/x-protobuf',
+      "content-type": response.headers.get("content-type") ?? "application/x-protobuf",
     },
   });
 }

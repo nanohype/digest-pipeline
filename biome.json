@@ -15,8 +15,7 @@
       "!chart/templates",
       "!chart/dashboards",
       "!src/vendor",
-      "!scripts/sync-vendored.mjs",
-      "!web"
+      "!scripts/sync-vendored.mjs"
     ]
   }
 }
