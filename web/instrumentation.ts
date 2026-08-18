@@ -7,30 +7,30 @@
  */
 
 export async function register(): Promise<void> {
-  if (process.env.NEXT_RUNTIME !== 'nodejs') return;
-  if (process.env.OTEL_SDK_DISABLED === 'true') return;
+  if (process.env.NEXT_RUNTIME !== "nodejs") return;
+  if (process.env.OTEL_SDK_DISABLED === "true") return;
 
-  const { NodeSDK } = await import('@opentelemetry/sdk-node');
-  const { getNodeAutoInstrumentations } = await import('@opentelemetry/auto-instrumentations-node');
-  const { OTLPTraceExporter } = await import('@opentelemetry/exporter-trace-otlp-http');
-  const { resourceFromAttributes } = await import('@opentelemetry/resources');
+  const { NodeSDK } = await import("@opentelemetry/sdk-node");
+  const { getNodeAutoInstrumentations } = await import("@opentelemetry/auto-instrumentations-node");
+  const { OTLPTraceExporter } = await import("@opentelemetry/exporter-trace-otlp-http");
+  const { resourceFromAttributes } = await import("@opentelemetry/resources");
 
-  const endpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT ?? 'http://localhost:4318';
+  const endpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT ?? "http://localhost:4318";
   const sdk = new NodeSDK({
     resource: resourceFromAttributes({
-      'service.name': process.env.OTEL_SERVICE_NAME ?? 'digest-pipeline-web',
-      'service.namespace': 'digest-pipeline',
-      'deployment.environment.name': process.env.NODE_ENV ?? 'development',
+      "service.name": process.env.OTEL_SERVICE_NAME ?? "digest-pipeline-web",
+      "service.namespace": "digest-pipeline",
+      "deployment.environment.name": process.env.NODE_ENV ?? "development",
     }),
     traceExporter: new OTLPTraceExporter({ url: `${endpoint}/v1/traces` }),
     instrumentations: [
       getNodeAutoInstrumentations({
-        '@opentelemetry/instrumentation-fs': { enabled: false },
+        "@opentelemetry/instrumentation-fs": { enabled: false },
       }),
     ],
   });
   sdk.start();
-  process.once('SIGTERM', () => {
+  process.once("SIGTERM", () => {
     void sdk.shutdown().catch(() => undefined);
   });
 }

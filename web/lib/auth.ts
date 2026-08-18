@@ -4,9 +4,9 @@
  * helper for the proxy layer.
  */
 
-import { withAuth, getSignInUrl } from '@workos-inc/authkit-nextjs';
+import { getSignInUrl, withAuth } from "@workos-inc/authkit-nextjs";
 
-export { withAuth, getSignInUrl };
+export { getSignInUrl, withAuth };
 
 export async function getAccessToken(): Promise<string | null> {
   const { accessToken } = await withAuth();

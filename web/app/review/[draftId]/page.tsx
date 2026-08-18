@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 /**
  * Draft review & approval page.
@@ -14,10 +14,10 @@
  * the session cookie.
  */
 
-import { useCallback, useEffect, useId, useRef, useState, use } from 'react';
-import { DiffIndicator } from '@/components/DiffIndicator';
-import { ApproveButton } from '@/components/ApproveButton';
-import { levenshteinDistance } from '@/lib/diff';
+import { use, useCallback, useEffect, useId, useRef, useState } from "react";
+import { ApproveButton } from "@/components/ApproveButton";
+import { DiffIndicator } from "@/components/DiffIndicator";
+import { levenshteinDistance } from "@/lib/diff";
 
 interface DraftSection {
   name: string;
@@ -32,7 +32,7 @@ interface DraftSection {
 interface Draft {
   id: string;
   weekOf: string;
-  status: 'PENDING' | 'APPROVED' | 'EXPIRED' | 'SENT' | 'FAILED';
+  status: "PENDING" | "APPROVED" | "EXPIRED" | "SENT" | "FAILED";
   fullText: string;
   sections: DraftSection[];
   createdAt: string;
@@ -45,8 +45,8 @@ interface RouteParams {
 export default function ReviewPage({ params }: { params: Promise<RouteParams> }) {
   const { draftId } = use(params);
   const [draft, setDraft] = useState<Draft | null>(null);
-  const [editedText, setEditedText] = useState('');
-  const [originalText, setOriginalText] = useState('');
+  const [editedText, setEditedText] = useState("");
+  const [originalText, setOriginalText] = useState("");
   const [isApproving, setIsApproving] = useState(false);
   const [approveError, setApproveError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -66,7 +66,7 @@ export default function ReviewPage({ params }: { params: Promise<RouteParams> })
         setOriginalText(data.fullText);
       })
       .catch((err: unknown) => {
-        setLoadError(err instanceof Error ? err.message : 'Failed to load draft');
+        setLoadError(err instanceof Error ? err.message : "Failed to load draft");
       });
   }, [draftId]);
 
@@ -79,8 +79,8 @@ export default function ReviewPage({ params }: { params: Promise<RouteParams> })
         setIsSaving(true);
         try {
           await fetch(`/api/drafts/${draft.id}/edits`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ editedText: newText }),
           });
         } finally {
@@ -96,14 +96,14 @@ export default function ReviewPage({ params }: { params: Promise<RouteParams> })
     setIsApproving(true);
     setApproveError(null);
     try {
-      const res = await fetch(`/api/drafts/${draft.id}/approve`, { method: 'POST' });
+      const res = await fetch(`/api/drafts/${draft.id}/approve`, { method: "POST" });
       if (!res.ok) {
         const body = (await res.json()) as { error?: string };
-        throw new Error(body.error ?? 'Approval failed');
+        throw new Error(body.error ?? "Approval failed");
       }
-      setDraft((d) => (d ? { ...d, status: 'SENT' } : d));
+      setDraft((d) => (d ? { ...d, status: "SENT" } : d));
     } catch (err) {
-      setApproveError(err instanceof Error ? err.message : 'Unknown error');
+      setApproveError(err instanceof Error ? err.message : "Unknown error");
     } finally {
       setIsApproving(false);
     }
@@ -127,18 +127,18 @@ export default function ReviewPage({ params }: { params: Promise<RouteParams> })
     originalText.length > 0
       ? levenshteinDistance(originalText, editedText) / originalText.length
       : 0;
-  const isPending = draft.status === 'PENDING';
+  const isPending = draft.status === "PENDING";
 
   return (
     <main className="page-shell review-page">
       <header className="review-header">
         <h1>Weekly newsletter review</h1>
         <p className="muted">
-          Week of{' '}
-          {new Date(draft.weekOf).toLocaleDateString('en-US', {
-            month: 'long',
-            day: 'numeric',
-            year: 'numeric',
+          Week of{" "}
+          {new Date(draft.weekOf).toLocaleDateString("en-US", {
+            month: "long",
+            day: "numeric",
+            year: "numeric",
           })}
         </p>
         {!isPending ? <div className="status-banner">{draft.status}</div> : null}

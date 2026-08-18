@@ -12,7 +12,7 @@
   --border: #222b3d;
   --radius: 10px;
   --font-stack:
-    ui-sans-serif, -apple-system, 'SF Pro Text', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    ui-sans-serif, -apple-system, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
 * {
@@ -145,7 +145,7 @@ section.draft-section {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 14px;
-  font-family: ui-monospace, 'SF Mono', Consolas, monospace;
+  font-family: ui-monospace, "SF Mono", Consolas, monospace;
   font-size: 13.5px;
   line-height: 1.6;
   resize: vertical;
