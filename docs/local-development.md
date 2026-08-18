@@ -167,7 +167,7 @@ When a scheduled staging / production run fails, reproduce locally:
 2. Pull the audit trail:
 
    ```bash
-   DB_SECRET=$(aws secretsmanager get-secret-value --region us-west-2 \
+   DB_SECRET=$(aws secretsmanager get-secret-value --region us-east-1 \
      --secret-id digest-pipeline/staging/db-credentials \
      --query SecretString --output text)
    export PGPASSWORD=$(echo "$DB_SECRET" | jq -r .password)
