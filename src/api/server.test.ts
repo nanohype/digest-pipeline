@@ -63,6 +63,7 @@ function buildDeps(opts: { draft?: Draft; sub?: string } = {}): ServerDeps {
       saveEditCheckpoint: vi.fn(async () => {}),
       approve: vi.fn(async () => {}),
       markSent: vi.fn(async () => {}),
+      expirePending: vi.fn(async () => []),
     },
     auditWriter: {
       humanEdit: vi.fn(async () => ({ distanceChars: 3, editRate: 0.07 })),
@@ -265,6 +266,30 @@ describe("request validation and lookup", () => {
 
     expect(res.statusCode).toBe(409);
     expect(deps.emailSender.send).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  /**
+   * Expiry only became reachable when the weekly run started closing out last
+   * week's drafts, so until now nothing had to refuse an EXPIRED one — it was
+   * simply a status no row ever held. A state that looks like a guard but is
+   * never exercised is not a guard, so the refusal is pinned here: no mail
+   * leaves, and the draft is not marked sent.
+   */
+  it("refuses to approve or send an EXPIRED draft", async () => {
+    const deps = buildDeps({ draft: sampleDraft({ status: "EXPIRED" }), sub: COS_USER });
+    const app = await buildServer(deps);
+    const res = await app.inject({
+      method: "POST",
+      url: `/drafts/${DRAFT_ID}/approve`,
+      headers: auth,
+    });
+
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toMatchObject({ error: expect.stringContaining("EXPIRED") });
+    expect(deps.emailSender.send).not.toHaveBeenCalled();
+    expect(deps.draftRepository.approve).not.toHaveBeenCalled();
+    expect(deps.draftRepository.markSent).not.toHaveBeenCalled();
     await app.close();
   });
 

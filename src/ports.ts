@@ -24,6 +24,14 @@ export interface DraftRepository {
   saveEditCheckpoint(id: string, editedText: string, editorUserId: string): Promise<void>;
   approve(id: string, approverUserId: string): Promise<void>;
   markSent(id: string): Promise<void>;
+  /**
+   * Move every still-PENDING draft for a week before `before` to EXPIRED,
+   * returning the rows actually changed so the caller can audit each one. A
+   * draft nobody approved before the next newsletter exists has missed the week
+   * it was written for, and leaving it PENDING would let a stale draft be
+   * approved and mailed as if it were current.
+   */
+  expirePending(before: Date): Promise<Array<{ id: string; runId: string }>>;
 }
 
 export interface EditStats {

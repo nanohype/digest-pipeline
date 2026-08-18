@@ -177,7 +177,10 @@ async function buildDeps(): Promise<PipelineDeps> {
   const auditWriter = new AuditWriter(auditDb);
 
   const draftRepo = createPostgresDraftRepository(pool);
-  const draftStore: PipelineDraftStore = { create: (input) => draftRepo.create(input) };
+  const draftStore: PipelineDraftStore = {
+    create: (input) => draftRepo.create(input),
+    expirePending: (before) => draftRepo.expirePending(before),
+  };
 
   const slackNotifyClient = createBoundedSlackClient(slack.botToken);
   const log = getLogger();

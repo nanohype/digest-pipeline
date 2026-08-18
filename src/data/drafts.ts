@@ -90,14 +90,42 @@ export function createPostgresDraftRepository(pool: Pool): DraftRepository {
     },
 
     async markSent(id) {
-      await pool.query(
+      // APPROVED only. The clause used to admit PENDING as well, which was
+      // harmless while approve() was the sole caller and expiry was unreachable
+      // — every draft that got here had just transitioned to APPROVED. Now that
+      // a draft can expire, admitting PENDING would mean a draft that never
+      // passed the approval gate could still be recorded as sent, and an
+      // EXPIRED one would be refused only because it is not PENDING rather than
+      // because it is expired. Naming the one status that may be sent makes the
+      // guard say what it means.
+      const result = await pool.query(
         `UPDATE drafts
          SET status = 'SENT',
              sent_at = NOW(),
              updated_at = NOW()
-         WHERE id = $1 AND status IN ('APPROVED', 'PENDING')`,
+         WHERE id = $1 AND status = 'APPROVED'`,
         [id],
       );
+      if (result.rowCount === 0) {
+        throw new Error(`Draft ${id} could not be marked sent (not APPROVED)`);
+      }
+    },
+
+    async expirePending(before) {
+      // Guarded on status in the WHERE clause like every other transition here,
+      // so a draft approved between the pipeline reading it and this write is
+      // not clawed back into EXPIRED. RETURNING gives the caller exactly the
+      // rows it changed, which is what the audit events are written from — a
+      // second SELECT could disagree with the UPDATE under concurrency.
+      const { rows } = await pool.query<{ id: string; run_id: string }>(
+        `UPDATE drafts
+         SET status = 'EXPIRED',
+             updated_at = NOW()
+         WHERE status = 'PENDING' AND week_of < $1
+         RETURNING id, run_id`,
+        [before],
+      );
+      return rows.map((row) => ({ id: row.id, runId: row.run_id }));
     },
   };
 }
