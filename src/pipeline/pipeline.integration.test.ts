@@ -108,6 +108,8 @@ function harness(
     linearFails?: string;
     /** Make the model call reject, to exercise the skeleton fallback. */
     generatorFails?: string;
+    /** Drafts left PENDING by an earlier week, which the run should expire. */
+    stalePending?: Array<{ id: string; runId: string }>;
     now?: Date;
     lookbackDays?: number;
   } = {},
@@ -117,6 +119,7 @@ function harness(
   const created: Harness["created"] = [];
   const notified: Harness["notified"] = [];
   const alerts: Harness["alerts"] = [];
+  const expiring = opts.stalePending ?? [];
 
   const db: DatabaseClient = {
     insertAuditEvent: async (event) => {
@@ -172,6 +175,7 @@ function harness(
       created.push(input);
       return "draft_1";
     }),
+    expirePending: vi.fn(async () => expiring),
   };
 
   const notifier: PipelineNotifier = {
@@ -390,5 +394,67 @@ describe("runPipeline — model gateway down", () => {
 
     expect(h.notified).toHaveLength(1);
     expect(h.notified[0].draftId).toBe(result.draftId);
+  });
+});
+
+describe("runPipeline — closing out last week", () => {
+  const STALE = [
+    { id: "draft_prev", runId: "run_prev" },
+    { id: "draft_older", runId: "run_older" },
+  ];
+
+  it("expires drafts nobody approved, before this week's draft exists", async () => {
+    const h = harness({ prs: [mergedPR()], stalePending: STALE, now: FRIDAY });
+    await runPipeline(h.deps);
+
+    const expirePending = h.deps.draftStore.expirePending as ReturnType<typeof vi.fn>;
+    const create = h.deps.draftStore.create as ReturnType<typeof vi.fn>;
+
+    expect(expirePending).toHaveBeenCalledTimes(1);
+    // Cut off at this run's target week, so only earlier weeks are swept.
+    expect(expirePending.mock.calls[0][0]).toEqual(h.created[0].weekOf);
+    // Ordering is the claim in the name, so it is asserted rather than implied:
+    // sweeping after the insert would expire nothing and leave two PENDING
+    // drafts for one week, which is the state the sweep exists to prevent.
+    expect(expirePending.mock.invocationCallOrder[0]).toBeLessThan(
+      create.mock.invocationCallOrder[0],
+    );
+  });
+
+  /**
+   * Audited against the run that produced each draft rather than this one:
+   * audit_events is keyed on run_id, and the expiry of last week's draft is an
+   * event in last week's story. Writing them all under the current run would
+   * make the ledger unable to answer "what happened to run_prev's draft".
+   */
+  it("writes an EXPIRED event per draft, keyed to the run that produced it", async () => {
+    const h = harness({ prs: [mergedPR()], stalePending: STALE, now: FRIDAY });
+    await runPipeline(h.deps);
+
+    const expired = h.events.filter((e) => e.eventType === "EXPIRED");
+    expect(expired).toHaveLength(2);
+    expect(
+      expired.map((e) => ({ runId: e.runId, draftId: (e.payload as { draftId: string }).draftId })),
+    ).toEqual([
+      { runId: "run_prev", draftId: "draft_prev" },
+      { runId: "run_older", draftId: "draft_older" },
+    ]);
+    expect(expired.every((e) => e.actor === "system")).toBe(true);
+  });
+
+  it("writes no EXPIRED events on a week that left nothing open", async () => {
+    const h = harness({ prs: [mergedPR()], now: FRIDAY });
+    await runPipeline(h.deps);
+
+    expect(h.events.filter((e) => e.eventType === "EXPIRED")).toHaveLength(0);
+  });
+
+  it("still produces the week's draft after expiring the old ones", async () => {
+    const h = harness({ prs: [mergedPR()], stalePending: STALE, now: FRIDAY });
+    const result = await runPipeline(h.deps);
+
+    expect(result.status).toBe("SUCCESS");
+    expect(h.created).toHaveLength(1);
+    expect(h.notified).toHaveLength(1);
   });
 });

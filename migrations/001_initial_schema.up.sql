@@ -5,8 +5,11 @@
 -- approval, send, expiry) goes here with a correlating run_id. edit
 -- rate is derived from HUMAN_EDIT events, never recomputed from current
 -- draft text.
--- email_analytics stores SES feedback (opens, clicks) once SES
--- webhooks are wired.
+-- email_analytics records the SES message id a send returned, keyed to the
+-- draft, so a delivery can be traced back to the run that produced it. It
+-- carries no engagement counters: populating opens/clicks needs SES event
+-- destinations publishing to SNS, which this tenant does not have, and a column
+-- nothing can write is a claim the schema cannot keep.
 --
 -- run_id correlates a draft with its audit_events, but it is intentionally
 -- NOT a foreign key: PIPELINE_FAILURE events are written when no draft row
@@ -60,8 +63,6 @@ CREATE TABLE IF NOT EXISTS email_analytics (
   id             UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
   draft_id       UUID         NOT NULL REFERENCES drafts(id) ON DELETE CASCADE,
   ses_message_id TEXT         NOT NULL,
-  opens          INTEGER      NOT NULL DEFAULT 0,
-  clicks         INTEGER      NOT NULL DEFAULT 0,
   updated_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
 

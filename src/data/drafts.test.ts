@@ -180,12 +180,81 @@ describe("approve", () => {
 });
 
 describe("markSent", () => {
-  it("accepts APPROVED or PENDING and refuses anything else", async () => {
+  it("sends only an APPROVED draft", async () => {
     const { pool, query } = fakePool({ rowCount: 1 });
     await createPostgresDraftRepository(pool).markSent(DRAFT_ID);
 
     const statement = sql(query.mock.calls[0]);
     expect(statement).toContain("SET status = 'SENT'");
-    expect(statement).toContain("WHERE id = $1 AND status IN ('APPROVED', 'PENDING')");
+    expect(statement).toContain("WHERE id = $1 AND status = 'APPROVED'");
+  });
+
+  /**
+   * The clause used to read `status IN ('APPROVED', 'PENDING')`. That was
+   * survivable while expiry was unreachable and approve() was the only caller,
+   * but a draft can now be EXPIRED, and admitting PENDING would mean a draft
+   * that never passed the approval gate could still be recorded as sent.
+   * Asserted as an absence because widening it back is a one-word edit.
+   */
+  it("does not admit PENDING, so an unapproved draft cannot be recorded as sent", async () => {
+    const { pool, query } = fakePool({ rowCount: 1 });
+    await createPostgresDraftRepository(pool).markSent(DRAFT_ID);
+
+    expect(sql(query.mock.calls[0])).not.toContain("PENDING");
+  });
+
+  it("throws when the guard matched nothing, rather than reporting a silent no-op", async () => {
+    const { pool } = fakePool({ rowCount: 0 });
+    await expect(createPostgresDraftRepository(pool).markSent(DRAFT_ID)).rejects.toThrow(
+      /not APPROVED/,
+    );
+  });
+});
+
+describe("expirePending", () => {
+  const WEEK_OF = new Date("2026-04-17T00:00:00Z");
+
+  it("expires only PENDING drafts from a week before the cutoff", async () => {
+    const { pool, query } = fakePool({ rows: [] });
+    await createPostgresDraftRepository(pool).expirePending(WEEK_OF);
+
+    const statement = sql(query.mock.calls[0]);
+    expect(statement).toContain("SET status = 'EXPIRED'");
+    expect(statement).toContain("WHERE status = 'PENDING' AND week_of < $1");
+    expect(query.mock.calls[0][1]).toEqual([WEEK_OF]);
+  });
+
+  /**
+   * The status guard is what stops a draft approved between the pipeline
+   * starting and this write from being clawed back into EXPIRED — the same
+   * racing-transition property `approve` and `markSent` rely on.
+   */
+  it("guards on the current status, so a just-approved draft is not clawed back", async () => {
+    const { pool, query } = fakePool({ rows: [] });
+    await createPostgresDraftRepository(pool).expirePending(WEEK_OF);
+
+    expect(sql(query.mock.calls[0])).toContain("status = 'PENDING'");
+  });
+
+  it("returns the rows it actually changed, which is what the audit is written from", async () => {
+    const { pool, query } = fakePool({
+      rows: [
+        { id: DRAFT_ID, run_id: "run_1" },
+        { id: "22222222-2222-4222-8222-222222222222", run_id: "run_2" },
+      ],
+    });
+
+    const expired = await createPostgresDraftRepository(pool).expirePending(WEEK_OF);
+
+    expect(sql(query.mock.calls[0])).toContain("RETURNING id, run_id");
+    expect(expired).toEqual([
+      { id: DRAFT_ID, runId: "run_1" },
+      { id: "22222222-2222-4222-8222-222222222222", runId: "run_2" },
+    ]);
+  });
+
+  it("returns nothing when no draft was left open", async () => {
+    const { pool } = fakePool({ rows: [] });
+    expect(await createPostgresDraftRepository(pool).expirePending(WEEK_OF)).toEqual([]);
   });
 });
