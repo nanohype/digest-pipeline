@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 /**
  * ApproveButton — explicit send-to-company action gated by a modal
@@ -6,8 +6,8 @@
  * 500 inboxes, so surprise is bad.
  */
 
-import { useState } from 'react';
-import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { useState } from "react";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 interface ApproveButtonProps {
   onApprove: () => Promise<void>;
@@ -26,6 +26,11 @@ export function ApproveButton({ onApprove, isApproving, disabled }: ApproveButto
   return (
     <>
       <button
+        // Explicit, because the HTML default is `submit`. This button opens a
+        // confirmation dialog; inside a form it would instead submit it, which
+        // on the one control that mails a newsletter to the whole company is
+        // the wrong default to inherit silently.
+        type="button"
         className="approve-button"
         onClick={() => setConfirming(true)}
         disabled={disabled || isApproving}
@@ -33,7 +38,7 @@ export function ApproveButton({ onApprove, isApproving, disabled }: ApproveButto
         aria-disabled={disabled || isApproving}
         aria-haspopup="dialog"
       >
-        {isApproving ? 'Sending…' : 'Approve & send'}
+        {isApproving ? "Sending…" : "Approve & send"}
       </button>
       {confirming ? (
         <ConfirmDialog
