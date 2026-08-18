@@ -55,6 +55,20 @@ jobs:
       # the continuation lines inside them. A second opinion there would either
       # be wrong or demand churn, so this gate takes the rules nothing else owns.
       - name: Editorconfig
+        # editorconfig-checker ships a JS shim that fetches its real binary from
+        # the GitHub releases API on first run. The request is an Octokit client
+        # built with `auth: process.env.GITHUB_TOKEN`, so with no token it goes
+        # out unauthenticated and is rate-limited per source IP — which on hosted
+        # runners is an address shared with every other GitHub Actions customer.
+        # That is not a rare edge: this job failed with `403 API rate limit
+        # exceeded for 20.102.46.144` on a PR that touched no code, and the merge
+        # gate correctly failed closed behind it.
+        #
+        # The repo token lifts the same request to the authenticated limit. It
+        # needs no permissions beyond the default read — it is proving who is
+        # asking, not opening anything up.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm run editorconfig
 
       # The metric-reference table in README is the authoritative name-and-label
