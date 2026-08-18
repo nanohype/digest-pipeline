@@ -417,6 +417,46 @@ jobs:
           done
           echo "$applied migration(s) applied; drafts, audit_events, email_analytics all present"
 
+  data-layer:
+    name: data layer (real Postgres)
+    runs-on: ubuntu-latest
+    # The draft status machine is written in SQL — conditional UPDATEs plus CHECK
+    # constraints — so the guards it depends on are enforced by the engine rather
+    # than by TypeScript. The unit suite asserts the statements this repo sends,
+    # which a fake pool can do; it cannot assert that Postgres agrees, and the
+    # property the approval gate rests on (two approvals racing, exactly one
+    # wins) has no meaning without a real transaction.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: digest_pipeline_ci
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+        ports:
+          - 5432:5432
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - name: Install
+        run: npm install --prefer-offline --no-audit --no-fund
+      # TEST_DATABASE_URL set means the tier MUST run: the suite skips only when
+      # the variable is absent, and a database that is present but unreachable is
+      # a hard failure. That is deliberate — a suite that quietly skips turns an
+      # absence of evidence into a claim of safety, which is the same contract
+      # the eval tier holds EVAL_LLM to.
+      - name: Data-layer tests
+        env:
+          TEST_DATABASE_URL: postgres://postgres:ci@127.0.0.1:5432/digest_pipeline_ci
+        run: npm run test:db
+
   merge-gate:
     name: merge gate
     runs-on: ubuntu-latest
@@ -428,6 +468,7 @@ jobs:
         crd-schema-drift,
         web,
         docker,
+        data-layer,
       ]
     # always() is load-bearing: without it a failed dependency SKIPS this job,
     # and GitHub counts a skipped check as passing for branch protection, so the

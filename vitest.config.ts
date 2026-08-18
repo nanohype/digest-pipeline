@@ -11,7 +11,11 @@ export default defineConfig({
     // be skipped and a rotted golden set must not wait for it. The model half
     // is evals/*.eval.ts, on its own config (npm run eval).
     include: ["src/**/*.test.ts", "src/**/*.test.tsx", "evals/**/*.test.ts"],
-    exclude: ["node_modules", "dist", ".next", "web"],
+    // `*.db.test.ts` is the data-layer tier (vitest.db.config.ts, `npm run
+    // test:db`). It needs a real Postgres, and `npm test` must stay runnable on
+    // a laptop with nothing installed — so it is excluded here by name rather
+    // than left to skip itself at runtime.
+    exclude: ["node_modules", "dist", ".next", "web", "src/**/*.db.test.ts"],
     coverage: {
       // Always on, so `npm test` enforces the floor locally exactly as CI does.
       // A threshold that only evaluates under an opt-in flag is not a gate:
