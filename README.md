@@ -184,13 +184,34 @@ OpenTelemetry for traces + metrics. Logs are decoupled from OTel — apps emit P
 
 - **Bootstrap** (`src/common/otel-bootstrap.ts`) loaded via `--import` in the pipeline + API Dockerfiles. Web uses `web/instrumentation.ts` (Next.js convention) + `web/lib/otel-browser.ts` (mounted via `OtelInit` client component).
 - **Spans** — pipeline phases (`pipeline.run`, `phase.aggregate`, `phase.dedupe`, `phase.rank`, `phase.generate`, `phase.audit_and_notify`) and generator sub-phases (`bedrock.load_voice_baseline`, `bedrock.invoke_model`, `bedrock.validate_output`) are explicit. Fastify auto-instrumentation wraps every API request.
-- **Metrics** (`src/common/metrics.ts`) — `digest-pipeline.run.duration_ms{status}`, `digest-pipeline.source.{items,failure}{source}`, `digest-pipeline.bedrock.{tokens{kind,model},fallback}`, `digest-pipeline.draft.edit_rate`, `digest-pipeline.email.sent`. OTLP → cluster OpenTelemetry Collector → Amazon Managed Prometheus; the chart's `prometheusrule.yaml` alerts and `grafana-dashboard.yaml` (`chart/dashboards/digest-pipeline.json`) query them.
+- **Metrics** (`src/common/metrics.ts`) — the table below is the authoritative list. OTLP → cluster OpenTelemetry Collector → Amazon Managed Prometheus; the chart's `prometheusrule.yaml` alerts and `grafana-dashboard.yaml` (`chart/dashboards/digest-pipeline.json`) query them.
 - **Logs** — Pino → stdout → cluster OpenTelemetry Collector → Loki. `trace_id` / `span_id` auto-injected by `@opentelemetry/instrumentation-pino`.
 - **Resource attributes** — `agents.tenant=growth` + `agents.platform=digest-pipeline` ride on every span/metric, keying the cluster collector pipeline + dashboard queries.
 - **Sampling** — 100% (parent-based always-on at the SDK; the collector batches but does not down-sample).
 - **Browser → API trace propagation** — W3C `traceparent` via `@opentelemetry/instrumentation-fetch`; the Next.js proxy routes and Fastify continue the trace, so a single trace spans browser → API → Postgres.
 
 The app ships no telemetry credentials. The gateway's OTLP receiver is unauthenticated in-cluster (reachable only through the chart's NetworkPolicy egress rule), and the gateway owns the upstream auth itself — SigV4 remote-write to Amazon Managed Prometheus signed with its own EKS Pod Identity, with Tempo and Loki both in-cluster. There is nothing for the app to hold.
+
+### Metric reference
+
+Every instrument the app emits, with the labels it carries. `npm run check:metrics` gates
+this table against `src/common/metrics.ts` in both directions, so an instrument cannot be
+added, renamed or removed without the table moving with it.
+
+| Metric | Labels | Meaning |
+| --- | --- | --- |
+| `digest-pipeline.run.duration_seconds` | `status` | Pipeline run wall-clock time. `status` is `SUCCESS`, `PARTIAL` or `FAILED`. Explicit histogram buckets (10s–1800s) so the p95 alert can resolve at a real run duration. |
+| `digest-pipeline.source.items` | `source` | Items returned by an aggregator, per source. |
+| `digest-pipeline.source.failure` | `source` | Aggregator failures, per source. One failure degrades the run to `PARTIAL` rather than failing it. |
+| `digest-pipeline.bedrock.tokens` | `kind`, `model` | Token usage. `kind` is `input`, `output`, `cache_read` or `cache_write` — the four are disjoint in the Anthropic usage block, so their sum is the run's real spend. `model` is the gateway *route*, not a Bedrock model id. |
+| `digest-pipeline.bedrock.fallback` | — | Runs where generation failed and the skeleton draft was posted instead. |
+| `digest-pipeline.draft.edit_rate` | — | Per-draft Levenshtein edit rate (0–1) against the generated baseline. |
+| `digest-pipeline.email.sent` | — | Newsletter sends, counted in recipients. |
+
+Per-run identifiers (`run_id`, `draft_id`) are deliberately absent from every label. They
+live on the trace and in `audit_events`, which is what keeps the series count bounded —
+adding one to a metric is a cardinality regression, not a missing feature, and the gate
+rejects it.
 
 `OTEL_SDK_DISABLED=true` short-circuits the SDK — used by tests and any run where the cluster collector isn't reachable. Pino still writes to stdout regardless.
 

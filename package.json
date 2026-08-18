@@ -20,7 +20,7 @@
     "format:check": "biome format .",
     "typecheck": "tsc --noEmit",
     "editorconfig": "editorconfig-checker -disable-indent-size -disable-indentation",
-    "check": "npm run typecheck && npm run lint && npm run format:check && npm run editorconfig && npm test",
+    "check": "npm run typecheck && npm run lint && npm run format:check && npm run editorconfig && npm run check:metrics && npm test",
     "platform:validate": "node scripts/validate-platform-manifests.mjs && node scripts/validate-platform-manifests.mjs --self-test",
     "sync:vendored": "node scripts/sync-vendored.mjs",
     "sync:vendored:check": "node scripts/sync-vendored.mjs --check",
@@ -41,7 +41,8 @@
     "chart:lint": "helm lint chart",
     "chart:template:staging": "helm template digest-pipeline chart -f chart/values-staging.yaml",
     "chart:template:production": "helm template digest-pipeline chart -f chart/values-production.yaml",
-    "chart:check-env": "node scripts/check-chart-env-covers-config.mjs"
+    "chart:check-env": "node scripts/check-chart-env-covers-config.mjs",
+    "check:metrics": "node scripts/check-documented-metrics.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.115.0",

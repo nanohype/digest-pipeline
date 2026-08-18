@@ -57,6 +57,16 @@ jobs:
       - name: Editorconfig
         run: npm run editorconfig
 
+      # The metric-reference table in README is the authoritative name-and-label
+      # list, and it is the kind of doc that goes stale silently: the alerts and
+      # the dashboard query the real series, so a renamed instrument breaks
+      # nothing and turns nothing red. It happened — the docs carried
+      # `run.duration_ms` well after the rename to `run.duration_seconds`, and
+      # claimed a `run_id` label on two metrics that deliberately carry none.
+      # This compares the table to the instruments in both directions.
+      - name: Documented metrics match the emitted ones
+        run: npm run check:metrics
+
       - name: Test
         run: npm test -- --coverage
 
