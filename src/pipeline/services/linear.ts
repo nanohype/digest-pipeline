@@ -5,6 +5,10 @@
  */
 
 import { LinearClient, PaginationOrderBy } from "@linear/sdk";
+import { DEFAULT_REQUEST_TIMEOUT_MS } from "../../common/http.js";
+
+/** Socket-level floor under the aggregator's `withTimeout` wrap. */
+const REQUEST_TIMEOUT_MS = DEFAULT_REQUEST_TIMEOUT_MS;
 
 export interface LinearEpic {
   id: string;
@@ -48,11 +52,46 @@ export interface LinearServiceConfig {
 }
 
 export function createLinearService(config: LinearServiceConfig): LinearService {
-  const client = new LinearClient({ apiKey: config.apiKey });
   const askLabel = config.askLabelName ?? "the-ask";
+
+  /**
+   * A client per call, because Linear gives no other way to bound one.
+   *
+   * `LinearClientOptions extends RequestInit`, and the SDK spreads those options
+   * into every `fetch` it issues — so `signal` is the only deadline it accepts.
+   * It exposes no `timeout` and no injectable fetch (`globalThis.fetch` is read
+   * directly), which rules out the wrapper used for Octokit.
+   *
+   * A single client would therefore have to share one `AbortSignal` across its
+   * whole lifetime. That is not a per-request deadline: the signal fires once
+   * and stays aborted, so every call after the first deadline fails before it is
+   * sent. Building the client per call gives each one a fresh signal. It is a
+   * thin wrapper over `globalThis.fetch` with no connection pool or handshake to
+   * amortise, so the cost is three object allocations on a job that runs once a
+   * week.
+   *
+   * Do not hoist this back to a single client. It reads like an obvious
+   * allocation to save, and the saving is three objects a week; what it costs is
+   * the deadline. A hoisted client shares one signal, and a shared signal is an
+   * expiry date rather than a per-request bound — the first call would be
+   * bounded and every later one would fail before it was sent, which looks like
+   * a Linear outage rather than a local bug.
+   *
+   * The deadline covers the method rather than each HTTP round trip, which is
+   * the useful scope — `listClosedEpicsSince` follows each project with a
+   * `lead` fetch, and bounding those individually would leave the method
+   * unbounded in aggregate. It matches the scope of the aggregator's
+   * `withTimeout` wrap, so the floor and the wrap describe the same thing.
+   */
+  const boundedClient = () =>
+    new LinearClient({
+      apiKey: config.apiKey,
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
 
   return {
     async listClosedEpicsSince(since) {
+      const client = boundedClient();
       const projects = await client.projects({
         filter: {
           completedAt: { gte: since.toISOString() },
@@ -78,6 +117,7 @@ export function createLinearService(config: LinearServiceConfig): LinearService 
     },
 
     async listUpcomingMilestones() {
+      const client = boundedClient();
       const projects = await client.projects({
         filter: { state: { eq: "started" } },
         first: 50,
@@ -94,6 +134,7 @@ export function createLinearService(config: LinearServiceConfig): LinearService 
     },
 
     async listAskLabeledIssues() {
+      const client = boundedClient();
       const issues = await client.issues({
         filter: {
           labels: { name: { eq: askLabel } },
