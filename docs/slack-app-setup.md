@@ -91,22 +91,43 @@ curl -sS -H "Authorization: Bearer $BOT_TOKEN" \
 When the token rotates (personnel change, 90-day cadence, or a leak):
 
 1. In the Slack app page → **Install App** → **Reinstall to Workspace**. This issues a new `xoxb-…`.
-2. Update the secret + force the tasks to roll:
+2. Write the new token to Secrets Manager:
 
 ```bash
 aws secretsmanager put-secret-value \
-  --region us-west-2 \
+  --region us-east-1 \
   --secret-id digest-pipeline/staging/slack \
   --secret-string "$(jq '.botToken = "xoxb-NEW..."' < slack-staging.json)"
-
-aws ecs update-service --region us-west-2 \
-  --cluster <cluster> --service <api-service> --force-new-deployment
-aws ecs update-service --region us-west-2 \
-  --cluster <cluster> --service <web-service> --force-new-deployment
-# Pipeline picks up new secrets on the next scheduled run.
 ```
 
-3. If the bot is still a member of all three channels in the Slack UI, nothing else is needed. If the reinstall dropped memberships, re-run the `/invite` commands from step 4.
+3. Pull it into the cluster, then roll the pods. **Both steps, in this order** —
+   they are separate for a reason:
+
+```bash
+# External Secrets syncs on `externalSecret.refreshInterval` (1h by default), so
+# the Kubernetes Secret still holds the old token immediately after the write
+# above. Force the sync rather than waiting out the interval — restarting first
+# would just reload the stale value and look like the rotation failed.
+kubectl -n tenants-digest-pipeline annotate externalsecret digest-pipeline-secrets \
+  force-sync="$(date +%s)" --overwrite
+
+# Confirm the sync landed before rolling.
+kubectl -n tenants-digest-pipeline get externalsecret digest-pipeline-secrets \
+  -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}{"\n"}'
+
+# The Secret is consumed via `envFrom`, which is read once at container start —
+# a changed Secret does not reach a running pod. These restarts are what applies
+# the rotation.
+kubectl -n tenants-digest-pipeline rollout restart deployment/digest-pipeline-api
+kubectl -n tenants-digest-pipeline rollout restart deployment/digest-pipeline-web
+kubectl -n tenants-digest-pipeline rollout status deployment/digest-pipeline-api
+kubectl -n tenants-digest-pipeline rollout status deployment/digest-pipeline-web
+```
+
+The pipeline needs no restart: `digest-pipeline-pipeline` is a CronJob, so each
+weekly run starts a fresh pod that reads the Secret as it stands then.
+
+4. If the bot is still a member of all three channels in the Slack UI, nothing else is needed. If the reinstall dropped memberships, re-run the `/invite` commands from step 4 of the setup above.
 
 ## What DigestPipeline does NOT do with Slack
 
