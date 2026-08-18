@@ -13,6 +13,10 @@
  */
 
 import { Client, isFullDatabase, isFullPage } from "@notionhq/client";
+import { DEFAULT_REQUEST_TIMEOUT_MS } from "../../common/http.js";
+
+/** Socket-level floor under the aggregator's `withTimeout` wrap. */
+const REQUEST_TIMEOUT_MS = DEFAULT_REQUEST_TIMEOUT_MS;
 
 export interface NotionPage {
   id: string;
@@ -33,7 +37,8 @@ export interface NotionServiceConfig {
 }
 
 export function createNotionService(config: NotionServiceConfig): NotionService {
-  const client = new Client({ auth: config.apiKey });
+  // Notion ships a native per-request deadline, so no fetch wrapper is needed.
+  const client = new Client({ auth: config.apiKey, timeoutMs: REQUEST_TIMEOUT_MS });
   let dataSourceIds: string[] | undefined;
 
   async function resolveDataSourceIds(): Promise<string[]> {
