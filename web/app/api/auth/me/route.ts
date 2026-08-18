@@ -1,7 +1,7 @@
-import { NextResponse } from 'next/server';
-import { withAuth } from '@workos-inc/authkit-nextjs';
+import { withAuth } from "@workos-inc/authkit-nextjs";
+import { NextResponse } from "next/server";
 
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
 // Read-only session check. Lives in a Route Handler (where AuthKit's
 // auto-refresh can mutate cookies safely) so the page server component

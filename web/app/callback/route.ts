@@ -1,4 +1,4 @@
-import { handleAuth } from '@workos-inc/authkit-nextjs';
+import { handleAuth } from "@workos-inc/authkit-nextjs";
 
 // Pass `baseURL` explicitly. Without it AuthKit falls back to `request.url`
 // for the post-sign-in redirect (see authkit-callback-route.js:59), and behind

@@ -1,6 +1,6 @@
-import { signOut } from '@workos-inc/authkit-nextjs';
+import { signOut } from "@workos-inc/authkit-nextjs";
 
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
 // AuthKit's signOut() clears the session cookie + redirects to the WorkOS
 // hosted "you've been signed out" page (or the configured logoutRedirectUri).
