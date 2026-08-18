@@ -57,6 +57,7 @@ export interface PipelineDraftStore {
     sections: RankedSection[];
     fullText: string;
   }): Promise<string>;
+  expirePending(before: Date): Promise<Array<{ id: string; runId: string }>>;
 }
 
 export interface PipelineNotifier {
@@ -94,6 +95,36 @@ export async function runPipeline(deps: PipelineDeps): Promise<PipelineRunResult
     rootSpan.setAttribute("run.id", runId);
     rootSpan.setAttribute("week_of", weekOf.toISOString());
     log.info({ runId, weekOf: weekOf.toISOString() }, "pipeline.start");
+
+    // Close out anything last week left open, before this week's draft exists.
+    //
+    // A draft nobody approved by the time the next newsletter is generated has
+    // missed the week it was written for. Left PENDING it stays approvable, and
+    // approving it mails a stale newsletter as though it were current — the
+    // review UI shows a draft, not a date. Expiring it first means the only
+    // PENDING draft at any moment is the one for the current week.
+    //
+    // Failures here propagate rather than degrading the run to PARTIAL. This is
+    // a write to the same database the draft itself is about to be written to,
+    // so if it is unreachable the run cannot persist anything anyway, and a
+    // swallow path would only add a branch that hides that.
+    await tracer.startActiveSpan("phase.expire_stale_drafts", async (span) => {
+      try {
+        const expired = await draftStore.expirePending(weekOf);
+        span.setAttribute("expired.count", expired.length);
+        // Audited against the run that produced the draft, not this one:
+        // audit_events is keyed on the run_id it belongs to, and the expiry of
+        // last week's draft is an event in last week's story.
+        for (const draft of expired) {
+          await auditWriter.expired(draft.runId, draft.id);
+        }
+        if (expired.length > 0) {
+          log.info({ runId, expired: expired.length }, "pipeline.expired-stale-drafts");
+        }
+      } finally {
+        span.end();
+      }
+    });
 
     const lookbackDays = deps.lookbackDays ?? 7;
     const since = new Date(weekOf.getTime() - lookbackDays * 24 * 60 * 60 * 1000);
