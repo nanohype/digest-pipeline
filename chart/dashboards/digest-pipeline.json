@@ -226,6 +226,7 @@
       "id": 2,
       "title": "Pipeline run \u2014 duration p50 / p95",
       "type": "timeseries",
+      "description": "SLO: p95 <= 10 min (600 s). Source: OTel histogram digest_pipeline_run_duration_seconds. Unit is seconds, matching the series and the 600 in the alert \u2014 a panel declaring ms renders a threshold breach as '640 ms', which reads as excellent.",
       "gridPos": {
         "x": 8,
         "y": 7,
@@ -246,7 +247,7 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "ms"
+          "unit": "s"
         }
       }
     },
