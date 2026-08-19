@@ -78,6 +78,7 @@ npm run typecheck         # tsc --noEmit
 npm run lint              # Biome on src/
 npm test                  # vitest run (unit + the offline eval tier)
 npm run eval              # the model tier — needs EVAL_LLM (see evals/README.md)
+npm run test:db           # the data-layer tier — needs TEST_DATABASE_URL (a real Postgres)
 npm run test:watch        # interactive watch
 
 npm run migrate:up        # Apply pending migrations to DATABASE_URL (runs dist/, needs a build)
@@ -150,6 +151,8 @@ No telemetry secret. The gateway's OTLP receiver takes no authentication in-clus
 - No framework lock-in for LLMs — the Anthropic Messages client against the Platform's gateway, injected as a port
 
 ## Testing
+
+**The data layer has its own tier** (`src/**/*.db.test.ts`, `npm run test:db`). The draft status machine is written in SQL — conditional `UPDATE`s plus the `status` and `event_type` CHECK constraints — so its guards are enforced by Postgres, not by TypeScript. `src/data/drafts.test.ts` asserts the statements this repo sends, which a fake pool can do; it cannot assert that the engine agrees, and the property the approval gate rests on — two approvals racing, exactly one winning — has no meaning without a real transaction. The tier applies `migrations/*.up.sql` to a real database, so the constraints under test are the ones that ship. `TEST_DATABASE_URL` unset skips it; set means it must run, and an unreachable database is a hard failure rather than a skip. It runs as its own CI job with a Postgres service, and the merge gate depends on it.
 
 **Evals are a separate tier** (`evals/`, see its README). A test asserts the code does what it says; an eval measures whether the *model* does, and the answer is a rate. `npm test` runs the offline half — fixture validity and the graders — on every PR. `npm run eval` runs the model half against real Bedrock, on its own CI workflow. Setting `EVAL_LLM` means the tier must run: a broken provider is a hard failure, never a skip, so a green eval check always means the evals executed.
 
