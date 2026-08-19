@@ -246,6 +246,7 @@ rejects it.
 | Document                                               | Path                                                                 |
 | ------------------------------------------------------ | -------------------------------------------------------------------- |
 | Deployment guide (step-by-step, first-time)            | [docs/deployment-guide.md](docs/deployment-guide.md)                 |
+| Threat model (boundaries, ranked risks, residual)      | [docs/threat-model.md](docs/threat-model.md)                         |
 | Secrets inventory + seeding + rotation                 | [docs/secrets.md](docs/secrets.md)                                   |
 | Slack app setup (one-time per env)                     | [docs/slack-app-setup.md](docs/slack-app-setup.md)                   |
 | Local development (dev loop + debugging failed runs)   | [docs/local-development.md](docs/local-development.md)               |

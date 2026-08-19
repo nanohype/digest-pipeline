@@ -13,6 +13,10 @@ Bedrock, and sends it through SES. It touches people's names, work items, and me
 defining controls are **PII never reaches the model unfiltered** and **nothing sends without a
 human approving it**.
 
+The reasoning behind these controls — the trust boundaries, what each one is holding
+back, and where it does not reach — is in [`docs/threat-model.md`](docs/threat-model.md).
+This section states the posture; that document states the residual risk.
+
 ### PII redaction (type-enforced, two checkpoints)
 
 - Every aggregated item is passed through `sanitizeSourceItem` (`src/pipeline/filters/pii.ts`)
