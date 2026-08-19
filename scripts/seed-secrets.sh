@@ -21,7 +21,12 @@
 #   scripts/seed-secrets.sh --env production  --file digest-pipeline-secrets.production.json
 #   scripts/seed-secrets.sh --env staging     --file ... --dry-run
 #
-# Defaults: --region us-west-2, --file digest-pipeline-secrets.${env}.json
+# Defaults: --region us-east-1, --file digest-pipeline-secrets.${env}.json
+#
+# us-east-1 is not a preference. Every venture account sits under an SCP that
+# denies any regional call outside it, so a seeding run against another region
+# fails with an explicit deny rather than a missing-permission error — and it
+# fails while an operator is already mid-incident trying to fix something.
 #
 # Requires: aws CLI (with creds that can put/create secrets), jq, base64, openssl.
 #
@@ -32,7 +37,7 @@ set -euo pipefail
 
 ENVIRONMENT=""
 FILE=""
-REGION="${AWS_REGION:-us-west-2}"
+REGION="${AWS_REGION:-us-east-1}"
 DRY_RUN=0
 
 usage() {

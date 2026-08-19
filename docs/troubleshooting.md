@@ -287,7 +287,7 @@ Verify the `aud` claim on a real token: decode it at jwt.io, check that `aud ===
 
 ```bash
 aws secretsmanager put-secret-value \
-  --region us-west-2 --secret-id digest-pipeline/{env}/approvers \
+  --region us-east-1 --secret-id digest-pipeline/{env}/approvers \
   --secret-string '{"cosUserId":"user_01COS...","backupApproverIds":["user_01NEW..."]}'
 ```
 
@@ -386,7 +386,7 @@ Wildcard on `configuration-set/*` covers the default and any future named ones. 
 
 ```bash
 aws secretsmanager put-secret-value \
-  --region us-west-2 --secret-id digest-pipeline/{env}/runtime-config \
+  --region us-east-1 --secret-id digest-pipeline/{env}/runtime-config \
   --secret-string '{
     "slackReviewChannelId": "C00...",
     "sesFromAddress":       "digest-pipeline@yourco.com",
