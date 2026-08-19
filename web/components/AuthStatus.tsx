@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 /**
  * AuthStatus — small header element showing "Signed in as <email>" or a
@@ -7,7 +7,7 @@
  * in Route Handlers — so we fetch /api/auth/me from a useEffect.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState } from "react";
 
 interface User {
   email: string;
@@ -16,35 +16,35 @@ interface User {
 
 export function AuthStatus() {
   const [state, setState] = useState<
-    { status: 'loading' } | { status: 'in'; user: User } | { status: 'out' }
+    { status: "loading" } | { status: "in"; user: User } | { status: "out" }
   >({
-    status: 'loading',
+    status: "loading",
   });
 
   useEffect(() => {
     let cancelled = false;
-    fetch('/api/auth/me')
+    fetch("/api/auth/me")
       .then((r) => r.json())
       .then((body) => {
         if (cancelled) return;
-        setState(body.user ? { status: 'in', user: body.user } : { status: 'out' });
+        setState(body.user ? { status: "in", user: body.user } : { status: "out" });
       })
       .catch(() => {
         if (cancelled) return;
-        setState({ status: 'out' });
+        setState({ status: "out" });
       });
     return () => {
       cancelled = true;
     };
   }, []);
 
-  if (state.status === 'loading') {
+  if (state.status === "loading") {
     return <p className="auth-status">&nbsp;</p>;
   }
-  if (state.status === 'in') {
+  if (state.status === "in") {
     return (
       <p className="auth-status">
-        Signed in as <strong>{state.user.email}</strong> ·{' '}
+        Signed in as <strong>{state.user.email}</strong> ·{" "}
         <a className="auth-link" href="/api/auth/sign-out">
           Sign out
         </a>

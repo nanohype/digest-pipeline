@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 /**
  * ConfirmDialog — modal confirmation for destructive actions. Focus-trapped,
@@ -7,7 +7,7 @@
  * focus returns to whatever opened the dialog on unmount.
  */
 
-import { useCallback, useEffect, useId, useRef, type ReactNode } from 'react';
+import { type ReactNode, useCallback, useEffect, useId, useRef } from "react";
 
 const FOCUSABLE_SELECTOR =
   'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -43,11 +43,11 @@ export function ConfirmDialog({
   });
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
-    if (e.key === 'Escape') {
+    if (e.key === "Escape") {
       onCancelRef.current();
       return;
     }
-    if (e.key !== 'Tab' || !panelRef.current) return;
+    if (e.key !== "Tab" || !panelRef.current) return;
     const focusable = panelRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR);
     if (focusable.length === 0) return;
     const first = focusable[0];
@@ -65,12 +65,12 @@ export function ConfirmDialog({
 
   useEffect(() => {
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    document.addEventListener('keydown', handleKeyDown);
-    document.body.style.overflow = 'hidden';
+    document.addEventListener("keydown", handleKeyDown);
+    document.body.style.overflow = "hidden";
     cancelRef.current?.focus();
     return () => {
-      document.removeEventListener('keydown', handleKeyDown);
-      document.body.style.overflow = '';
+      document.removeEventListener("keydown", handleKeyDown);
+      document.body.style.overflow = "";
       opener?.focus();
     };
   }, [handleKeyDown]);

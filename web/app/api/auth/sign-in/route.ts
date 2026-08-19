@@ -1,7 +1,7 @@
-import { redirect } from 'next/navigation';
-import { getSignInUrl } from '@workos-inc/authkit-nextjs';
+import { getSignInUrl } from "@workos-inc/authkit-nextjs";
+import { redirect } from "next/navigation";
 
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
 // Calling getSignInUrl() from a server component throws because it sets a
 // PKCE verifier cookie, and Next.js only allows cookie mutations inside

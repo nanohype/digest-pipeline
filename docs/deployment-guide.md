@@ -11,8 +11,17 @@ If you're rotating credentials on an already-running tenant, jump to [`secrets.m
 The slow-moving, per-tenant AWS substrate is declared in `spec.datastores` and provisioned by the generic `tenant-substrate` component: the `main` Aurora Serverless v2 store and the two S3 buckets. The operator generates the IAM (datastore-access + the SES `ses` capability grant) and the Pod Identity association from the Platform CR; SES's verified sending identity is account-level mail infrastructure. You apply the env's `tenant-substrate` leaf with terragrunt before deploying the chart — see [`landing-zone`](https://github.com/nanohype/landing-zone). Set the region that has Bedrock access enabled:
 
 ```bash
-export AWS_REGION=us-west-2
+export AWS_REGION=us-east-1
 ```
+
+> **us-east-1 is not a default you can override.** Every venture account sits in
+> an Organizations OU carrying an SCP that denies any regional call outside
+> us-east-1, with a `NotAction` allowlist for global services. A command aimed
+> anywhere else fails with an explicit deny naming the policy — not a
+> missing-permission error, so it does not look like an IAM problem you can fix
+> by widening a role. Global services (IAM, Route 53, CloudFront, the S3
+> `ListAllMyBuckets` call) still answer, which is why an occasional cross-region
+> resource is *visible* while being unreadable.
 
 - **Bedrock model access** must be enabled in the deployment region for the Claude model the inference profile fans out to. Default is `us.anthropic.claude-sonnet-5` (US cross-region inference profile); request access for `anthropic.claude-sonnet-5` in **all three** US regions the profile spans (us-east-1, us-east-2, us-west-2) so AWS can route to whichever has spare capacity. Outside the US, set the route's `crossRegionProfile` to `eu.anthropic.claude-sonnet-5` (or `global.` in Asia Pacific) on the `ModelGateway` CR, add the same ID to `spec.identity.allowedModels` in `platform.yaml`, and request access in the matching regions. The app is unaffected — it names a route, not a model.
 
@@ -136,7 +145,7 @@ If you need to run migrations by hand (e.g. from a bastion inside the VPC):
 
 ```bash
 DB_SECRET=$(aws secretsmanager get-secret-value \
-  --region us-west-2 \
+  --region us-east-1 \
   --secret-id digest-pipeline/staging/db-credentials \
   --query SecretString --output text)
 
@@ -259,7 +268,7 @@ kubectl delete -f platform.yaml
 # 4. Delete the operator-seeded secrets (the substrate owns db-credentials):
 for s in approvers workos-directory github linear slack notion \
          web-config runtime-config; do
-  aws secretsmanager delete-secret --region us-west-2 \
+  aws secretsmanager delete-secret --region us-east-1 \
     --secret-id digest-pipeline/${ENV}/${s} --force-delete-without-recovery
 done
 ```
