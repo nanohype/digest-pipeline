@@ -55,7 +55,7 @@ If your Slack workspace has an HRIS integration posting updates to the announcem
 
 ```bash
 aws secretsmanager put-secret-value \
-  --region us-west-2 \
+  --region us-east-1 \
   --secret-id digest-pipeline/staging/slack \
   --secret-string "$(jq '.hrBotUserIds = ["U0HRBOT0001","U0HRBOT0002"]' < slack-staging.json)"
 ```
@@ -68,7 +68,7 @@ From your laptop (or a bastion with AWS creds + Slack SDK):
 
 ```bash
 BOT_TOKEN=$(aws secretsmanager get-secret-value \
-  --region us-west-2 --secret-id digest-pipeline/staging/slack \
+  --region us-east-1 --secret-id digest-pipeline/staging/slack \
   --query SecretString --output text | jq -r .botToken)
 
 # Token still valid?
@@ -77,7 +77,7 @@ curl -sS -H "Authorization: Bearer $BOT_TOKEN" \
 
 # Bot is a member of the review channel?
 REVIEW_CHANNEL=$(aws secretsmanager get-secret-value \
-  --region us-west-2 --secret-id digest-pipeline/staging/runtime-config \
+  --region us-east-1 --secret-id digest-pipeline/staging/runtime-config \
   --query SecretString --output text | jq -r .slackReviewChannelId)
 
 curl -sS -H "Authorization: Bearer $BOT_TOKEN" \

@@ -121,7 +121,7 @@ The chart's `migrate-job` hook normally handles this. To run migrations manually
 
 ```bash
 DB_SECRET=$(aws secretsmanager get-secret-value \
-  --region us-west-2 --secret-id digest-pipeline/staging/db-credentials \
+  --region us-east-1 --secret-id digest-pipeline/staging/db-credentials \
   --query SecretString --output text)
 
 export DATABASE_URL="postgres://$(echo "$DB_SECRET" | jq -r '.username'):$(echo "$DB_SECRET" | jq -r '.password' | jq -sRr @uri)@$(echo "$DB_SECRET" | jq -r '.host'):$(echo "$DB_SECRET" | jq -r '.port')/$(echo "$DB_SECRET" | jq -r '.dbname')"

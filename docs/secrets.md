@@ -108,7 +108,7 @@ ENV=staging                                          # or: production
 
 # ── approvers ───────────────────────────────────────────────────────────
 aws secretsmanager create-secret \
-  --region us-west-2 \
+  --region us-east-1 \
   --name digest-pipeline/${ENV}/approvers \
   --description 'WorkOS user IDs allowed to approve + send a draft.' \
   --secret-string '{
@@ -118,7 +118,7 @@ aws secretsmanager create-secret \
 
 # ── workos-directory ───────────────────────────────────────────────────
 aws secretsmanager create-secret \
-  --region us-west-2 \
+  --region us-east-1 \
   --name digest-pipeline/${ENV}/workos-directory \
   --description 'WorkOS Directory Sync read-only API key + directory ID.' \
   --secret-string '{
@@ -128,7 +128,7 @@ aws secretsmanager create-secret \
 
 # ── github ─────────────────────────────────────────────────────────────
 aws secretsmanager create-secret \
-  --region us-west-2 \
+  --region us-east-1 \
   --name digest-pipeline/${ENV}/github \
   --description 'Read-only PAT or GitHub App token + repos to aggregate from.' \
   --secret-string '{
@@ -141,7 +141,7 @@ aws secretsmanager create-secret \
 
 # ── linear ─────────────────────────────────────────────────────────────
 aws secretsmanager create-secret \
-  --region us-west-2 \
+  --region us-east-1 \
   --name digest-pipeline/${ENV}/linear \
   --description 'Linear personal API key + optional ask-label override.' \
   --secret-string '{
@@ -151,7 +151,7 @@ aws secretsmanager create-secret \
 
 # ── slack ──────────────────────────────────────────────────────────────
 aws secretsmanager create-secret \
-  --region us-west-2 \
+  --region us-east-1 \
   --name digest-pipeline/${ENV}/slack \
   --description 'Slack bot token + channels + HR-bot user IDs to filter out.' \
   --secret-string '{
@@ -163,7 +163,7 @@ aws secretsmanager create-secret \
 
 # ── notion ─────────────────────────────────────────────────────────────
 aws secretsmanager create-secret \
-  --region us-west-2 \
+  --region us-east-1 \
   --name digest-pipeline/${ENV}/notion \
   --description 'Notion internal integration token + all-hands database ID.' \
   --secret-string '{
@@ -174,7 +174,7 @@ aws secretsmanager create-secret \
 # ── web-config (WorkOS AuthKit for the review UI) ──────────────────────
 COOKIE_PASSWORD=$(openssl rand -base64 48 | tr -d '\n/' | cut -c1-48)
 aws secretsmanager create-secret \
-  --region us-west-2 \
+  --region us-east-1 \
   --name digest-pipeline/${ENV}/web-config \
   --description 'WorkOS AuthKit credentials for the Next.js review UI.' \
   --secret-string "{
@@ -186,7 +186,7 @@ aws secretsmanager create-secret \
 
 # ── runtime-config (non-credential operational config) ────────────────
 aws secretsmanager create-secret \
-  --region us-west-2 \
+  --region us-east-1 \
   --name digest-pipeline/${ENV}/runtime-config \
   --description 'Operational knobs consumed by the pipeline + API tasks.' \
   --secret-string '{
@@ -207,7 +207,7 @@ aws secretsmanager create-secret \
 ENV=staging
 
 aws secretsmanager put-secret-value \
-  --region us-west-2 \
+  --region us-east-1 \
   --secret-id digest-pipeline/${ENV}/github \
   --secret-string "$(jq -c '.token = "ghp_NEW..."' < github-${ENV}.json)"
 
@@ -242,7 +242,7 @@ ENV=staging
 # 1. Are all required secrets present + populated?
 for s in approvers workos-directory github linear slack notion \
          web-config runtime-config; do
-  aws secretsmanager describe-secret --region us-west-2 \
+  aws secretsmanager describe-secret --region us-east-1 \
     --secret-id digest-pipeline/${ENV}/${s} \
     --query '{name:Name,lastChanged:LastChangedDate}' --output text
 done
