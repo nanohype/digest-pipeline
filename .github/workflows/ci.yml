@@ -315,6 +315,20 @@ jobs:
         env:
           EKS_AGENT_PLATFORM_DIR: .eks-agent-platform
 
+      # The scheduled freshness report runs weekly; what it SAYS is asserted
+      # here, on every pull request. Its remediation is copied into an issue body
+      # that is read on whatever day someone opens it, so an instruction naming a
+      # commit one run resolved is presented as current until the next run —
+      # and following it re-vendors to the wrong ref while closing an issue that
+      # should stay open. This builds its own upstream repository whose commits it
+      # knows, runs the report against it, and asserts on the bytes that come
+      # back: no commit id anywhere, a remediation naming `--ref=latest`, and then
+      # that command run for real against the same repository, required to land
+      # the pin on the newest commit touching the vendored path. Needs no network
+      # and no upstream checkout — it builds both.
+      - name: Freshness report names a command, not a commit
+        run: npm run schemas:selftest
+
   web:
     name: web build + typecheck + test
     runs-on: ubuntu-latest

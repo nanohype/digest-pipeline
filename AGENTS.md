@@ -100,7 +100,7 @@ The schemas it checks against are byte-identical copies of the controller-gen ou
 
 Both questions are answerable from the commit under test, which is what makes them safe to block on. Whether the pin has fallen behind upstream is not: that answer changes when someone pushes to the operator repo, and nothing here is broken when it comes back "behind". `npm run schemas:freshness` asks it on a weekly schedule (`.github/workflows/crd-schema-freshness.yml`), never on a pull request.
 
-Re-vendoring is `npm run schemas:sync -- --ref=<sha>`, which rewrites the copies, the ref, and the digests together so one reviewable commit carries the schema diff and the pin move.
+Re-vendoring is `npm run schemas:sync -- --ref=latest`, which rewrites the copies, the ref, and the digests together so one reviewable commit carries the schema diff and the pin move. `latest` resolves the newest commit touching the vendored path at the moment the re-vendor runs — which is what the freshness report names, so the remediation in a drift issue is correct on whatever day the issue is read rather than only on the day it was filed. `npm run schemas:selftest` asserts that on the report's emitted bytes: it builds an upstream repository whose commits it knows, runs the report against it, requires no commit id anywhere in the output and a remediation naming the command, then runs that command and requires the pin to land on the newest commit touching the path.
 
 `npm run platform:validate` also runs the gate's `--self-test`, answering "does this gate catch anything?" — it mutates in-memory copies of `platform.yaml` and asserts each one is rejected, then asserts the committed manifest still passes.
 

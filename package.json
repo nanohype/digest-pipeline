@@ -30,6 +30,7 @@
     "schemas:sync": "node scripts/sync-crd-schemas.mjs",
     "schemas:check": "node scripts/sync-crd-schemas.mjs --check",
     "schemas:freshness": "node scripts/sync-crd-schemas.mjs --freshness",
+    "schemas:selftest": "node scripts/sync-crd-schemas.mjs --self-test",
     "docs": "typedoc",
     "migrate:up": "node dist/data/migrate.js up",
     "migrate:down": "node dist/data/migrate.js down",

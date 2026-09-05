@@ -20,6 +20,15 @@ name: crd-schema-freshness
 # anything else means the check could not reach a verdict at all — an
 # unreachable upstream must not be filed as confirmed drift, nor drift dismissed
 # as an unreachable upstream.
+#
+# The body is re-edited weekly and is therefore never out of date. What can go
+# out of date is what it SAYS. An issue is read on whatever day someone opens
+# it, so an instruction naming a commit resolved by one run is presented as
+# current until the next — and following it re-vendors to the wrong ref while
+# closing an issue that should stay open. Everything below names a command or a
+# link that resolves when it is used: `--ref=latest`, and a compare whose second
+# operand is `HEAD`. `npm run schemas:selftest` holds that line on the emitted
+# bytes, on every pull request.
 on:
   schedule:
     - cron: '0 13 * * 1' # Mondays, 13:00 UTC
@@ -87,6 +96,11 @@ jobs:
           REPORT: ${{ steps.freshness.outputs.report }}
         run: |
           set -euo pipefail
+          # The compare link's base. This is the commit this repository vendors
+          # from — a property of the tree, verifiable against source.json, and it
+          # does not change until someone re-vendors. Its second operand stays
+          # `HEAD` so the diff resolves when the link is clicked.
+          PIN=$(jq -r .upstream.ref schemas/crd/source.json | cut -c1-12)
           gh label create "$DRIFT_LABEL" \
             --color B60205 \
             --description "A vendored upstream copy is behind the repo it was copied from" \
@@ -110,12 +124,17 @@ jobs:
           Re-vendor and re-validate:
 
           \`\`\`
-          npm run schemas:sync -- --ref=<sha>
+          npm run schemas:sync -- --ref=latest
           npm run platform:validate
           \`\`\`
 
-          Read the schema diff before merging — a new constraint upstream usually implies a
-          \`platform.yaml\` change here. This issue closes itself once the pin is current.
+          \`latest\` resolves upstream's newest commit at the moment the re-vendor runs, so this
+          instruction is correct on whatever day you are reading it. Read the schema diff before
+          merging — a new constraint upstream usually implies a \`platform.yaml\` change here:
+
+          <https://github.com/nanohype/eks-agent-platform/compare/${PIN}...HEAD>
+
+          This issue closes itself once the pin is current.
           EOF
           )
 
