@@ -54,22 +54,16 @@ jobs:
       # TS and JSON to biome, and Make requires tabs for recipes and spaces for
       # the continuation lines inside them. A second opinion there would either
       # be wrong or demand churn, so this gate takes the rules nothing else owns.
+      #
+      # The action reads the tree and fetches nothing while the check runs, so a
+      # verdict this job reports is about this branch. It resolves during job
+      # setup like every other pinned action, and a failure there stops the job
+      # before this step exists rather than arriving as a finding about a file.
+      # It self-tests before it reads, and names which of its two non-zero
+      # verdicts it reached — "these files do not match" and "nothing was
+      # checked" are different facts and only one of them is about the branch.
       - name: Editorconfig
-        # editorconfig-checker ships a JS shim that fetches its real binary from
-        # the GitHub releases API on first run. The request is an Octokit client
-        # built with `auth: process.env.GITHUB_TOKEN`, so with no token it goes
-        # out unauthenticated and is rate-limited per source IP — which on hosted
-        # runners is an address shared with every other GitHub Actions customer.
-        # That is not a rare edge: this job failed with `403 API rate limit
-        # exceeded for 20.102.46.144` on a PR that touched no code, and the merge
-        # gate correctly failed closed behind it.
-        #
-        # The repo token lifts the same request to the authenticated limit. It
-        # needs no permissions beyond the default read — it is proving who is
-        # asking, not opening anything up.
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npm run editorconfig
+        uses: nanohype/.github/actions/editorconfig-gate@b2eada74413fcc9f3042f22126ee5b350a2b846e # main
 
       # The metric-reference table in README is the authoritative name-and-label
       # list, and it is the kind of doc that goes stale silently: the alerts and
