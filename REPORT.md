@@ -299,3 +299,126 @@ Surfaced while auditing this class; each is a separate item.
 should assert, since the answer changes when someone pushes to another repository. Adopting
 a newer operator API is a separate item: a re-vendor plus the schema-diff review the drift
 issue now instructs a reader to perform.
+
+## The issue backlog, read against the merged tree
+
+Five open issues, four filed 20–27 June. A repository takes changes; an issue does not,
+so each was read against what is on `main` rather than against its own text. Two have
+moved, and one of those moved only halfway — which is the state that costs something,
+because the title still reads true.
+
+### #11 — `withTimeout` does not abort: holds, but this repository cannot fix it
+
+The defect is real and unchanged. `withTimeout` races a promise against a timer
+(`src/vendor/runtime/resilience.ts:29`) and returns without cancelling anything, so the
+caller learns it gave up and the operation does not. The WorkOS directory client is still
+the live case: it calls `fetchImpl(url, { headers })` with no `signal`
+(`src/vendor/runtime/workos-directory.ts:131`), inside a `walk()` that pages up to fifty
+times, under `withRetry(3)` — so one slow directory walk can leave three page requests
+outstanding, each holding a socket, each resolving where nobody is waiting.
+
+What has moved is who owns it. Both files the issue names have gone:
+
+| #11 names | on `main` | owner |
+| --- | --- | --- |
+| `src/pipeline/utils/resilience.ts` | `src/vendor/runtime/resilience.ts` | nanohype/nanohype |
+| `src/pipeline/services/workos-directory.ts` | `src/vendor/runtime/workos-directory.ts` | nanohype/nanohype |
+
+Both are declared entries in `scripts/vendored.json`, and `src/vendor/runtime` is an
+`exclusiveDirs` entry, so no file may even be added beside them. The byte-comparison was
+confirmed rather than assumed: appending one comment line to
+`src/vendor/runtime/resilience.ts` and running `node scripts/sync-vendored.mjs --check`
+against a checkout at the pinned commit exits 1 with
+`DRIFT src/vendor/runtime/resilience.ts`, and that check runs in the `vendored` job the
+merge gate depends on.
+
+**The fix belongs in `nanohype/nanohype`**, at `library/runtime/src/resilience.ts` and
+`library/runtime/src/workos-directory.ts`, and it is ordered:
+
+1. `withTimeout` creates an `AbortController`, aborts it on the deadline, and passes the
+   signal to an operation *factory* rather than a bare promise — a promise is already
+   running and cannot be handed a signal after the fact, so the signature has to change.
+2. The directory client accepts a `signal` and forwards it to `fetchImpl`.
+3. Only then can this repository thread it: the aggregator ports
+   (`src/pipeline/aggregators/types.ts`) and the resolver
+   (`src/pipeline/identity/workos.ts:70`) are this repository's own files, but every one
+   of them would be threading a signal that nothing upstream produces yet.
+
+There is a shortcut worth naming so it is not taken: a caller here could pass its own
+`AbortSignal.timeout(ms)` alongside `withTimeout` today, without upstream changing. That
+puts the deadline in two places that must agree — the signal's and the timer's — which is
+the two-copies defect wearing a different hat. The deadline belongs to whichever thing
+owns the timeout, and that is `withTimeout`.
+
+The gate the issue implies is behavioural and belongs upstream with the change: assert the
+operation *stopped*, not that the wrapper returned — a fake whose `signal` handler records
+the abort, and an assertion that no further work is observed after the deadline.
+
+### #7 — ESLint for `web/`: the premise has half moved, and the remedy is now wrong
+
+The half that holds: there is no ESLint in `web/`. No `web/eslint.config.*`, no `lint`
+script in `web/package.json`, no eslint dependency, and the `web` CI job has no lint step.
+
+The half that has moved is the one the issue rests on. It states that "`web/` has zero
+ESLint coverage — the root lints `src/` but `web/` is gated only by `tsc --noEmit` +
+`next build`". `web/` is linted: the root `npm run lint` is `biome lint .`, which checks
+111 files including 29 under `web/`, and it runs in the `verify` job the merge gate
+depends on. `b314604` brought it there deliberately, "and fix the two defects it found".
+
+So the coverage gap the issue describes is closed, by a different tool than it proposed.
+Acting on its **Fix** section now would add a second linter to an already-linted tree —
+two configurations, two rule sets and two opinions over the same files, which is the
+defect this estate spent tonight removing elsewhere. The title still reads true, and that
+is exactly why it is worth reading past.
+
+What is left is a narrower and much smaller question than the issue asks: whether `web/`
+wants React- and Next-specific rules that Biome does not carry (hook dependency arrays,
+for one). That is a linting-policy question, not a coverage gap, and it should be filed as
+one.
+
+### #8 — `SEND_ATTEMPTED` breadcrumb: holds, unchanged
+
+`SEND_ATTEMPTED` appears nowhere: not in the `audit_events.event_type` CHECK constraint in
+`migrations/001_initial_schema.up.sql`, not in `AuditWriterPort` (`src/ports.ts`), not in
+the `AuditEventType` union (`src/pipeline/types.ts`). The window is still open and still
+where the issue puts it — `src/api/server.ts:184` sends, `:191` writes the `SENT` event,
+`:193` marks the draft sent. A crash between 184 and 191 leaves a newsletter delivered
+with no audit trail of the delivery and the draft still `APPROVED`, which reads
+identically to a send that never happened.
+
+The mitigation the issue mentions is in place and does not close this: SES is
+non-retrying, so the send will not double-fire, but a send that did happen is still
+unrecorded. Every part of the issue's Fix section still applies to the tree as it stands.
+
+### #9 — hermetic data-layer test: moved, and by a better mechanism than it proposed
+
+The gap is closed. `src/data/drafts.db.test.ts` applies `migrations/*.up.sql` to a real
+database and asserts the concurrency guard the issue asked for by name — "lets exactly one
+of two concurrent approvals win" (`:95`), two `approve()` calls raced with
+`Promise.allSettled`. It runs as `npm run test:db` in the `data-layer` job, which has a
+Postgres service and is in the merge gate's `needs`. The coverage follow-up the issue asks
+for is also done: `vitest.config.ts` carries a ratchet plus per-file 100% pins on
+`src/data/drafts.ts` and both audit ledgers.
+
+One thing the issue asked for was deliberately not done, and the reasoning is worth
+keeping. #9 proposed `pg-mem` or testcontainers for hermeticity, and flagged its own risk:
+"Watch for `gen_random_uuid()` / `jsonb` support under pg-mem". The tree went the other
+way — a real Postgres via `TEST_DATABASE_URL` — which is what makes the test able to
+assert the thing that matters. The status machine's guards are `CHECK` constraints and
+conditional `UPDATE`s enforced by the engine; a simulator that approximates them would
+test the approximation. Hermeticity was #9's *means*, and the end it served is better met
+without it.
+
+The residue: `TEST_DATABASE_URL` unset skips the tier, so a developer without a database
+gets no data-layer coverage locally. Set means it must run and an unreachable database is
+a hard failure rather than a skip, and CI always has one, so the property is enforced
+where a merge depends on it. That is a documented trade, not an oversight.
+
+### Where that leaves the backlog
+
+| issue | premise | action |
+| --- | --- | --- |
+| #11 | holds; both files are now vendored | fix belongs in `nanohype/nanohype`; nothing to do here until it lands and is re-vendored |
+| #7 | **half moved** — `web/` is linted by Biome | close, or re-file as the narrower React-rules question; do not add a second linter |
+| #8 | holds unchanged | implementable here as filed |
+| #9 | moved; solved by a real Postgres rather than the proposed simulator | close |
