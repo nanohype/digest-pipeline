@@ -172,6 +172,49 @@ the GitHub API reports independently — re-vendored the two schemas that change
 the digests. That run was reverted (the pin move is a separate item), but it stands as the
 network seam exercised end to end, which the fixture-driven gate deliberately does not cover.
 
+## The editorconfig gate, adopted
+
+`.github/workflows/ci.yml`, job `verify`, step `Editorconfig`: the `npm run editorconfig`
+step and its `GITHUB_TOKEN` env are replaced by
+`nanohype/.github/actions/editorconfig-gate@b2eada74413fcc9f3042f22126ee5b350a2b846e`.
+The step keeps its place, so the job name and the `merge gate`'s `needs:` list are
+unchanged and branch protection needs no edit. `editorconfig-checker` is gone from
+`devDependencies` and the lockfile, and with it the `editorconfig` script, its entry in
+`check`, and the `npm run editorconfig` line in the Taskfile's `check` task.
+
+The npm script is not replaced. The package cannot run on arm64 — its shim asks for
+`ec-darwin-amd64*` — so the local command has never worked here, and a replacement
+pointing at a sibling checkout would be a command that resolves only on machines that
+happen to have one. CI owns the verdict; the four properties are what an editor applies
+from `.editorconfig` on save.
+
+**Verified on this tree, not assumed from the gate's own report.** The four places the new
+reading is stricter are each a rule this repository's `.editorconfig` already declares, and
+each was checked independently of the gate:
+
+| stricter rule | this tree |
+| --- | --- |
+| a byte-order mark under `charset = utf-8` | no tracked file begins `EF BB BF` |
+| any carriage return under `end_of_line = lf` | no tracked file contains a `\r` byte anywhere |
+| a final newline under `insert_final_newline = false` | no section declares it false; the root declares `true` |
+| a `.editorconfig` line parsing as neither section nor property | every non-blank, non-comment line is one or the other |
+
+Every tracked file is also valid UTF-8, and 195 tracked files are 195 checked — the gate
+compares everything `git ls-files` names rather than a subset. It reports exit 0 here.
+
+**The verdict wording holds**, which was the half of the original failure worth keeping. The
+two non-zero verdicts are distinct in the gate and named in the composite wrapper: a tree
+with a real defect gets `a.txt:1: has trailing whitespace, and trim_trailing_whitespace is
+true` at exit 1, while a tree it cannot evaluate gets `NOTHING WAS CHECKED -- … This is not
+a finding about the tree. No verdict was reached about any file.` at exit 3. A reader
+meeting a red check can tell which is about their branch.
+
+**Nothing is fetched while the check runs**, confirmed by reading the gate rather than the
+claim: its imports are `argparse`, `fnmatch`, `re`, `shutil`, `subprocess`, `sys`,
+`tempfile`, `traceback` and `pathlib`, and the only external command it runs is `git`. Its
+own self-test (29 cases) and test suite pass on this machine — which the checker it replaces
+never could, since no published version ships an arm64 binary.
+
 ## Adjacent findings, not fixed here
 
 Surfaced while auditing this class; each is a separate item.
