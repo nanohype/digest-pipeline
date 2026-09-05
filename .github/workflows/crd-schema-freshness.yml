@@ -29,6 +29,11 @@ name: crd-schema-freshness
 # link that resolves when it is used: `--ref=latest`, and a compare whose second
 # operand is `HEAD`. `npm run schemas:selftest` holds that line on the emitted
 # bytes, on every pull request.
+#
+# The remediation is not restated here. This body is prose the gate does not
+# read, so a second copy of the commands would be the half that goes stale while
+# the asserted half stays right — the same reason the metric table is not kept
+# in two places. The report is quoted, and the quote is the instruction.
 on:
   schedule:
     - cron: '0 13 * * 1' # Mondays, 13:00 UTC
@@ -96,11 +101,6 @@ jobs:
           REPORT: ${{ steps.freshness.outputs.report }}
         run: |
           set -euo pipefail
-          # The compare link's base. This is the commit this repository vendors
-          # from — a property of the tree, verifiable against source.json, and it
-          # does not change until someone re-vendors. Its second operand stays
-          # `HEAD` so the diff resolves when the link is clicked.
-          PIN=$(jq -r .upstream.ref schemas/crd/source.json | cut -c1-12)
           gh label create "$DRIFT_LABEL" \
             --color B60205 \
             --description "A vendored upstream copy is behind the repo it was copied from" \
@@ -121,18 +121,9 @@ jobs:
           pass a Platform CR the apiserver would reject, and the rejection surfaces during an
           ArgoCD sync rather than on the pull request that introduced it.
 
-          Re-vendor and re-validate:
-
-          \`\`\`
-          npm run schemas:sync -- --ref=latest
-          npm run platform:validate
-          \`\`\`
-
-          \`latest\` resolves upstream's newest commit at the moment the re-vendor runs, so this
-          instruction is correct on whatever day you are reading it. Read the schema diff before
-          merging — a new constraint upstream usually implies a \`platform.yaml\` change here:
-
-          <https://github.com/nanohype/eks-agent-platform/compare/${PIN}...HEAD>
+          The report above carries the remediation, and it is the only copy. \`latest\` resolves
+          upstream's newest commit at the moment the re-vendor runs, so those commands are correct
+          on whatever day you are reading this rather than only on the Monday it was written.
 
           This issue closes itself once the pin is current.
           EOF

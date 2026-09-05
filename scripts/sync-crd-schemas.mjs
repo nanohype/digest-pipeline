@@ -77,6 +77,7 @@
  */
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
+import { createServer } from "node:http";
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -92,6 +93,12 @@ const CHECK = process.argv.includes("--check");
 const FRESHNESS = process.argv.includes("--freshness");
 const SELF_TEST = process.argv.includes("--self-test");
 const REF_ARG = process.argv.find((a) => a.startsWith("--ref="))?.slice("--ref=".length);
+// The two GitHub hosts, as one seam. `--self-test` points them at a server it
+// runs itself, which is the only way the network arm's own bytes get asserted;
+// left alone they are the real hosts. A path that cannot be driven is a path
+// whose behaviour is assumed.
+const RAW_BASE = process.env.CRD_RAW_BASE ?? "https://raw.githubusercontent.com";
+const API_BASE = process.env.CRD_API_BASE ?? "https://api.github.com";
 
 const exec = promisify(execFile);
 const out = (line) => process.stdout.write(`${line}\n`);
@@ -225,9 +232,7 @@ async function resolveUpstreamHead(manifest) {
     return head;
   }
 
-  const url =
-    `https://api.github.com/repos/${repository}/commits` +
-    `?path=${encodeURIComponent(path)}&per_page=1`;
+  const url = `${API_BASE}/repos/${repository}/commits?path=${encodeURIComponent(path)}&per_page=1`;
   const token = process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN;
   let response;
   try {
@@ -333,9 +338,17 @@ async function upstreamReader(manifest, ref) {
   };
 }
 
-/** Read one schema from raw.githubusercontent.com at `ref`. Never degrades into a skip. */
-async function fetchAtRef(repository, path, ref, file) {
-  const url = `https://raw.githubusercontent.com/${repository}/${ref}/${path}/${file}`;
+/**
+ * Read one schema from raw.githubusercontent.com at `ref`. Never degrades into a
+ * skip: a transport failure or any status but 200 and 404 stops the run.
+ *
+ * With `allowMissing`, a 404 returns null rather than dying — "the file is not
+ * there at that ref" is an answer the freshness comparison needs, and only for
+ * the tip side. A 404 at the pin remains fatal, because a pin whose files have
+ * gone is a broken pin rather than a report.
+ */
+async function fetchAtRef(repository, path, ref, file, allowMissing = false) {
+  const url = `${RAW_BASE}/${repository}/${ref}/${path}/${file}`;
   let response;
   try {
     response = await fetch(url);
@@ -345,6 +358,7 @@ async function fetchAtRef(repository, path, ref, file) {
       "The upstream comparison is the point of this check — it does not degrade into a skip.",
     );
   }
+  if (response.status === 404 && allowMissing) return null;
   if (!response.ok) {
     die(
       `cannot fetch ${url}: HTTP ${response.status} ${response.statusText}`,
@@ -352,6 +366,55 @@ async function fetchAtRef(repository, path, ref, file) {
     );
   }
   return Buffer.from(await response.arrayBuffer());
+}
+
+/**
+ * One reader over both seams for the freshness comparison, so the report has one
+ * body rather than one per seam.
+ *
+ * The sentences the report prints are the part that can go stale, and a report
+ * assembled twice is a report whose two halves can drift — one arm gaining a
+ * commit id the gate never drives. `readAt` is the only thing that differs
+ * between a checkout and the network; everything above it is shared, so driving
+ * either seam asserts the bytes both produce.
+ *
+ * `readAt` returns null only for "absent at that ref". Every other failure dies.
+ */
+async function freshnessReader({ upstream: { repository, path, ref } }) {
+  if (CHECKOUT) {
+    try {
+      await exec("git", ["-C", CHECKOUT, "cat-file", "-e", `${ref}^{commit}`]);
+    } catch {
+      die(
+        `${ref.slice(0, 12)} is not present in $EKS_AGENT_PLATFORM_DIR=${CHECKOUT}`,
+        "Check the repository out with full history (fetch-depth: 0) so the pinned commit is reachable.",
+      );
+    }
+    return {
+      async readAt(at, file) {
+        // Absence is asked separately from content, so a git failure that is not
+        // absence cannot be read as a deleted file.
+        try {
+          await exec("git", ["-C", CHECKOUT, "cat-file", "-e", `${at}:${path}/${file}`]);
+        } catch {
+          return null;
+        }
+        const bytes = await gitShow(CHECKOUT, at, `${path}/${file}`);
+        if (bytes === null) {
+          die(
+            `cannot read ${at}:${path}/${file} from ${CHECKOUT}`,
+            `Is ${CHECKOUT} a checkout of ${repository}?`,
+          );
+        }
+        return bytes;
+      },
+    };
+  }
+  return {
+    async readAt(at, file) {
+      return await fetchAtRef(repository, path, at, file, at === "HEAD");
+    },
+  };
 }
 
 /**
@@ -371,49 +434,34 @@ async function fetchAtRef(repository, path, ref, file) {
  * it, so a commit resolved by one run is presented as current for as long as
  * the issue stays open. It therefore names the path that moved, the files that
  * moved, and a command that resolves upstream's newest commit when it runs —
- * never a commit this run resolved. Both arms compare the two sides at a ref
- * (`HEAD` on either seam) and never resolve that ref to a commit id, so there
- * is no upstream sha in scope here to print by accident.
+ * never a commit this run resolved. Both sides are compared at a ref (`HEAD` on
+ * either seam) and that ref is never resolved to a commit id, so there is no
+ * upstream sha in scope here to print by accident — the property is structural
+ * rather than a rule the emitter has to keep remembering.
+ *
+ * One body over `freshnessReader`, not one per seam: a report assembled twice is
+ * a report whose halves can drift, and only one of them would be driven.
  */
 async function reportFreshness(manifest) {
   const { repository, path, ref } = manifest.upstream;
+  const reader = await freshnessReader(manifest);
   const behind = [];
 
-  if (CHECKOUT) {
-    try {
-      await exec("git", ["-C", CHECKOUT, "cat-file", "-e", `${ref}^{commit}`]);
-    } catch {
+  for (const { file } of manifest.files) {
+    const [atPin, atTip] = await Promise.all([
+      reader.readAt(ref, file),
+      reader.readAt("HEAD", file),
+    ]);
+    if (atPin === null) {
       die(
-        `${ref.slice(0, 12)} is not present in $EKS_AGENT_PLATFORM_DIR=${CHECKOUT}`,
-        "Check the repository out with full history (fetch-depth: 0) so the pinned commit is reachable.",
+        `${path}/${file} does not exist at ${repository}@${ref.slice(0, 12)}`,
+        "The pin predates this CRD, or the file was renamed — re-vendor and repin.",
       );
     }
-    for (const { file } of manifest.files) {
-      const [atPin, atTip] = await Promise.all([
-        gitShow(CHECKOUT, ref, `${path}/${file}`),
-        gitShow(CHECKOUT, "HEAD", `${path}/${file}`),
-      ]);
-      if (atPin === null) {
-        die(
-          `${path}/${file} does not exist at ${repository}@${ref.slice(0, 12)}`,
-          "The pin predates this CRD, or the file was renamed — re-vendor and repin.",
-        );
-      }
-      if (atTip === null) {
-        behind.push(`${file} — removed or renamed upstream since the pin`);
-      } else if (!atPin.equals(atTip)) {
-        behind.push(`${file} — changed upstream since the pin`);
-      }
-    }
-  } else {
-    for (const { file } of manifest.files) {
-      const [atPin, atTip] = await Promise.all([
-        fetchAtRef(repository, path, ref, file),
-        fetchAtRef(repository, path, "HEAD", file),
-      ]);
-      if (!atPin.equals(atTip)) {
-        behind.push(`${file} — changed upstream since the pin`);
-      }
+    if (atTip === null) {
+      behind.push(`${file} — removed or renamed upstream since the pin`);
+    } else if (!atPin.equals(atTip)) {
+      behind.push(`${file} — changed upstream since the pin`);
     }
   }
 
@@ -431,9 +479,11 @@ async function reportFreshness(manifest) {
       `${behind.map((b) => `      ${b}`).join("\n")}\n` +
       "\n    Nothing is broken — the vendored copies still match the commit they claim.\n" +
       "    Adopt the newer operator API when convenient:\n" +
-      "\n      npm run schemas:sync -- --ref=latest\n      npm run platform:validate\n" +
-      `\n    Read the schema diff first — a new bound upstream usually implies a platform.yaml\n` +
-      `    change here: https://github.com/${repository}/compare/${ref.slice(0, 12)}...HEAD\n\n`,
+      "\n      npm run schemas:sync -- --ref=latest\n      git diff schemas/crd/\n" +
+      "      npm run platform:validate\n" +
+      "\n    The second command is the schema diff, exactly — a new bound upstream usually\n" +
+      `    implies a platform.yaml change here. To read it before re-vendoring:\n` +
+      `    https://github.com/${repository}/compare/${ref.slice(0, 12)}...HEAD\n\n`,
   );
   // Exit 2, not 1, and the distinction is load-bearing. `die` exits 1 for every
   // way this check can BREAK — an unreachable upstream, a ref that no longer
@@ -508,16 +558,33 @@ async function runScript(tree, args, env) {
   for (const [key, value] of Object.entries(env)) {
     if (value === undefined) delete environment[key];
   }
+  // Under Actions these two files are prose the reader sees, exactly like
+  // stdout — a step summary renders on the run page and a job output flows into
+  // the issue body. Scanning only the streams would leave a place to put a
+  // resolved commit that no assertion looks at, so they are pointed at the
+  // fixture and folded into what the assertions read.
+  const summary = join(tree, "step-summary.txt");
+  const output = join(tree, "job-output.txt");
+  environment.GITHUB_STEP_SUMMARY = summary;
+  environment.GITHUB_OUTPUT = output;
+  await writeFile(summary, "");
+  await writeFile(output, "");
+
+  let code = 0;
+  let streams = "";
   try {
     const { stdout, stderr } = await exec(
       "node",
       [join(tree, "scripts", "sync-crd-schemas.mjs"), ...args],
       { cwd: tree, env: environment, maxBuffer: 16 * 1024 * 1024 },
     );
-    return { code: 0, output: `${stdout}${stderr}` };
+    streams = `${stdout}${stderr}`;
   } catch (err) {
-    return { code: err.code ?? 1, output: `${err.stdout ?? ""}${err.stderr ?? ""}` };
+    code = err.code ?? 1;
+    streams = `${err.stdout ?? ""}${err.stderr ?? ""}`;
   }
+  const sidecars = `${await readFile(summary, "utf8")}${await readFile(output, "utf8")}`;
+  return { code, output: `${streams}${sidecars}` };
 }
 
 /**
@@ -607,14 +674,20 @@ async function buildTree(scratch, name, upstreamDir, ref) {
  * forty would walk straight past it.
  */
 function namesACommit(text, pin, commits) {
-  let stripped = text;
-  for (const form of [pin, pin.slice(0, 12), pin.slice(0, 7)]) {
-    stripped = stripped.split(form).join("");
+  let stripped = text.toLowerCase();
+  for (const form of [pin, pin.slice(0, 12), pin.slice(0, 7), pin.slice(0, 4)]) {
+    stripped = stripped.split(form.toLowerCase()).join("");
   }
-  if (/[0-9a-f]{40}/.test(stripped)) return "a 40-character commit id";
+  // Bounded on both sides: a sha256 digest contains a 40-character hex run, and
+  // reading that as a commit id would make the detector fire on output that
+  // names no commit at all.
+  if (/(?<![0-9a-f])[0-9a-f]{40}(?![0-9a-f])/.test(stripped)) return "a 40-character commit id";
   for (const sha of commits) {
-    for (let length = sha.length; length >= 7; length--) {
-      if (stripped.includes(sha.slice(0, length))) {
+    // Down to four, git's own `--abbrev` floor. Below it nothing resolves, so
+    // there is no shorter form that is still an instruction someone can follow;
+    // above it, every abbreviation git will print is refused.
+    for (let length = sha.length; length >= 4; length--) {
+      if (stripped.includes(sha.slice(0, length).toLowerCase())) {
         return `${sha.slice(0, 12)}, abbreviated to ${length} characters`;
       }
     }
@@ -622,14 +695,100 @@ function namesACommit(text, pin, commits) {
   return null;
 }
 
+/**
+ * The two GitHub endpoints this script reads, served from a fixture repository.
+ *
+ * The scheduled workflow sets no `EKS_AGENT_PLATFORM_DIR`, so the arm that runs
+ * in production is the network one. A gate that drives only the checkout arm
+ * asserts a path production never executes; both seams have to answer for their
+ * own bytes.
+ *
+ * Only the two shapes the script depends on: raw contents at a ref, and the
+ * newest commit touching a path. A 404 is served for a file absent at that ref,
+ * which is the case the report has to tell apart from a failure.
+ */
+async function serveUpstream(dir) {
+  const server = createServer((req, res) => {
+    const url = new URL(req.url, "http://fixture.invalid");
+    const commits = url.pathname.match(/^\/repos\/(.+)\/commits$/);
+    if (commits) {
+      const path = url.searchParams.get("path");
+      exec("git", ["-C", dir, "log", "-1", "--format=%H", "--", path])
+        .then(({ stdout }) => {
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify([{ sha: stdout.trim() }]));
+        })
+        .catch(() => {
+          res.writeHead(500);
+          res.end("[]");
+        });
+      return;
+    }
+    // /<owner>/<repo>/<ref>/<path...>
+    const raw = url.pathname.slice(1).split("/");
+    const [, , ref, ...rest] = raw;
+    gitShow(dir, ref, rest.join("/"))
+      .then((bytes) => {
+        if (bytes === null) {
+          res.writeHead(404);
+          res.end("404: Not Found");
+          return;
+        }
+        res.writeHead(200);
+        res.end(bytes);
+      })
+      .catch(() => {
+        res.writeHead(500);
+        res.end("");
+      });
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address();
+  return { base: `http://127.0.0.1:${port}`, close: () => new Promise((r) => server.close(r)) };
+}
+
+/**
+ * A second upstream, where the newest commit deletes a vendored schema.
+ *
+ * controller-gen filenames change exactly when an API group or kind is renamed,
+ * which is the drift most likely to stop `platform.yaml` validating — and the
+ * only case where the two seams answer through different mechanics, a missing
+ * git object on one and a 404 on the other. Both have to call it removal rather
+ * than report the pin as current.
+ */
+async function buildRemovalUpstream(dir) {
+  const git = (...args) => exec("git", ["-C", dir, ...args]);
+  await mkdir(join(dir, SELF_TEST_PATH), { recursive: true });
+  await exec("git", ["init", "-q", "-b", "main", dir]);
+  await git("config", "user.email", "self-test@digest-pipeline.invalid");
+  await git("config", "user.name", "freshness self-test");
+  await git("config", "commit.gpgsign", "false");
+
+  for (const file of SELF_TEST_SCHEMAS) {
+    await writeFile(
+      join(dir, SELF_TEST_PATH, file),
+      `apiVersion: apiextensions.k8s.io/v1\nkind: CustomResourceDefinition\nmetadata:\n  name: ${file}\n`,
+    );
+  }
+  await git("add", "-A");
+  await git("commit", "-qm", "both schemas exist");
+  const { stdout } = await git("rev-parse", "HEAD");
+
+  await git("rm", "-q", `${SELF_TEST_PATH}/${SELF_TEST_SCHEMAS[1]}`);
+  await git("commit", "-qm", "a kind is renamed, so its file goes");
+  return stdout.trim();
+}
+
 async function runSelfTest() {
   const scratch = await mkdtemp(join(tmpdir(), "crd-freshness-selftest-"));
   const cases = [];
   const record = (name, passed, detail) => cases.push({ name, passed, detail });
+  let server;
 
   try {
     const upstreamDir = join(scratch, "upstream");
     const { base, moved, restored, head } = await buildUpstream(upstreamDir);
+    server = await serveUpstream(upstreamDir);
     const commits = [base, moved, restored, head];
     const env = { EKS_AGENT_PLATFORM_DIR: upstreamDir };
 
@@ -651,6 +810,31 @@ async function runSelfTest() {
       "the fixture's newest commit is not the newest to touch the vendored path",
       head !== restored,
       "the fixture degenerated — resolving HEAD is no longer distinguishable from resolving the path",
+    );
+
+    /* ── the detector, before anything is asked of it ────────────────── */
+    // A detector that has never returned non-null is indistinguishable from one
+    // that cannot. Every staleness case below asserts `=== null`, so without
+    // these two the whole class passes by doing nothing.
+    record(
+      "the detector finds a commit id an abbreviation short of git's own floor",
+      namesACommit(`re-vendor with ${restored.slice(0, 4)}`, base, commits) !== null,
+      "it walked past a four-character abbreviation",
+    );
+    record(
+      "the detector finds one printed in upper case",
+      namesACommit(`upstream is at ${restored.slice(0, 12).toUpperCase()}`, base, commits) !== null,
+      "it walked past an upper-case abbreviation",
+    );
+    record(
+      "the detector does not mistake a sha256 digest for a commit id",
+      namesACommit(`sha256 ${digest(Buffer.from("not a commit"))}`, base, commits) === null,
+      "a 64-character digest was read as a 40-character commit id",
+    );
+    record(
+      "the detector lets the pin through, since the pin does not go stale",
+      namesACommit(`the pin ${base.slice(0, 12)} is behind`, base, commits) === null,
+      "it flagged the pin, which is a property of the tree rather than of the run",
     );
 
     /* ── a behind pin: the verdict, and what the verdict says ────────── */
@@ -765,6 +949,118 @@ async function runSelfTest() {
       "it vendored bytes from a commit nobody named",
     );
 
+    /* ── the same questions, over the seam production actually uses ─── */
+    // No EKS_AGENT_PLATFORM_DIR: the arm the scheduled workflow runs. The
+    // report body is shared, but "shared" is a claim until both seams are made
+    // to produce it.
+    const netEnv = {
+      EKS_AGENT_PLATFORM_DIR: undefined,
+      CRD_RAW_BASE: server.base,
+      CRD_API_BASE: server.base,
+    };
+
+    const netBehindTree = await buildTree(scratch, "net-behind", upstreamDir, base);
+    const netBehind = await runScript(netBehindTree, ["--freshness"], netEnv);
+    record(
+      "the network seam reaches the same verdict for a behind pin",
+      netBehind.code === 2,
+      `exited ${netBehind.code}: ${netBehind.output.trim()}`,
+    );
+    const namedOverNetwork = namesACommit(netBehind.output, base, commits);
+    record(
+      "the network seam's behind report names no upstream commit id",
+      namedOverNetwork === null,
+      namedOverNetwork ? `it names ${namedOverNetwork}` : undefined,
+    );
+    record(
+      "the network seam's behind report names the same command",
+      netBehind.output.includes("--ref=latest") && !netBehind.output.includes("--ref=<sha>"),
+      "the two seams disagree about the remediation",
+    );
+
+    const netAdoptTree = await buildTree(scratch, "net-adopt", upstreamDir, base);
+    const netAdopt = await runScript(netAdoptTree, ["--ref=latest"], netEnv);
+    const netPin = JSON.parse(
+      await readFile(join(netAdoptTree, "schemas", "crd", "source.json"), "utf8"),
+    );
+    record(
+      "`--ref=latest` resolves over the network seam too, not only from a checkout",
+      netAdopt.code === 0 && netPin.upstream.ref === restored,
+      `exited ${netAdopt.code}, pin ${netPin.upstream.ref}`,
+    );
+
+    /* ── the failures that must not read as drift ─────────────────────── */
+    // Exit 1 and exit 2 are different facts, and the workflow branches on the
+    // difference: 2 files a drift issue, anything else fails the job as "could
+    // not reach a verdict". Collapsed into one code, a month of failed lookups
+    // reads as a month of confirmed drift.
+    const absent = "0123456789abcdef0123456789abcdef01234567";
+    const missingPinTree = await buildTree(scratch, "missing-pin", upstreamDir, base);
+    const manifestPath = join(missingPinTree, "schemas", "crd", "source.json");
+    const broken = JSON.parse(await readFile(manifestPath, "utf8"));
+    broken.upstream.ref = absent;
+    await writeFile(manifestPath, `${JSON.stringify(broken, null, 2)}\n`);
+    const unreachable = await runScript(missingPinTree, ["--freshness"], env);
+    record(
+      "a pin no checkout holds exits 1, not the 2 that means confirmed drift",
+      unreachable.code === 1,
+      `exited ${unreachable.code}`,
+    );
+
+    const netUnreachable = await runScript(missingPinTree, ["--freshness"], {
+      ...netEnv,
+      CRD_RAW_BASE: "http://127.0.0.1:1/unreachable",
+      CRD_API_BASE: "http://127.0.0.1:1/unreachable",
+    });
+    record(
+      "an unreachable upstream exits 1, and is never reported as current",
+      netUnreachable.code === 1,
+      `exited ${netUnreachable.code}`,
+    );
+
+    // The guard's own comment says a shallow clone's wrong answer is
+    // indistinguishable from a right one, which is exactly why it cannot be left
+    // to inspection.
+    const shallowDir = join(scratch, "shallow");
+    await exec("git", ["clone", "--quiet", "--depth", "1", `file://${upstreamDir}`, shallowDir]);
+    const shallowTree = await buildTree(scratch, "shallow-tree", upstreamDir, base);
+    const shallow = await runScript(shallowTree, ["--ref=latest"], {
+      EKS_AGENT_PLATFORM_DIR: shallowDir,
+    });
+    record(
+      "`--ref=latest` refuses a shallow clone rather than pinning to what it happens to hold",
+      shallow.code === 1 && /fetch-depth/.test(shallow.output),
+      `exited ${shallow.code}: ${shallow.output.trim()}`,
+    );
+
+    /* ── a schema that goes away upstream, on both seams ─────────────── */
+    const goneDir = join(scratch, "removed-upstream");
+    const gonePin = await buildRemovalUpstream(goneDir);
+    const goneServer = await serveUpstream(goneDir);
+    try {
+      for (const [seam, seamEnv] of [
+        ["checkout", { EKS_AGENT_PLATFORM_DIR: goneDir }],
+        [
+          "network",
+          {
+            EKS_AGENT_PLATFORM_DIR: undefined,
+            CRD_RAW_BASE: goneServer.base,
+            CRD_API_BASE: goneServer.base,
+          },
+        ],
+      ]) {
+        const goneTree = await buildTree(scratch, `gone-${seam}`, goneDir, gonePin);
+        const gone = await runScript(goneTree, ["--freshness"], seamEnv);
+        record(
+          `the ${seam} seam calls a schema removed upstream drift, not "current"`,
+          gone.code === 2 && /removed or renamed upstream since the pin/.test(gone.output),
+          `exited ${gone.code}: ${gone.output.trim()}`,
+        );
+      }
+    } finally {
+      await goneServer.close();
+    }
+
     /* ── a current pin: the other exit prints no commit id either ────── */
     const currentTree = await buildTree(scratch, "current", upstreamDir, moved);
     const current = await runScript(currentTree, ["--freshness"], env);
@@ -780,6 +1076,7 @@ async function runSelfTest() {
       namedWhenCurrent ? `it names ${namedWhenCurrent}` : undefined,
     );
   } finally {
+    if (server) await server.close();
     await rm(scratch, { recursive: true, force: true });
   }
 

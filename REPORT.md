@@ -88,41 +88,59 @@ Read against `nanohype/portal` 6b08635, which is the reference this was built fr
 `npm run schemas:selftest` (`scripts/sync-crd-schemas.mjs --self-test`, wired into the
 `crd-schema-drift` CI job, `task ci`, and `Taskfile` `schemas:selftest`).
 
-**Covered.** It builds a real upstream git repository whose five commits it knows, runs
-the shipped script against it as a subprocess through the `EKS_AGENT_PLATFORM_DIR` seam,
-and asserts on the bytes that come back — exit code, no commit id in either the behind or
-the current report, a remediation naming `--ref=latest` and no placeholder — then runs
-`--ref=latest` against the same repository and requires the pin to land on the newest
-commit touching the vendored path, the bytes and digests to match it, and `--check` to
-accept the result. Three further cases cover the seam that makes `--ref` load-bearing: a
-sync given no ref, run against a checkout standing on some other commit, must leave the
-pin where it was and vendor the pin's bytes rather than the working tree's.
+**Covered.** It builds real upstream git repositories whose commits it knows and runs the
+shipped script against them as a subprocess, over **both** seams — a checkout through
+`EKS_AGENT_PLATFORM_DIR`, and the network arm against an HTTP server the gate itself runs,
+serving the same fixture through the two GitHub shapes the script depends on. The scheduled
+workflow sets no checkout, so the network arm is the one production executes; a gate that
+drove only the other would assert a path that never runs.
+
+On the emitted bytes: exit 2 for a behind pin on both seams, no commit id in the behind
+report or the current one, a remediation naming `--ref=latest` and no placeholder. Then the
+command is run for real and required to land the pin on the newest commit touching the
+vendored path — from a checkout and over the API — with the bytes and digests following it
+and `--check` accepting the result.
+
+Around that: a sync given no ref must move nothing; a pin no checkout holds and an
+unreachable upstream must exit 1, never the 2 that means confirmed drift; a shallow clone
+must be refused rather than pinned to; a schema deleted upstream must read as drift on both
+seams rather than as "current"; and anything written to `GITHUB_STEP_SUMMARY` or
+`GITHUB_OUTPUT` is folded into what the assertions scan, because under Actions those are
+prose the reader sees exactly like stdout.
+
+The detector is itself under test. Four negative controls require it to catch a
+four-character abbreviation, catch an upper-case one, let the pin through, and not mistake
+a 64-character sha256 for a 40-character commit id. Every staleness case asserts `=== null`,
+so without them the whole class would pass by the detector never firing at all.
 
 **Not covered, and why.**
 
-- *The GitHub seam.* A fixture can drive the checkout seam and not the network one. The
-  two differ only in how the two sides are read: neither arm resolves upstream's tip to a
-  commit id at all (the variable was removed, not merely unprinted), and both hand the
-  same sentences to one emitter, so the bytes asserted are the bytes that arm emits. It is
-  not a check that raw.githubusercontent.com or the commits API is reachable —
-  `--freshness` and `--ref=latest` fail loudly on that rather than reporting "current" or
-  falling back to the pin.
+- *That the real hosts are reachable.* The fixture server proves the arm's own logic — its
+  parsing, its 404 handling, its shared report body. It is not a check that
+  raw.githubusercontent.com or the commits API answers; `--freshness` and `--ref=latest`
+  fail loudly on that rather than reporting "current" or falling back to the pin.
 
-- *The workflow's issue body.* The gate asserts the script's output, which the body embeds.
-  The prose the workflow wraps around it is not gated: its only commit-shaped content is
-  `PIN`, read from `schemas/crd/source.json` — a property of the tree, not of the run — and
-  the rendered body was verified by hand. A later edit adding a run-resolved sha to the
-  body would not fail this gate.
+- *The workflow's prose.* The gate asserts the script's output, which the issue body quotes.
+  The wrapper prose is not gated — so it no longer restates the remediation or the compare
+  link. Every commit-shaped string in the rendered body now arrives inside the quoted
+  report, which is the half that is asserted. A second copy would be the half that goes
+  stale.
+
+- *A CRD added upstream.* Both seams iterate `manifest.files`, so a new schema appearing
+  under the vendored path is never compared and the report can say "current" while upstream
+  carries a CRD this repository has never seen. Real, pre-existing, and a change to what the
+  verdict means rather than to what it says — noted below rather than fixed here.
 
 - *`platform.yaml` after a re-vendor.* `--ref=latest` is proven to land a tree `schemas:check`
   accepts. Whether the newly vendored bounds still admit this repository's `platform.yaml`
-  is what `npm run platform:validate` answers, and the remediation names it as the second
-  command for that reason.
+  is what `npm run platform:validate` answers, and the remediation names it for that reason.
 
 ## Mutants
 
 Each applied to a copy of `scripts/sync-crd-schemas.mjs`, run through `--self-test`, and
-required to fail. All ten are killed; the assertion that catches each is named.
+required to fail. All nineteen are killed; the assertion that catches each is named. M11
+through M19 are the holes this gate's first version left open — each was verified green
+against it before the case that now catches it existed.
 
 | # | mutation | assertion that fails |
 |---|---|---|
@@ -136,6 +154,15 @@ required to fail. All ten are killed; the assertion that catches each is named.
 | M8 | the fixture stops reverting, so a current pin equals the path's newest commit | the fixture holds the same schema bytes at two different commits |
 | M9 | the fixture's newest commit touches the vendored path | `--ref=latest` lands the pin on the newest commit touching the vendored path |
 | M10 | a checkout is read from its working tree in every mode | `--ref=latest` lands the pin on the newest commit touching the vendored path |
+| M11 | the verdict names a six-character abbreviation | the behind report names no upstream commit id |
+| M12 | the verdict names an upper-case abbreviation | the behind report names no upstream commit id |
+| M13 | the detector's abbreviation loop is disabled | the detector finds a commit id an abbreviation short of git's own floor |
+| M14 | the detector's 40-hex test is unanchored, so a digest reads as a commit | the detector does not mistake a sha256 digest for a commit id |
+| M15 | the commit id goes to the Actions step summary instead of stdout | the behind report names no upstream commit id |
+| M16 | `die()` exits 2, so "could not find out" reads as confirmed drift | a pin no checkout holds exits 1, not the 2 that means confirmed drift |
+| M17 | the shallow-clone refusal is disabled | `--ref=latest` refuses a shallow clone rather than pinning to what it happens to hold |
+| M18 | `latest` over the network seam returns the pin instead of the API's answer | `--ref=latest` resolves over the network seam too, not only from a checkout |
+| M19 | the network seam reports a file absent at HEAD as unchanged | the network seam calls a schema removed upstream drift, not "current" |
 
 ## `--ref=latest` against real upstream
 
@@ -145,11 +172,28 @@ the GitHub API reports independently — re-vendored the two schemas that change
 the digests. That run was reverted (the pin move is a separate item), but it stands as the
 network seam exercised end to end, which the fixture-driven gate deliberately does not cover.
 
+## Adjacent findings, not fixed here
+
+Surfaced while auditing this class; each is a separate item.
+
+- **`scripts/sync-crd-schemas.mjs` never notices a CRD added upstream.** Both seams iterate
+  `manifest.files`. Closing it means listing the directory upstream — `git ls-tree` on the
+  checkout seam, the contents API otherwise — and reporting a `.yaml` present there and
+  absent from the manifest.
+- **`scripts/validate-platform-manifests.mjs:247` and `:267`** answer "source.json is
+  unreadable" and "schemas/crd/ is missing" with `npm run schemas:sync`, which reads
+  source.json before it can do anything. The recovery that works is
+  `git checkout -- schemas/crd/`.
+- **`AGENTS.md:161`** describes editing a vendored copy and re-syncing. `sync-vendored.mjs`
+  reads every blob through `blobAt` at the pinned ref, never the working tree, so the
+  described edit is silently discarded.
+- **`scripts/seed-secrets.sh:47`** states a count in `--help` that line 171 also computes
+  from `REQUIRED_KEYS`. Two copies, one of which nothing keeps true.
+
 ## The pin is untouched
 
-`schemas/crd/source.json` still pins `0f56302c9e2d`. It is behind: `operators/config/crd/bases`
-has moved three times since, and `2ec3ca4c48ef` tightens the `allowedModels` pattern to
-require a version token. This repository's single entry, `anthropic.claude-sonnet-5`,
-satisfies the tightened pattern, so adopting it is a re-vendor and a schema-diff review
-rather than a manifest change — which is a separate item, and the one this repository's
-drift issue now correctly instructs a reader to perform.
+`schemas/crd/source.json` still pins `0f56302c9e2d`. Whether that pin is behind is what
+`npm run schemas:freshness` answers, weekly and on demand — not something this document
+should assert, since the answer changes when someone pushes to another repository. Adopting
+a newer operator API is a separate item: a re-vendor plus the schema-diff review the drift
+issue now instructs a reader to perform.
