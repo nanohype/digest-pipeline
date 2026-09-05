@@ -22,6 +22,7 @@ tasks:
       - task: web
       - task: platform:validate
       - task: schemas:check
+      - task: schemas:selftest
       - task: helm:lint
       - task: helm:template
       - task: docker:build
@@ -97,6 +98,11 @@ tasks:
     desc: 'Report whether the pinned operator ref has fallen behind upstream (never a merge gate)'
     cmds:
       - npm run schemas:freshness
+
+  schemas:selftest:
+    desc: 'Drive the freshness report against a fixture upstream and assert what it says'
+    cmds:
+      - npm run schemas:selftest
 
   # === Helm ===
 

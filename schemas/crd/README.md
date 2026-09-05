@@ -57,18 +57,30 @@ npm run platform:validate   # the gate: digests, then platform.yaml, then a self
 npm run schemas:sync        # re-vendor the copies + digests from the pinned ref
 npm run schemas:check       # blocking drift gate: copies vs upstream at the pinned ref
 npm run schemas:freshness   # scheduled-only: has the pin fallen behind upstream?
+npm run schemas:selftest    # drive the freshness report against a fixture and assert what it says
 ```
 
 Upstream resolves two ways, both deterministic. With `$EKS_AGENT_PLATFORM_DIR`
-set the files come from that checkout — under `--check` its HEAD must be the
-pinned commit, so a working tree on some other commit is an error rather than a
-silent substitution. Without it they are fetched from raw.githubusercontent.com
-at the pinned commit. An unreachable upstream is a failure, never a skip.
+set the files come from that checkout; without it they are fetched from
+raw.githubusercontent.com at the ref. An unreachable upstream is a failure,
+never a skip.
+
+Which bytes a checkout hands over depends on the mode. `--check` compares
+against the working tree, and therefore requires the checkout's HEAD to be the
+pinned commit — the bytes it reads and the commit it names are then the same
+thing, and a working tree on some other commit is an error rather than a silent
+substitution. Every other mode reads committed objects at the ref it was given,
+so `--ref` names both where the copies come from and where the pin lands, and a
+plain `npm run schemas:sync` re-vendors at the pin from any checkout that can
+reach it.
 
 ## Adopting a newer operator API
 
-1. `npm run schemas:sync -- --ref=<40-char-sha>` — moves the pin and rewrites
-   the copies and their digests in one step, so the two cannot drift apart.
+1. `npm run schemas:sync -- --ref=latest` — moves the pin and rewrites the
+   copies and their digests in one step, so the two cannot drift apart.
+   `latest` resolves the newest commit touching `operators/config/crd/bases`
+   when the re-vendor runs; a 40-character SHA in its place pins a specific
+   commit instead.
 2. `npm run platform:validate` — a CRD change that invalidates `platform.yaml`
    surfaces here, before a cluster sees it.
 3. Commit the schema diff, the pin move, and any manifest changes together.

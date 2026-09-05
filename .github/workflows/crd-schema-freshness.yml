@@ -20,6 +20,20 @@ name: crd-schema-freshness
 # anything else means the check could not reach a verdict at all — an
 # unreachable upstream must not be filed as confirmed drift, nor drift dismissed
 # as an unreachable upstream.
+#
+# The body is re-edited weekly and is therefore never out of date. What can go
+# out of date is what it SAYS. An issue is read on whatever day someone opens
+# it, so an instruction naming a commit resolved by one run is presented as
+# current until the next — and following it re-vendors to the wrong ref while
+# closing an issue that should stay open. Everything below names a command or a
+# link that resolves when it is used: `--ref=latest`, and a compare whose second
+# operand is `HEAD`. `npm run schemas:selftest` holds that line on the emitted
+# bytes, on every pull request.
+#
+# The remediation is not restated here. This body is prose the gate does not
+# read, so a second copy of the commands would be the half that goes stale while
+# the asserted half stays right — the same reason the metric table is not kept
+# in two places. The report is quoted, and the quote is the instruction.
 on:
   schedule:
     - cron: '0 13 * * 1' # Mondays, 13:00 UTC
@@ -107,15 +121,11 @@ jobs:
           pass a Platform CR the apiserver would reject, and the rejection surfaces during an
           ArgoCD sync rather than on the pull request that introduced it.
 
-          Re-vendor and re-validate:
+          The report above carries the remediation, and it is the only copy. \`latest\` resolves
+          upstream's newest commit at the moment the re-vendor runs, so those commands are correct
+          on whatever day you are reading this rather than only on the Monday it was written.
 
-          \`\`\`
-          npm run schemas:sync -- --ref=<sha>
-          npm run platform:validate
-          \`\`\`
-
-          Read the schema diff before merging — a new constraint upstream usually implies a
-          \`platform.yaml\` change here. This issue closes itself once the pin is current.
+          This issue closes itself once the pin is current.
           EOF
           )
 
