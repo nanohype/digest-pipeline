@@ -172,17 +172,15 @@ the GitHub API reports independently — re-vendored the two schemas that change
 the digests. That run was reverted (the pin move is a separate item), but it stands as the
 network seam exercised end to end, which the fixture-driven gate deliberately does not cover.
 
-## The editorconfig gate, adopted
+## The editorconfig gate: what was verified before adopting it
 
-`.github/workflows/ci.yml`, job `verify`, step `Editorconfig`: the `npm run editorconfig`
-step and its `GITHUB_TOKEN` env are replaced by
-`nanohype/.github/actions/editorconfig-gate@b2eada74413fcc9f3042f22126ee5b350a2b846e`.
-The step keeps its place, so the job name and the `merge gate`'s `needs:` list are
-unchanged and branch protection needs no edit. `editorconfig-checker` is gone from
-`devDependencies` and the lockfile, and with it the `editorconfig` script, its entry in
-`check`, and the `npm run editorconfig` line in the Taskfile's `check` task.
+The adoption itself is not in this branch. It shares the `verify` job with the advisory
+bump, and neither is admissible without the other, so both were carried together on
+`ci/clear-verify-failures` and reached `main` from there. What belongs here is the
+checking that was done on this tree before that change was written, which is not recorded
+anywhere in that diff.
 
-The npm script is not replaced. The package cannot run on arm64 — its shim asks for
+The npm script was not replaced. The package cannot run on arm64 — its shim asks for
 `ec-darwin-amd64*` — so the local command has never worked here, and a replacement
 pointing at a sibling checkout would be a command that resolves only on machines that
 happen to have one. CI owns the verdict; the four properties are what an editor applies
@@ -214,6 +212,37 @@ claim: its imports are `argparse`, `fnmatch`, `re`, `shutil`, `subprocess`, `sys
 `tempfile`, `traceback` and `pathlib`, and the only external command it runs is `git`. Its
 own self-test (29 cases) and test suite pass on this machine — which the checker it replaces
 never could, since no published version ships an arm64 binary.
+
+## A gate that could not run has produced no verdict
+
+Worth separating, because the two states arrive as the same red check and the same button
+dismisses them.
+
+A gate that **ran and objected** has produced a verdict: it read the thing under test and
+found something. Overriding that discards evidence.
+
+A gate that **could not run** has produced nothing. It never reached the thing under test.
+Overriding it overrides no finding, because there is no finding — the red is about the
+gate's own availability, not about the branch. The two are different acts wearing one
+button.
+
+This is the tool-fetch versus data-fetch distinction, which the editorconfig gate already
+draws inside itself: exit 1 names a file, a line and a rule; exit 3 says NOTHING WAS
+CHECKED and that no verdict was reached about any file. What the distinction also settles
+is a question outside the gate — which red checks it is legitimate to proceed past, and on
+what grounds. A gate whose tool could not be obtained is closer to a job that never
+started than to a job that failed.
+
+Two corollaries worth stating, because neither follows from the distinction alone:
+
+- **It is not a licence.** A gate that cannot run is still a gate not running, and the
+  answer is to make it runnable rather than to proceed indefinitely past it. The
+  distinction bounds what an override *means*, not how long one may stand.
+- **It is not always the better move.** An override leaves no record that a decision was
+  taken; the next person at the same wall re-derives it or does not, and the repository
+  says nothing either way. Where the blockage can be removed instead — as it was here, by
+  carrying both fixes on one branch — removing it leaves the reasoning where the next
+  reader will find it, and an override does not.
 
 ## Upstream publishes what the databases cannot yet corroborate
 
