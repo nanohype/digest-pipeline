@@ -215,6 +215,36 @@ claim: its imports are `argparse`, `fnmatch`, `re`, `shutil`, `subprocess`, `sys
 own self-test (29 cases) and test suite pass on this machine — which the checker it replaces
 never could, since no published version ships an arm64 binary.
 
+## Upstream publishes what the databases cannot yet corroborate
+
+Two observations from the `fast-uri`/`fastify` advisory work (#95), routed here because
+neither belongs to that diff and both are about provenance rather than about this
+repository.
+
+**A published version with no tag to read it against.** `fastify@5.12.3` is `latest` on
+npm, published 2026-09-04. The tag is not in the repository the package claims to come
+from: `repos/fastify/fastify/releases/tags/v5.12.3` and
+`compare/v5.12.2...v5.12.3` both return 404. So the delta between the version this
+repository now resolves and the last one with published notes cannot be read from
+upstream at all. Probably benign — a fast follow-up whose tag was never pushed — and it is
+the shape worth writing down rather than deciding is fine: an artefact whose provenance
+cannot be checked against its stated source is a supply-chain question even when the
+answer turns out to be nothing.
+
+**A security release that no consumable database knows about.** `fastify@5.12.2` is marked
+a security release upstream, fixing GHSA-9q9j-q6p8-xq58, GHSA-hwr6-493r-vm6h,
+GHSA-p68q-wchp-6fh7 and GHSA-667r-xxjv-c9mm. None of the four resolves in GitHub's global
+advisory database, and OSV returns no vulnerability affecting `fastify@5.12.1` at all.
+Both of the estate's automated readers therefore call 5.12.1 clean: `npm audit` reads
+GitHub's database, and Renovate reads GitHub's plus OSV (`osvVulnerabilityAlerts` is on in
+the shared preset). Renovate's vulnerability path proposed 5.12.1 for that reason — it
+bumps to the first version that clears the advisory it was alerted on, and no source it
+consults knew of a later one.
+
+Two tools agreeing is not two opinions when they read the same sources, and both sources
+lag the repository that publishes the advisory. The mechanism working is not the same as
+the answer being right.
+
 ## Adjacent findings, not fixed here
 
 Surfaced while auditing this class; each is a separate item.
