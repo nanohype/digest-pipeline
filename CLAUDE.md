@@ -102,7 +102,7 @@ npm run schemas:selftest             # blocking gate: the freshness report names
 npm run chart:lint                  # helm lint chart
 npm run chart:template:staging      # render chart with staging values
 npm run chart:template:production   # render chart with production values
-npm run chart:check-images          # every rendered image is one release.yml publishes; then self-test
+npm run chart:check-images          # rendered images use release.yml's repositories at release-version tags; self-test on a pass
 ```
 
 ## Configuration

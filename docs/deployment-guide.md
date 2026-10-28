@@ -91,7 +91,7 @@ Per-key provenance (what comes from which third-party account), JSON schema per 
 
 ### 3. Build the images
 
-`release.yml` runs on a `v<version>` git tag and pushes one image per workload — `ghcr.io/nanohype/digest-pipeline-pipeline`, `-api` and `-web` — each tagged `<version>`. The chart runs `appVersion` from `chart/Chart.yaml` unless a service's `image.tag` pins another, so a first deploy needs the release whose version `appVersion` names: push that `v<version>` tag if the images do not exist yet. To deploy a later release, push its tag, then set `appVersion` to it.
+`release.yml` runs on a `v<version>` git tag and pushes one image per workload — `ghcr.io/nanohype/digest-pipeline-pipeline`, `-api` and `-web` — each tagged `<version>`. The chart runs `appVersion` from `chart/Chart.yaml` unless a service's `image.tag` pins another, so a first deploy needs the release whose version `appVersion` names: push that `v<version>` tag if the images do not exist yet. To deploy a later release, push its tag, wait for its `release.yml` run to succeed for all three images, then set `appVersion` to it. `npm run chart:check-images` checks the reference against `release.yml`, not against the registry, so it passes an `appVersion` whose release has not run.
 
 ```bash
 npm run lint && npm run typecheck && npm test && npm run build

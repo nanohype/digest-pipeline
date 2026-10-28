@@ -18,8 +18,11 @@
 # it applies exactly the migrations the api it gates was built with. Each
 # container reports its own tag as `service.version` in
 # OTEL_RESOURCE_ATTRIBUTES; the chart appends it, so `env` does not set it.
-# `npm run chart:check-images` renders every environment and fails on an image
-# release.yml does not publish, or on a tag that is not a release version.
+# `npm run chart:check-images` renders every environment and fails on a
+# repository release.yml does not publish for that service, or on a tag that is
+# not a release version. It reads release.yml, not the registry, so move
+# appVersion once the release.yml run for v<appVersion> has succeeded for all
+# three images.
 
 serviceAccount:
   # The operator creates and owns the `tenant-runtime` ServiceAccount and binds

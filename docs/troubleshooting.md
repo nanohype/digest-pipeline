@@ -160,7 +160,7 @@ If the Secret still doesn't appear, the underlying AWS secret really doesn't exi
 
 ### Pod `ImagePullBackOff` / `ErrImagePull` on a pipeline / api / web pod
 
-**Cause:** The tag the chart references doesn't exist in that workload's repository (`ghcr.io/nanohype/digest-pipeline-{pipeline,api,web}`), or the node can't pull it. Each workload runs `appVersion` from `chart/Chart.yaml` unless its `image.tag` pins another, and `release.yml` pushes that tag only when the matching `v<version>` git tag is pushed.
+**Cause:** The tag the chart references doesn't exist in that workload's repository (`ghcr.io/nanohype/digest-pipeline-{pipeline,api,web}`), or the node can't pull it. Each workload runs `appVersion` from `chart/Chart.yaml` unless its `image.tag` pins another, and `release.yml` pushes that tag only when the matching `v<version>` git tag is pushed and that workload's build succeeds.
 
 **Fix:** Describe the pod to see the exact pull error, then confirm the tag exists:
 
@@ -168,7 +168,7 @@ If the Secret still doesn't appear, the underlying AWS secret really doesn't exi
 kubectl -n tenants-digest-pipeline describe pod <pod> | sed -n '/Events:/,$p'
 ```
 
-If the tag is missing, `appVersion` names a release whose `release.yml` run has not completed, or was never tagged — check the run for `v<appVersion>`. Image resolution is by tag, so multi-arch falls out of the build matrix; there's no per-platform pin to mismatch.
+If the tag is missing, the version was never tagged, or its `release.yml` run has not completed or failed for this workload — the matrix legs run independently, so the other images can exist at that version while this one does not. Check the run for `v<version>`. Image resolution is by tag, so multi-arch falls out of the build matrix; there's no per-platform pin to mismatch.
 
 ### API / web pod fails its readiness probe and never becomes `Ready`
 

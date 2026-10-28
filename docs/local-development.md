@@ -154,7 +154,7 @@ npm run build                   # tsc → dist/
 npm run chart:lint              # helm lint chart
 npm run chart:template:staging  # render chart with staging values
 npm run chart:template:production
-npm run chart:check-images      # every rendered image is one release.yml publishes
+npm run chart:check-images      # rendered images use release.yml's repositories at release-version tags
 cd web && npm ci && npx tsc --noEmit && npm run build
 ```
 

@@ -6,8 +6,11 @@ block live here.
 */}}
 
 {{/* The tag a service runs: its own image.tag, else the chart's appVersion.
-     release.yml tags every image with the version of the `v<version>` git tag
-     that built it, so appVersion names a set of images that exist together.
+     release.yml builds every image from one `v<version>` git tag and tags each
+     `<version>`. Once the run for `v<appVersion>` succeeds for every workload,
+     appVersion names one release of all of them. Its matrix legs run
+     independently, so a failed leg leaves that workload's image unpublished at
+     the version the others pushed.
      Called with (dict "service" "<name>" "image" .Values.<name>.image "Chart" .Chart). */}}
 {{- define "digest-pipeline.imageTag" -}}
 {{- $tag := toString (.image.tag | default .Chart.AppVersion) -}}

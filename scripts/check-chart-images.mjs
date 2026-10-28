@@ -1,22 +1,36 @@
 #!/usr/bin/env node
 /**
- * Gate: every container the chart renders runs an image
- * `.github/workflows/release.yml` publishes, at a release version.
+ * Gate: every container the chart renders names the repository
+ * `.github/workflows/release.yml` publishes for its workload, at a
+ * release-version tag.
  *
  *   node scripts/check-chart-images.mjs             # the gate
  *   node scripts/check-chart-images.mjs --self-test # prove it rejects
  *
  * Exit codes:
- *   0  every rendered container runs a published image at a release version
+ *   0  every rendered container names its workload's published repository at
+ *      a release-version tag
  *   1  at least one does not, or the chart does not render — a finding about
  *      the branch
- *   2  the gate could not establish what release.yml publishes, or rendered
- *      nothing — nothing was checked, which says nothing about the branch
+ *   2  release.yml or Chart.yaml could not be read, the gate could not
+ *      establish what release.yml publishes, helm is not on PATH, or the chart
+ *      rendered nothing — nothing was checked, which says nothing about the
+ *      branch
+ *
+ * `--self-test` exits 0 when every case holds, 1 when one does not, and 2 when
+ * release.yml or Chart.yaml could not be read or helm is not on PATH.
  *
  * The chart names its images and the release workflow names the images it
  * pushes, in two files nothing else ties together. `helm lint`, `helm template`
  * and kubeconform all accept a reference no registry holds, so a mismatch
  * reaches a cluster and surfaces there as ImagePullBackOff on every pod.
+ *
+ * The gate checks the shape of each reference, not that a registry holds it.
+ * A chart whose appVersion names a version with no `v<appVersion>` git tag, or
+ * one whose release.yml run failed for some workload, passes here; on a
+ * cluster, each workload whose image that release did not publish sits in
+ * ImagePullBackOff. The registry is outside the commit under test, and a
+ * verdict that read it would change without a commit here.
  *
  * ── What release.yml publishes ──────────────────────────────────────────────
  *
@@ -42,9 +56,12 @@
  *     api image: the migrations it applies before a rollout must be the ones
  *     the api it gates was built with.
  *   - carry a release-version tag, `<major>.<minor>.<patch>[-<prerelease>]`.
- *     An environment name, a branch or `latest` is refused. release.yml does
- *     push `latest`, but it names whichever release ran last, so a manifest
- *     using it does not say what it runs and a re-pull changes it silently.
+ *     The shape is this gate's rule, not one release.yml enforces: release.yml
+ *     runs on any `v*` git tag, so a `vstaging` tag would push `staging`.
+ *     Requiring a version keeps the manifest naming one build, so an
+ *     environment name, a branch or `latest` is refused. release.yml does push
+ *     `latest`, but it names whichever release ran last, so a manifest using it
+ *     does not say what it runs and a re-pull changes it silently.
  *   - report that tag as `service.version` in OTEL_RESOURCE_ATTRIBUTES, so
  *     telemetry names the build that emitted it.
  *
@@ -59,13 +76,15 @@
  *
  * `--self-test` breaks each input the rules exist for — values overlays,
  * mutated copies of release.yml and of the rendered manifests, a chart copy
- * with no appVersion — and fails unless every break is rejected. It also
- * asserts the chart's defaulting: an empty tag resolves to appVersion, one
- * service's tag moves that service (and the migrate hook with the api) and
- * nothing else, and a missing repository or appVersion fails the render
- * instead of producing a reference with an empty part.
+ * with no appVersion, an environment file added to a chart copy — and fails
+ * unless every break is rejected. It also asserts the chart's defaulting: an
+ * empty tag resolves to appVersion, one service's tag moves that service (and
+ * the migrate hook with the api) and nothing else, and a missing repository or
+ * appVersion fails the render instead of producing a reference with an empty
+ * part. A missing helm fails every render case alike, so it ends the self-test
+ * with exit 2 rather than counting as each case's verdict.
  */
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { cpSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -82,7 +101,7 @@ const SELF_TEST = process.argv.includes("--self-test");
 /** Workloads that run another workload's image, keyed to whose. */
 const RUNS_IMAGE_OF = { migrate: "api" };
 
-/** What `${GITHUB_REF#refs/tags/v}` yields for a semver git tag. */
+/** The tag shape this gate accepts: what `${GITHUB_REF#refs/tags/v}` yields for a semver git tag. */
 const RELEASE_VERSION = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-[0-9A-Za-z][0-9A-Za-z.-]*)?$/;
 
 /**
@@ -104,6 +123,9 @@ const POD_TEMPLATE = {
 
 /** The gate could not establish what to check against, or checked nothing. */
 class Unusable extends Error {}
+
+/** helm is not on PATH, so no render can run, in the gate or in any self-test case. */
+class HelmUnavailable extends Unusable {}
 
 /** `helm template` itself failed. */
 class RenderFailed extends Error {}
@@ -227,7 +249,7 @@ function render(label, valueFiles = [], chartDir = CHART_DIR) {
       { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 32 * 1024 * 1024 },
     );
   } catch (error) {
-    if (error.code === "ENOENT") throw new Unusable("helm is not on PATH");
+    if (error.code === "ENOENT") throw new HelmUnavailable("helm is not on PATH");
     // Helm closes every failure with a hint about --debug; the line before it is the reason.
     const reason = String(error.stderr ?? error.message)
       .split("\n")
@@ -335,9 +357,9 @@ function check(published, renders, appVersion) {
         );
       } else if (!RELEASE_VERSION.test(ref.tag)) {
         problems.push(
-          `${at}: tag \`${ref.tag}\` is not a release version — release.yml tags each image ` +
-            "<major>.<minor>.<patch>[-<prerelease>] from a v<version> git tag, so it never " +
-            "pushes this one",
+          `${at}: tag \`${ref.tag}\` is not a release version — this gate accepts only ` +
+            "<major>.<minor>.<patch>[-<prerelease>], the tag release.yml pushes for a semver " +
+            "v<version> git tag",
         );
       }
 
@@ -392,15 +414,24 @@ function selfTest(workflow, appVersion) {
 
   /**
    * Run one case. A gate or render failure is the case's verdict, by class and
-   * message; any other exception is a defect in the self-test and propagates.
+   * message. A missing helm propagates, because it fails every render case
+   * alike and says nothing about any one of them; any other exception is a
+   * defect in the self-test and propagates too.
    */
   const verdict = (run) => {
     try {
       return run();
     } catch (error) {
+      if (error instanceof HelmUnavailable) throw error;
       if (!(error instanceof Unusable || error instanceof RenderFailed)) throw error;
       return [`${error.constructor.name}: ${error.message}`];
     }
+  };
+  /** A copy of the chart in the scratch directory, to edit files the gate lists. */
+  const chartCopy = (name) => {
+    const chart = join(scratch, name);
+    cpSync(CHART_DIR, chart, { recursive: true });
+    return chart;
   };
   const rejects = (name, run, expect) => {
     const problems = verdict(run);
@@ -554,13 +585,21 @@ function selfTest(workflow, appVersion) {
     rejects(
       "an empty tag with no appVersion to default to",
       () => {
-        const chart = join(scratch, "chart");
-        cpSync(CHART_DIR, chart, { recursive: true });
+        const chart = chartCopy("chart-no-app-version");
         const chartYaml = join(chart, "Chart.yaml");
         writeFileSync(chartYaml, readFileSync(chartYaml, "utf8").replace(/^appVersion:.*\n/m, ""));
         return check(published(), [render("no appVersion", [], chart)], "").problems;
       },
       /RenderFailed: .*image\.tag is empty and Chart\.yaml sets no appVersion/,
+    );
+    rejects(
+      "a bad tag in an environment file found by listing the chart directory",
+      () => {
+        const chart = chartCopy("chart-extra-environment");
+        writeFileSync(join(chart, "values-canary.yaml"), "api:\n  image:\n    tag: canary\n");
+        return check(published(), renderAll(chart), appVersion).problems;
+      },
+      /^values-canary\.yaml: .* container `api`: tag `canary` is not a release version/,
     );
 
     // The defaulting the chart promises, asserted on the rendered references
@@ -603,6 +642,36 @@ function selfTest(workflow, appVersion) {
       "accepts: the chart as committed",
       () => check(published(), renderAll(), appVersion).problems,
     );
+
+    // A missing helm is a fact about the machine, not about the chart: the
+    // gate exits 2 on it, and the self-test stops on it rather than recording
+    // it as each render case's verdict. The scratch directory holds no helm,
+    // so it stands in for a PATH without one.
+    holds("the gate exits 2 when helm is not on PATH", () => {
+      const gate = spawnSync(process.execPath, [fileURLToPath(import.meta.url)], {
+        encoding: "utf8",
+        env: { ...process.env, PATH: scratch },
+      });
+      return gate.status === 2 && gate.stderr.includes("chart images gate: helm is not on PATH")
+        ? []
+        : [`the gate exited ${gate.status}: ${String(gate.stderr).trim() || "(no stderr)"}`];
+    });
+    holds("the self-test stops, rather than failing a case, when helm is not on PATH", () => {
+      const path = process.env.PATH;
+      process.env.PATH = scratch;
+      try {
+        const problems = verdict(
+          () => check(published(), [render("no helm")], appVersion).problems,
+        );
+        return [`a render with no helm was recorded as a case's verdict: ${problems.join("; ")}`];
+      } catch (error) {
+        if (error instanceof HelmUnavailable) return [];
+        throw error;
+      } finally {
+        if (path === undefined) delete process.env.PATH;
+        else process.env.PATH = path;
+      }
+    });
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }

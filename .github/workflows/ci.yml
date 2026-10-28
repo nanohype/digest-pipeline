@@ -182,10 +182,12 @@ jobs:
       # in two files nothing else ties together. helm lint, helm template and
       # kubeconform all accept a reference no registry holds, so a mismatch
       # surfaces only on a cluster, as ImagePullBackOff on every pod. This
-      # renders every environment, checks each container against what
-      # release.yml publishes (repository per workload, release-version tag,
-      # matching service.version), then self-tests the gate.
-      - name: Rendered chart runs the images release.yml publishes
+      # renders every environment and checks each container against release.yml:
+      # the repository it publishes for that workload, a release-version tag,
+      # and service.version matching that tag. Once that passes, it self-tests
+      # the gate. It reads release.yml rather than the registry, so a version
+      # that was never released still passes here.
+      - name: Rendered chart names release.yml's repositories at release-version tags
         run: npm run chart:check-images
 
       # Source files are gated elsewhere; this asserts the RENDERED chart too —

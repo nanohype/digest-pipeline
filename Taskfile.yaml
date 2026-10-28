@@ -119,7 +119,7 @@ tasks:
       - npm run chart:template:production > /dev/null
 
   helm:images:
-    desc: 'Check every rendered image against what release.yml publishes, then self-test the check'
+    desc: 'Check each rendered image against the repositories release.yml publishes and the release-version tag shape; self-test the check once it passes'
     cmds:
       - npm run chart:check-images
 
