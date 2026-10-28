@@ -31,12 +31,13 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 digest-pipeline.io/service: {{ .service }}
 {{- end -}}
 
-{{/* Standard env block — applied identically to pipeline, api, web and the
-     migrate hook. Per-service overrides happen by appending to the rendered
-     env list. Same arguments as digest-pipeline.imageTag plus "Values": the
-     image is what OTEL_RESOURCE_ATTRIBUTES reports as service.version, so the
-     version on every span and metric is the version of the image that emitted
-     it, including a service pinned to a tag other than appVersion. */}}
+{{/* Standard env block for pipeline, api, web and the migrate hook.
+     Per-service overrides happen by appending to the rendered env list. Same
+     arguments as digest-pipeline.imageTag plus "Values". The block differs
+     between containers only in the service.version=<that container's image
+     tag> it appends to OTEL_RESOURCE_ATTRIBUTES, so the version on every span
+     and metric is the version of the image that emitted it, including a
+     service pinned to a tag other than appVersion. */}}
 {{- define "digest-pipeline.env" -}}
 {{- $version := include "digest-pipeline.imageTag" . -}}
 {{- range $k, $v := .Values.env }}
