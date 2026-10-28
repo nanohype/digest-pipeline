@@ -11,26 +11,40 @@
 
 "use client";
 
+import { context, propagation, trace } from "@opentelemetry/api";
 import { getWebAutoInstrumentations } from "@opentelemetry/auto-instrumentations-web";
 import { ZoneContextManager } from "@opentelemetry/context-zone";
+import {
+  CompositePropagator,
+  W3CBaggagePropagator,
+  W3CTraceContextPropagator,
+} from "@opentelemetry/core";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { registerInstrumentations } from "@opentelemetry/instrumentation";
 import { resourceFromAttributes } from "@opentelemetry/resources";
-import { BatchSpanProcessor, WebTracerProvider } from "@opentelemetry/sdk-trace-web";
+import { BatchSpanProcessor, TracerProvider } from "@opentelemetry/sdk-trace";
 
 let started = false;
 
 export function startBrowserOtel(): void {
   if (started || typeof window === "undefined") return;
   started = true;
-  const provider = new WebTracerProvider({
+  const provider = new TracerProvider({
     resource: resourceFromAttributes({
       "service.name": "digest-pipeline-web-browser",
       "service.namespace": "digest-pipeline",
     }),
-    spanProcessors: [new BatchSpanProcessor(new OTLPTraceExporter({ url: "/api/otel/v1/traces" }))],
+    spanProcessors: [
+      new BatchSpanProcessor({ exporter: new OTLPTraceExporter({ url: "/api/otel/v1/traces" }) }),
+    ],
   });
-  provider.register({ contextManager: new ZoneContextManager() });
+  trace.setGlobalTracerProvider(provider);
+  context.setGlobalContextManager(new ZoneContextManager().enable());
+  propagation.setGlobalPropagator(
+    new CompositePropagator({
+      propagators: [new W3CTraceContextPropagator(), new W3CBaggagePropagator()],
+    }),
+  );
   registerInstrumentations({
     instrumentations: [
       getWebAutoInstrumentations({
