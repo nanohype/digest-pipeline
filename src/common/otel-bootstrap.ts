@@ -33,10 +33,12 @@ if (process.env.OTEL_SDK_DISABLED !== "true") {
       "service.namespace": "digest-pipeline",
     }),
     traceExporter: new OTLPTraceExporter({ url: `${endpoint}/v1/traces` }),
-    metricReader: new PeriodicExportingMetricReader({
-      exporter: new OTLPMetricExporter({ url: `${endpoint}/v1/metrics` }),
-      exportIntervalMillis: 30_000,
-    }),
+    metricReaders: [
+      new PeriodicExportingMetricReader({
+        exporter: new OTLPMetricExporter({ url: `${endpoint}/v1/metrics` }),
+        exportIntervalMillis: 30_000,
+      }),
+    ],
     instrumentations: [
       getNodeAutoInstrumentations({
         "@opentelemetry/instrumentation-fs": { enabled: false },
