@@ -91,7 +91,7 @@ Per-key provenance (what comes from which third-party account), JSON schema per 
 
 ### 3. Build the images
 
-`release.yml` builds and pushes the three images (`api`/`pipeline`/`web`) to `ghcr.io/nanohype/digest-pipeline` on tag. The chart references them by `image.tag` in the per-env values. For a first deploy, push a tag (or run the release workflow) so an image exists, then set `image.tag` in `chart/values-staging.yaml` to match.
+`release.yml` runs on a `v<version>` git tag and pushes one image per workload — `ghcr.io/nanohype/digest-pipeline-pipeline`, `-api` and `-web` — each tagged `<version>`. The chart runs `appVersion` from `chart/Chart.yaml` unless a service's `image.tag` pins another, so a first deploy needs the release whose version `appVersion` names: push that `v<version>` tag if the images do not exist yet. To deploy a later release, push its tag, then set `appVersion` to it.
 
 ```bash
 npm run lint && npm run typecheck && npm test && npm run build
@@ -226,8 +226,10 @@ terragrunt apply --terragrunt-working-dir live/aws/workload-production/us-west-2
 cd ../digest-pipeline
 npm run seed:production
 
-# 3. Set image.tag in chart/values-production.yaml, commit,
-#    push — the ApplicationSet renders the production Application and ArgoCD syncs it.
+# 3. Production runs the chart's appVersion, the same release as staging. To
+#    hold it on an earlier release, set api.image.tag, web.image.tag and
+#    pipeline.image.tag in chart/values-production.yaml. Commit, push — the
+#    ApplicationSet renders the production Application and ArgoCD syncs it.
 ```
 
 Production uses completely separate resources:

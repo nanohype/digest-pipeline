@@ -29,8 +29,8 @@ spec:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
         - name: web
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}-{{ .Values.web.imageTagSuffix }}"
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          image: {{ include "digest-pipeline.image" (dict "service" "web" "image" .Values.web.image "Chart" .Chart) | quote }}
+          imagePullPolicy: {{ .Values.web.image.pullPolicy }}
           securityContext:
             {{- toYaml .Values.containerSecurityContext | nindent 12 }}
           ports:
@@ -38,7 +38,7 @@ spec:
               containerPort: {{ .Values.web.port }}
               protocol: TCP
           env:
-            {{- include "digest-pipeline.env" (dict "Values" .Values "service" "web") | nindent 12 }}
+            {{- include "digest-pipeline.env" (dict "Values" .Values "service" "web" "image" .Values.web.image "Chart" .Chart) | nindent 12 }}
             - name: OTEL_SERVICE_NAME
               value: digest-pipeline-web
             - name: PORT

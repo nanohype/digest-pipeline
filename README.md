@@ -137,8 +137,9 @@ npm run seed:staging                # creates/updates nine secrets in digest-pip
 npm run chart:lint                  # helm lint chart
 npm run chart:template:staging      # render chart with staging values
 
-# ArgoCD owns the rollout — bump image.tag in chart/values-{env}.yaml,
-# commit, push. Initial tenant setup is documented in chart/README.md
+# ArgoCD owns the rollout — push a v<version> git tag (release.yml publishes
+# the three images), set appVersion in chart/Chart.yaml to <version>, commit,
+# push. Initial tenant setup is documented in chart/README.md
 # (apply platform.yaml → wait Ready → register ApplicationSet entry).
 ```
 

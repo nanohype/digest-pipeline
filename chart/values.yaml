@@ -1,4 +1,4 @@
-# Base values for digest-pipeline (all environments). Per-env deltas in values-{staging,production}.yaml.
+# Base values for digest-pipeline (all environments). Per-env deltas in values-{development,staging,production}.yaml.
 #
 # Three services in one chart:
 #   - pipeline (CronJob, weekly Friday 09:00 UTC) — aggregates → ranks → generates → audits → notifies
@@ -7,13 +7,19 @@
 # The Ingress routes everything to web, which is the only public tier. api is
 # ClusterIP-only, reached server-side by web's route handlers. Pipeline is
 # internal-only (no Service).
-
-image:
-  repository: ghcr.io/nanohype/digest-pipeline
-  # Per-service tag suffix appended to base tag (e.g., :production-pipeline,
-  # :production-api, :production-web). Tag set per-env in values-{env}.yaml.
-  tag: ''
-  pullPolicy: IfNotPresent
+#
+# Images. Each service runs its own image under `<service>.image`, and the
+# repositories are the ones .github/workflows/release.yml pushes on a `v<version>`
+# git tag: ghcr.io/nanohype/digest-pipeline-{pipeline,api,web}, each tagged
+# `<version>` and `latest`. An empty `tag` resolves to `appVersion` in
+# Chart.yaml, so a release reaches every environment by moving appVersion
+# alone. Setting one service's `tag` in an environment file holds that service
+# on another published version there. The migrate hook runs the api image, so
+# it applies exactly the migrations the api it gates was built with. Each
+# container reports its own tag as `service.version` in
+# OTEL_RESOURCE_ATTRIBUTES; the chart appends it, so `env` does not set it.
+# `npm run chart:check-images` renders every environment and fails on an image
+# release.yml does not publish, or on a tag that is not a release version.
 
 serviceAccount:
   # The operator creates and owns the `tenant-runtime` ServiceAccount and binds
@@ -60,7 +66,10 @@ pipeline:
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 5
   activeDeadlineSeconds: 1800 # 30-min hard timeout per run
-  imageTagSuffix: pipeline
+  image:
+    repository: ghcr.io/nanohype/digest-pipeline-pipeline
+    tag: '' # empty = Chart.yaml appVersion
+    pullPolicy: IfNotPresent
   resources:
     requests:
       cpu: 500m
@@ -71,7 +80,11 @@ pipeline:
 
 api:
   enabled: true
-  imageTagSuffix: api
+  # Also the migrate hook's image.
+  image:
+    repository: ghcr.io/nanohype/digest-pipeline-api
+    tag: '' # empty = Chart.yaml appVersion
+    pullPolicy: IfNotPresent
   replicaCount: 1
   port: 3001
   resources:
@@ -84,7 +97,10 @@ api:
 
 web:
   enabled: true
-  imageTagSuffix: web
+  image:
+    repository: ghcr.io/nanohype/digest-pipeline-web
+    tag: '' # empty = Chart.yaml appVersion
+    pullPolicy: IfNotPresent
   replicaCount: 1
   port: 3000
   resources:
@@ -289,8 +305,10 @@ env:
   OTEL_TRACES_SAMPLER: always_on
   OTEL_METRICS_EXPORTER: otlp
   OTEL_METRIC_EXPORT_INTERVAL: '60000'
-  # OTel resource attrs — agents.tenant/agents.platform required by PLATFORM_TENANT_CONTRACT
-  OTEL_RESOURCE_ATTRIBUTES: 'service.namespace=digest-pipeline,service.version=0.1.0,agents.tenant=growth,agents.platform=digest-pipeline'
+  # OTel resource attrs — agents.tenant/agents.platform required by PLATFORM_TENANT_CONTRACT.
+  # No service.version: the chart appends each container's image tag, and
+  # rendering fails if this sets one.
+  OTEL_RESOURCE_ATTRIBUTES: 'service.namespace=digest-pipeline,agents.tenant=growth,agents.platform=digest-pipeline'
 
 # Per-tenant infra references — populated by per-env values from the
 # landing-zone tenant-substrate component's outputs (terragrunt run-all

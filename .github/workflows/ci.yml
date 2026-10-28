@@ -178,6 +178,16 @@ jobs:
       - name: Rendered chart supplies every required env var
         run: npm run chart:check-env
 
+      # The chart names its images and release.yml names the images it pushes,
+      # in two files nothing else ties together. helm lint, helm template and
+      # kubeconform all accept a reference no registry holds, so a mismatch
+      # surfaces only on a cluster, as ImagePullBackOff on every pod. This
+      # renders every environment, checks each container against what
+      # release.yml publishes (repository per workload, release-version tag,
+      # matching service.version), then self-tests the gate.
+      - name: Rendered chart runs the images release.yml publishes
+        run: npm run chart:check-images
+
       # Source files are gated elsewhere; this asserts the RENDERED chart too —
       # a zero account id, placeholder token, or account-less ARN that only
       # appears after templating.

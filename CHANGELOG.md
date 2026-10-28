@@ -10,11 +10,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Ver
 
 - **Integrity + pin manifest for the vendored CRD schemas.** `schemas/crd/source.json` records where the copies came from — upstream repository, path, and a full-SHA `upstream.ref` — plus a SHA-256 per file. `npm run platform:validate` verifies every digest before it parses a schema, so a vendored CRD edited in place — an enum widened, a `required` dropped — aborts the gate instead of silently widening what it accepts. `npm run schemas:check` byte-compares the same copies against the operator repo at that pinned commit, which is what catches a pin bumped without a re-vendor. CI runs both; neither has a skip path.
 - **A gate self-test, wired into `npm run platform:validate`.** Mutates in-memory copies of `platform.yaml` and asserts the gate rejects each one (invented field, missing required field, dangling `spec.tenant`, namespaced cluster-scoped Tenant, mismatched `platformRef`, chart OTel attributes disagreeing with the CRs), then asserts the committed manifest is still accepted.
+- **`npm run chart:check-images`, a gate between the chart and `release.yml`.** Renders the chart with `values.yaml` and with every `values-<env>.yaml`, and fails unless each container runs the repository `release.yml` publishes for its workload (the migrate hook runs the api's), at a release-version tag rather than an environment name or `latest`, reporting that tag as `service.version`. What is published is read from `release.yml` in the same commit, so the gate needs no registry. It self-tests on every run and exits 2 when the workflow takes a shape it cannot model. CI runs it after `chart:check-env`.
 
 ### Changed
 
 - **`scripts/validate-platform.mjs` is now `scripts/validate-platform-manifests.mjs`**, and the sync scripts are `npm run schemas:sync` / `schemas:check` — one naming for the platform gate across the tenant repos.
 - **Freshness is no longer a blocking check.** `npm run schemas:check` asks only whether the vendored bytes match upstream at the pinned ref, which is answerable from the commit under test. Whether that pin has fallen behind upstream moved to `npm run schemas:freshness` and the scheduled `crd-schema-freshness` workflow, so a required check cannot turn red because another repository moved.
+
+### Fixed
+
+- **The chart runs the images the release workflow publishes.** `release.yml` pushes one repository per workload, `ghcr.io/nanohype/digest-pipeline-{pipeline,api,web}`, tagged `<version>` from a `v<version>` git tag. Chart `0.1.1` referenced `ghcr.io/nanohype/digest-pipeline:<env>-<service>`, a repository and tags nothing pushes, so no pod could pull its image. Each workload names its image under `<service>.image`, an empty tag resolves to `appVersion` (`0.1.0`), and the environment files carry no image tag. Chart `0.2.0` removes `image.repository`, `image.tag`, `image.pullPolicy` and `<service>.imageTagSuffix`; set `<service>.image.{repository,tag,pullPolicy}` instead.
+- **`service.version` names the image a container runs.** The chart appends each container's image tag to `OTEL_RESOURCE_ATTRIBUTES`, so a service pinned to another release reports that release, and rendering fails if `env.OTEL_RESOURCE_ATTRIBUTES` sets `service.version` itself.
 
 ## [0.1.0] — Initial release
 

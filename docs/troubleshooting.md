@@ -110,7 +110,7 @@ Commit the refreshed `package-lock.json`. The digest-pipeline CI workflow uses `
 
 ### Image build fails with `npm error EUSAGE … Missing: @img/sharp-linux-x64@… from lock file` (or `@emnapi/*`)
 
-**Cause:** Same lockfile-vs-platform mismatch that bites CI, now in the `docker build` that `release.yml` runs to push the `pipeline` / `api` / `web` images to `ghcr.io/nanohype/digest-pipeline`. The lockfile is generated on macOS; sharp (Next.js image processing) and its `@emnapi/*` (Emscripten napi runtime) transitives are platform-conditional and only get recorded for the host you ran `npm install` on. `npm ci` inside the Linux Alpine image then refuses because the lockfile has no Linux entries.
+**Cause:** Same lockfile-vs-platform mismatch that bites CI, now in the `docker build` that `release.yml` runs to push the `pipeline` / `api` / `web` images to `ghcr.io/nanohype/digest-pipeline-{pipeline,api,web}`. The lockfile is generated on macOS; sharp (Next.js image processing) and its `@emnapi/*` (Emscripten napi runtime) transitives are platform-conditional and only get recorded for the host you ran `npm install` on. `npm ci` inside the Linux Alpine image then refuses because the lockfile has no Linux entries.
 
 **Fix:** All three `Dockerfile.{pipeline,api,web}` use `npm install --prefer-offline --no-audit --no-fund` instead of `npm ci`. Version pinning still comes from the lockfile; the install resolves the missing platform deps on the build platform. If you regenerated `package-lock.json` and saw this error, the Dockerfile already handles it — make sure you didn't manually swap back to `npm ci`.
 
@@ -160,7 +160,7 @@ If the Secret still doesn't appear, the underlying AWS secret really doesn't exi
 
 ### Pod `ImagePullBackOff` / `ErrImagePull` on a pipeline / api / web pod
 
-**Cause:** The image tag the chart references doesn't exist in `ghcr.io/nanohype/digest-pipeline`, or the node can't pull it. `release.yml` builds and pushes all three images by tag; the chart resolves them at pull time.
+**Cause:** The tag the chart references doesn't exist in that workload's repository (`ghcr.io/nanohype/digest-pipeline-{pipeline,api,web}`), or the node can't pull it. Each workload runs `appVersion` from `chart/Chart.yaml` unless its `image.tag` pins another, and `release.yml` pushes that tag only when the matching `v<version>` git tag is pushed.
 
 **Fix:** Describe the pod to see the exact pull error, then confirm the tag exists:
 
@@ -168,7 +168,7 @@ If the Secret still doesn't appear, the underlying AWS secret really doesn't exi
 kubectl -n tenants-digest-pipeline describe pod <pod> | sed -n '/Events:/,$p'
 ```
 
-If the tag is missing, the image build/push hasn't completed for this revision — check the `release.yml` run. Image resolution is by tag, so multi-arch falls out of the build matrix; there's no per-platform pin to mismatch.
+If the tag is missing, `appVersion` names a release whose `release.yml` run has not completed, or was never tagged — check the run for `v<appVersion>`. Image resolution is by tag, so multi-arch falls out of the build matrix; there's no per-platform pin to mismatch.
 
 ### API / web pod fails its readiness probe and never becomes `Ready`
 

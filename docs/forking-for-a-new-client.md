@@ -28,7 +28,7 @@ Two layers carry naming. The **product name** (`digest-pipeline`) is the GitHub 
 - npm package name (`digest-pipeline`), the Dockerfile non-root user (`digest-pipeline`)
 - Platform identity: Platform name `digest-pipeline`, which drives the workload namespace `tenants-digest-pipeline`, the AppProject `digest-pipeline`, and the `<env>-digest-pipeline-tenant` IAM role. (`spec.tenant: growth` names the owning team and drives none of those.)
 
-If you want to rename the internal handle too — e.g. `digest` for your company — do a global find-and-replace on `digest-pipeline` (lowercase) across this repo, then re-cut the landing-zone component name + secret prefixes + Pod Identity association to match, repoint the ExternalSecret `remoteRef` keys, and update the chart's image repository. That's a coordinated change across this repo + landing-zone, not a local edit. For most forks it's cheaper to keep the internal handle and rename only what's customer-visible (Slack channels, email subjects) plus the GitHub repo / product name.
+If you want to rename the internal handle too — e.g. `digest` for your company — do a global find-and-replace on `digest-pipeline` (lowercase) across this repo, then re-cut the landing-zone component name + secret prefixes + Pod Identity association to match, repoint the ExternalSecret `remoteRef` keys, and update the image repositories in `release.yml` and the chart's `<service>.image.repository` values. That's a coordinated change across this repo + landing-zone, not a local edit. For most forks it's cheaper to keep the internal handle and rename only what's customer-visible (Slack channels, email subjects) plus the GitHub repo / product name.
 
 ## 2. Third-party account setup
 
@@ -102,7 +102,7 @@ terragrunt apply --terragrunt-working-dir live/aws/workload-staging/us-west-2/st
 # and binds the tenant-runtime ServiceAccount to the role via a Pod Identity association.
 ```
 
-Set `web.workosClientId` (and the API `WORKOS_CLIENT_ID`) and `image.tag` in `chart/values-staging.yaml`. Then bring the tenant up:
+Set `web.workosClientId` (and the API `WORKOS_CLIENT_ID`) in `chart/values-staging.yaml`. The chart runs the images this repository's `release.yml` publishes. A fork that publishes under its own registry path changes `IMAGE` in `.github/workflows/release.yml` and the three `<service>.image.repository` values in `chart/values.yaml` together — `npm run chart:check-images` fails until they agree — and sets `appVersion` in `chart/Chart.yaml` to a version it has released. Then bring the tenant up:
 
 ```bash
 cd ../digest-pipeline
@@ -169,9 +169,10 @@ terragrunt apply --terragrunt-working-dir live/aws/workload-production/us-west-2
 
 cd ../digest-pipeline
 npm run seed:production
-# Set image.tag + web.workosClientId in
-# chart/values-production.yaml, commit, push — the ApplicationSet renders
-# the production Application and ArgoCD syncs it.
+# Set web.workosClientId in chart/values-production.yaml, commit, push —
+# the ApplicationSet renders the production Application and ArgoCD syncs it.
+# Production runs the chart's appVersion unless its values pin a service's
+# image.tag.
 ```
 
 The weekly `CronJob` runs in production at the next Friday 09:00 UTC after sync. Watch the first real run carefully.
