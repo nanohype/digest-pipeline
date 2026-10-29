@@ -1,7 +1,4 @@
 # Development delta.
-image:
-  tag: development
-
 ingress:
   host: digest-pipeline-development.example.com
 
@@ -13,7 +10,7 @@ externalSecret:
   webConfigSecret: digest-pipeline/development/web-config
 
 env:
-  OTEL_RESOURCE_ATTRIBUTES: 'service.namespace=digest-pipeline,service.version=0.1.0,deployment.environment=development,agents.tenant=growth,agents.platform=digest-pipeline'
+  OTEL_RESOURCE_ATTRIBUTES: 'service.namespace=digest-pipeline,deployment.environment=development,agents.tenant=growth,agents.platform=digest-pipeline'
 
 tenantInfra:
   # Bucket names match landing-zone tenant-substrate outputs 1:1

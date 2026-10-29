@@ -13,7 +13,7 @@ tasks:
   # === Composite ===
 
   ci:
-    desc: 'Full local CI: install, lint, typecheck, test, audit, build, web build, helm lint/template, docker build (three images)'
+    desc: 'Full local CI: install, lint, typecheck, test, audit, build, web build, helm lint/template/images, docker build (three images)'
     cmds:
       - task: install
       - task: audit
@@ -25,6 +25,7 @@ tasks:
       - task: schemas:selftest
       - task: helm:lint
       - task: helm:template
+      - task: helm:images
       - task: docker:build
 
   # === Install ===
@@ -116,6 +117,11 @@ tasks:
     cmds:
       - npm run chart:template:staging > /dev/null
       - npm run chart:template:production > /dev/null
+
+  helm:images:
+    desc: 'Check each rendered image against the repositories release.yml publishes and the release-version tag shape; self-test the check once it passes'
+    cmds:
+      - npm run chart:check-images
 
   # === Docker ===
 

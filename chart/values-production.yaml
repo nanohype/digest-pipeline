@@ -1,7 +1,4 @@
 # Production delta.
-image:
-  tag: production
-
 api:
   replicaCount: 2
 
@@ -19,7 +16,7 @@ externalSecret:
   webConfigSecret: digest-pipeline/production/web-config
 
 env:
-  OTEL_RESOURCE_ATTRIBUTES: 'service.namespace=digest-pipeline,service.version=0.1.0,deployment.environment=production,agents.tenant=growth,agents.platform=digest-pipeline'
+  OTEL_RESOURCE_ATTRIBUTES: 'service.namespace=digest-pipeline,deployment.environment=production,agents.tenant=growth,agents.platform=digest-pipeline'
 
 tenantInfra:
   # Bucket names match landing-zone tenant-substrate outputs 1:1.

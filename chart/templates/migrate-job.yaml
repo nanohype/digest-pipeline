@@ -36,13 +36,13 @@ spec:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
         - name: migrate
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}-{{ .Values.api.imageTagSuffix }}"
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          image: {{ include "digest-pipeline.image" (dict "service" "api" "image" .Values.api.image "Chart" .Chart) | quote }}
+          imagePullPolicy: {{ .Values.api.image.pullPolicy }}
           securityContext:
             {{- toYaml .Values.containerSecurityContext | nindent 12 }}
           command: ["npm", "run", "migrate:up"]
           env:
-            {{- include "digest-pipeline.env" (dict "Values" .Values "service" "migrate") | nindent 12 }}
+            {{- include "digest-pipeline.env" (dict "Values" .Values "service" "api" "image" .Values.api.image "Chart" .Chart) | nindent 12 }}
             - name: OTEL_SDK_DISABLED
               value: "true"
           envFrom:

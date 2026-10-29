@@ -1,7 +1,4 @@
 # Staging delta.
-image:
-  tag: staging
-
 ingress:
   host: digest-pipeline-staging.example.com
 
@@ -13,7 +10,7 @@ externalSecret:
   webConfigSecret: digest-pipeline/staging/web-config
 
 env:
-  OTEL_RESOURCE_ATTRIBUTES: 'service.namespace=digest-pipeline,service.version=0.1.0,deployment.environment=staging,agents.tenant=growth,agents.platform=digest-pipeline'
+  OTEL_RESOURCE_ATTRIBUTES: 'service.namespace=digest-pipeline,deployment.environment=staging,agents.tenant=growth,agents.platform=digest-pipeline'
 
 tenantInfra:
   # Bucket names match landing-zone tenant-substrate outputs 1:1

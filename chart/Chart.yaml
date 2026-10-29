@@ -2,7 +2,9 @@ apiVersion: v2
 name: digest-pipeline
 description: Automated weekly newsletter pipeline — pipeline CronJob + API + Web review app.
 type: application
-version: 0.1.1
+version: 0.2.0
+# The release every service runs unless its values pin another tag: each
+# image release.yml pushes for git tag v<appVersion> is tagged <appVersion>.
 appVersion: '0.1.0'
 maintainers:
   - name: growth

@@ -33,6 +33,7 @@ Helm:
 ```bash
 npm run chart:lint                 # helm lint chart
 npm run chart:template:staging     # render against values-staging.yaml
+npm run chart:check-images         # rendered images use release.yml's repositories at release-version tags; self-test on a pass
 ```
 
 ## Contract surface
@@ -123,7 +124,7 @@ Three workloads in one chart — the weekly pipeline, the review API, and the re
 | `prometheusrule.yaml`                      | Pipeline/Bedrock/send alert rules. `prometheusRule.enabled: false` by default — it needs a cluster running its own ruler (the local `kx` cluster does); on EKS, alerting is Grafana-managed against AMP                  |
 | `grafana-dashboard.yaml`                   | `GrafanaDashboard` CR (`grafana.integreatly.org/v1beta1`) carrying `chart/dashboards/digest-pipeline.json` inline; grafana-operator imports it into the external Amazon Managed Grafana                                 |
 
-`values.yaml` is the base; `values-staging.yaml` / `values-production.yaml` carry the per-env deltas (image tags, `tenantInfra.*` from the landing-zone outputs, ingress host). The image is `ghcr.io/nanohype/digest-pipeline`, built per workload (`:<tag>-pipeline`, `:<tag>-api`, `:<tag>-web`). OTel attrs `agents.tenant=growth` + `agents.platform=digest-pipeline` are set in every values file (required by the platform-tenant contract).
+`values.yaml` is the base; `values-{development,staging,production}.yaml` carry the per-env deltas (`tenantInfra.*` from the landing-zone outputs, secret paths, ingress host, replica counts). Each workload runs its own image, `<service>.image.repository` — `ghcr.io/nanohype/digest-pipeline-pipeline`, `-api` and `-web`, the repositories `release.yml` pushes on a `v<version>` git tag. An empty `<service>.image.tag` resolves to `appVersion` in `chart/Chart.yaml`, so a release reaches every environment by moving appVersion; an environment file sets a service's tag only to hold that service on another published version. The migrate hook runs the api image. `npm run chart:check-images` fails on a rendered image whose repository is not the one `release.yml` publishes for its workload, or whose tag is not a release version; it reads `release.yml`, not the registry, so it does not establish that the version was released. OTel attrs `agents.tenant=growth` + `agents.platform=digest-pipeline` are set in every values file (required by the platform-tenant contract); the chart appends each container's image tag as `service.version`.
 
 ### Required tenant files
 

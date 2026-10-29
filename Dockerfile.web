@@ -1,8 +1,8 @@
 # syntax=docker/dockerfile:1.28
 
 # Build context is the digest-pipeline/ directory (release.yml builds and
-# pushes this image to ghcr.io/nanohype/digest-pipeline; the chart
-# references it by tag).
+# pushes this image to ghcr.io/nanohype/digest-pipeline-web; the chart's
+# web.image references it).
 
 # ─── deps ───
 FROM node:24-alpine AS deps

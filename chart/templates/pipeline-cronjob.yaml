@@ -27,12 +27,12 @@ spec:
             {{- toYaml .Values.podSecurityContext | nindent 12 }}
           containers:
             - name: pipeline
-              image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}-{{ .Values.pipeline.imageTagSuffix }}"
-              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              image: {{ include "digest-pipeline.image" (dict "service" "pipeline" "image" .Values.pipeline.image "Chart" .Chart) | quote }}
+              imagePullPolicy: {{ .Values.pipeline.image.pullPolicy }}
               securityContext:
                 {{- toYaml .Values.containerSecurityContext | nindent 16 }}
               env:
-                {{- include "digest-pipeline.env" (dict "Values" .Values "service" "pipeline") | nindent 16 }}
+                {{- include "digest-pipeline.env" (dict "Values" .Values "service" "pipeline" "image" .Values.pipeline.image "Chart" .Chart) | nindent 16 }}
                 - name: OTEL_SERVICE_NAME
                   value: digest-pipeline-pipeline
               envFrom:
