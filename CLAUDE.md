@@ -145,7 +145,7 @@ No telemetry secret. The gateway's OTLP receiver takes no authentication in-clus
 ## Conventions
 
 - TypeScript, ESM (`"type": "module"`, `.js` extensions in relative imports)
-- Node >= 24 (Active LTS)
+- Node >= 26 (Active LTS)
 - Zod for all input validation (API bodies, config, aggregator responses)
 - Structured JSON logging via Pino (`getLogger()` from `src/common/logger.ts`); the API uses Fastify's bundled Pino instance, the pipeline uses its own. Both emit JSON. `LOG_LEVEL=silent` in tests.
 - Provider registry pattern (`createRegistry<T>`) for aggregators and identity resolvers

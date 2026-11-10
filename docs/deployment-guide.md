@@ -49,7 +49,7 @@ Nothing to provision for telemetry. Traces, metrics and logs land in the observa
 
 ### Local tooling
 
-- Node 24 (Active LTS)
+- Node 26 (Active LTS)
 - `aws` CLI ≥ 2.15 with creds for the target account
 - `kubectl` + `helm` pointed at the target cluster
 - `psql` (for a local migration sanity check; optional)

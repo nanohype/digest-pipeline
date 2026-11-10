@@ -219,7 +219,7 @@ rejects it.
 ## Conventions
 
 - TypeScript, ESM (`"type": "module"`, `.js` extensions in relative imports)
-- Node >= 24 (Active LTS)
+- Node >= 26 (Active LTS)
 - Zod for all input validation (API bodies, config, aggregator responses, Secrets Manager payloads)
 - Structured JSON logging via Pino (`getLogger()` from `src/common/logger.ts`); the API uses Fastify's `logger: getLogger()`; the pipeline uses its own. `OTEL_SERVICE_NAME` drives the `service` field. `LOG_LEVEL=silent` in tests.
 - Provider registry pattern (`createRegistry<T>` from `src/vendor/runtime/registry.ts`) for aggregators and identity resolvers
