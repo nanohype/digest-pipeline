@@ -117,7 +117,7 @@ Commit the refreshed `package-lock.json`. The digest-pipeline CI workflow uses `
 If you want to keep `npm ci` for stricter reproducibility, regenerate the lockfile inside a Linux container so all platforms are recorded:
 
 ```bash
-docker run --rm -v "$PWD:/app" -w /app node:24-alpine \
+docker run --rm -v "$PWD:/app" -w /app node:26-alpine \
   sh -c 'rm -rf node_modules package-lock.json && npm install --no-audit --no-fund'
 ```
 
