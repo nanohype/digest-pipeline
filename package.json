@@ -30,7 +30,7 @@
     "schemas:check": "node scripts/sync-crd-schemas.mjs --check",
     "schemas:freshness": "node scripts/sync-crd-schemas.mjs --freshness",
     "schemas:selftest": "node scripts/sync-crd-schemas.mjs --self-test",
-    "docs": "typedoc",
+    "docs": "node scripts/patch-typedoc-minimatch.mjs && typedoc",
     "migrate:up": "node dist/data/migrate.js up",
     "migrate:down": "node dist/data/migrate.js down",
     "dev:migrate:up": "tsx src/data/migrate.ts up",
@@ -87,10 +87,13 @@
     "yaml": "^2.9.0"
   },
   "overrides": {
+    "typedoc": {
+      "minimatch": "^11.0.1"
+    },
     "gaxios": "^7.3.0",
     "esbuild": "^0.28.1",
     "form-data": "^4.0.6",
-    "protobufjs": "^7.6.4",
-    "vite": "^8.0.16"
+    "protobufjs": "^7.6.5",
+    "vite": "^8.1.6"
   }
 }
