@@ -63,7 +63,7 @@ jobs:
       # verdicts it reached — "these files do not match" and "nothing was
       # checked" are different facts and only one of them is about the branch.
       - name: Editorconfig
-        uses: nanohype/.github/actions/editorconfig-gate@b2eada74413fcc9f3042f22126ee5b350a2b846e # main
+        uses: nanohype/.github/actions/editorconfig-gate@9911d2952b1f9078816c323baa253a63242c1c31 # v1
 
       # The metric-reference table in README is the authoritative name-and-label
       # list, and it is the kind of doc that goes stale silently: the alerts and
@@ -500,7 +500,7 @@ jobs:
     # merges come from pull requests; on push it is skipped and gates nothing.
     if: always() && github.event_name == 'pull_request'
     steps:
-      - uses: nanohype/.github/actions/merge-gate@6ec6c5b3e6c4a8b15e12da4afd7ac4870a630092 # main
+      - uses: nanohype/.github/actions/merge-gate@9911d2952b1f9078816c323baa253a63242c1c31 # v1
         with:
           needs: ${{ toJSON(needs) }}
           gate-job-id: merge-gate
