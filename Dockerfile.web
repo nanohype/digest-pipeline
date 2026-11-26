@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.28
+# syntax=docker/dockerfile:1.29
 
 # Build context is the digest-pipeline/ directory (release.yml builds and
 # pushes this image to ghcr.io/nanohype/digest-pipeline-web; the chart's
